@@ -21,10 +21,15 @@ interface EventRecord {
 
 const TERMINAL_PHASES: readonly BattlePhase[] = ['completed', 'cancelled', 'failed']
 
-function isTerminal(event: BattleEvent): boolean {
+export function isTerminalEvent(event: BattleEvent): boolean {
   if (event.type === 'battle.completed' || event.type === 'battle.failed') return true
   if (event.type === 'phase.changed') return TERMINAL_PHASES.includes(event.phase)
   return false
+}
+
+export function closesStream(event: BattleEvent): boolean {
+  if (event.type === 'battle.completed' || event.type === 'battle.failed') return true
+  return event.type === 'phase.changed' && event.phase === 'cancelled'
 }
 
 export function createBattleHandle(id: string): BattleHandle {
@@ -48,7 +53,7 @@ export function createBattleHandle(id: string): BattleHandle {
     emit(event: BattleEvent): number {
       const eventId = log.length
       log.push({ id: eventId, event })
-      if (isTerminal(event)) settled = true
+      if (isTerminalEvent(event)) settled = true
       for (const listener of [...listeners]) listener(event, eventId)
       return eventId
     },

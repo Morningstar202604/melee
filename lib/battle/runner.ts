@@ -23,9 +23,16 @@ import {
   type BattlePhase,
   type BattleResult,
 } from './events.ts'
-import { createBattleHandle, getBattleHandle, registerBattle, type BattleHandle } from './registry.ts'
+import {
+  createBattleHandle,
+  getBattleHandle,
+  registerBattle,
+  unregisterBattle,
+  type BattleHandle,
+} from './registry.ts'
 
 const DEFAULT_TIMEOUT_MS = 120000
+const RECYCLE_GRACE_MS = 60000
 
 export interface StartBattleInput {
   arena: ArenaId
@@ -62,8 +69,15 @@ export function startBattle(input: StartBattleInput, deps: BattleDeps): string {
   const battleId = randomUUID()
   const handle = createBattleHandle(battleId)
   registerBattle(battleId, handle)
-  void runBattle(battleId, input, deps, handle)
+  void runBattle(battleId, input, deps, handle).finally(() => scheduleRecycle(battleId))
   return battleId
+}
+
+function scheduleRecycle(battleId: string): void {
+  const timer = setTimeout(() => {
+    unregisterBattle(battleId)
+  }, RECYCLE_GRACE_MS)
+  ;(timer as unknown as { unref?: () => void }).unref?.()
 }
 
 export function cancelBattle(id: string): boolean {
@@ -123,9 +137,17 @@ async function runBattle(
       return
     }
 
-    const { verdicts, judgeAvailable } = deps.judgeContext
-      ? await runJudgePhase(succeeded, deps, handle, battleId)
-      : { verdicts: [] as Verdict[], judgeAvailable: false }
+    let verdicts: Verdict[] = []
+    let judgeAvailable = false
+    if (deps.judgeContext) {
+      const judged = await runJudgePhase(succeeded, deps, handle, battleId)
+      if (!judged) {
+        await emitPhase(handle, battleId, 'cancelled', { error: '对战在裁判阶段取消' })
+        return
+      }
+      verdicts = judged.verdicts
+      judgeAvailable = judged.judgeAvailable
+    }
 
     await emitPhase(handle, battleId, 'scoring')
     await emitPhase(handle, battleId, 'completed', { completedAt: now() })
@@ -150,6 +172,10 @@ async function runBattle(
     }
     handle.emit({ type: 'battle.completed', result })
   } catch (error) {
+    if (handle.cancelled) {
+      if (!handle.settled) await emitPhase(handle, battleId, 'cancelled', { error: '对战已取消' })
+      return
+    }
     if (handle.settled) return
     const reason = `对战编排失败：${readableMessage(error)}`
     handle.emit({ type: 'phase.changed', phase: 'failed' })
@@ -170,7 +196,9 @@ async function runContestant(contestant: ContestantInput, context: RunContext): 
 
   const messages: ModelMessage[] = [{ role: 'user', content: prompt.user }]
 
-  const signal = AbortSignal.any([handle.signal, AbortSignal.timeout(timeoutMs)])
+  const timeoutController = new AbortController()
+  const signal = AbortSignal.any([handle.signal, timeoutController.signal])
+  const timeoutTimer = setTimeout(() => timeoutController.abort(), timeoutMs)
   let text = ''
   let usage: { prompt: number; completion: number } | null = null
   let latencyMs = 0
@@ -211,6 +239,7 @@ async function runContestant(contestant: ContestantInput, context: RunContext): 
   if (failed) {
     const message = errorMessage ?? '未知原因'
     handle.emit({ type: 'contestant.failed', slot: contestant.slot, status, message })
+    clearTimeout(timeoutTimer)
     await persist(() =>
       updateContestantResult(contestantId, {
         status,
@@ -225,6 +254,7 @@ async function runContestant(contestant: ContestantInput, context: RunContext): 
     return { contestant, contestantId, submission: null, status, errorMessage: message }
   }
 
+  clearTimeout(timeoutTimer)
   const code = deps.arena.extractCode(text)
   const submission: Submission = {
     contestant,
@@ -254,10 +284,14 @@ async function runJudgePhase(
   deps: BattleDeps,
   handle: BattleHandle,
   battleId: string,
-): Promise<{ verdicts: Verdict[]; judgeAvailable: boolean }> {
-  await emitPhase(handle, battleId, 'judging')
+): Promise<{ verdicts: Verdict[]; judgeAvailable: boolean } | undefined> {
   const ctx = deps.judgeContext
-  if (!ctx) return { verdicts: [], judgeAvailable: false }
+  if (!ctx) return undefined
+  await emitPhase(handle, battleId, 'judging')
+  if (handle.cancelled) {
+    await emitPhase(handle, battleId, 'cancelled', { error: '对战在裁判阶段取消' })
+    return undefined
+  }
   const submissions = succeeded
     .map((run) => run.submission)
     .filter((submission): submission is Submission => submission !== null)
@@ -269,6 +303,10 @@ async function runJudgePhase(
   } catch {
     verdicts = []
     judgeAvailable = false
+  }
+  if (handle.cancelled) {
+    await emitPhase(handle, battleId, 'cancelled', { error: '对战在裁判阶段取消' })
+    return undefined
   }
   handle.emit({ type: 'judge.done', verdicts, available: judgeAvailable })
   return { verdicts, judgeAvailable }
@@ -284,16 +322,17 @@ async function emitPhase(
   await persist(() => updateBattlePhase(battleId, phase, patch))
 }
 
-async function persist(op: () => Promise<unknown>): Promise<void> {
+async function persist(op: () => Promise<unknown>, label = '数据库写入失败'): Promise<void> {
   try {
     await op()
-  } catch {
-    return
+  } catch (error) {
+    console.error(redact(`${label}：${readableMessage(error)}`))
   }
 }
 
 function readableMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  const raw = error instanceof Error ? error.message : String(error)
+  return redact(raw)
 }
 
 function describeAllFailed(runs: ContestantRun[]): string {
