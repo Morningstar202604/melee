@@ -6,13 +6,27 @@
 
 **Architecture:** Next.js 全栈单体（App Router，Node runtime）。Route Handler 做 SSE 网关与编排；`Arena` 抽象把"比什么"做成插件；沙箱做成 `SandboxBackend` 接口，默认 Pyodide WASM 跑在专用 Worker 里，Judge0 留作可选的 OS 级隔离后端。SQLite 落库，Key 只存在于当次对战的服务端内存。
 
-**Tech Stack:** Next.js >=16.3.6（App Router / Turbopack）、Node >=24.14、Vercel AI SDK 7.x（`ai` + `@ai-sdk/openai`）、`node:sqlite`、`pyodide`、Node 内置 `node:test`。
+**Tech Stack:** Next.js >=16.3.6（App Router / Turbopack）、Node >=24.14、Vercel AI SDK 7.x（`ai` + `@ai-sdk/openai`）、`node:sqlite`、`pyodide`、`zustand`、`zod`、Node 内置 `node:test`。
 
 **Spec:** `docs/superpowers/specs/2026-10-09-ai-battle-arena-design.md`
 
 ## Global Constraints
 
 以下每条对所有 task 生效，值与 spec 逐字一致：
+
+- **产品目的是观赏性与情绪价值，不是评测能力**（spec §0）。观感预算高于工程严谨度；但"没真实发生的事必须明说"这条底线不放宽。
+- **不重复造轮子**：能用成熟库或协议标准解决的，不手搓。下表是本项目唯一豁免清单——豁免项必须写明理由，否则视为违规。
+
+| 需求 | 采用 | 手写替代（禁止） |
+|---|---|---|
+| 模型流式调用 | Vercel AI SDK | 自造 SSE 解析 |
+| 沙箱 runtime | Pyodide 官方 npm 包 | 自造解释器/沙箱 |
+| 客户端流式状态 | **Zustand** | 手搓 store / 手写订阅 |
+| 裁判输出与事件校验 | **Zod** schema + 容错回退 | 手写宽松正则 |
+| SSE 断线补发 | **协议自带的 `id:` + `Last-Event-ID`** | 自造"缓冲 500 条"队列 |
+| 沙箱后端切换 | 单一接口 + `SANDBOX_BACKEND` 环境变量 | 自造插件/依赖注入框架 |
+
+两处**有意保留手写**，理由如下，不得改为引依赖：① SQLite 用 raw SQL + 薄封装——5 张表、无迁移需求，ORM 在此是净负担；② 限流约 10 行纯函数——引依赖不划算。
 
 - Next.js `>=16.3.6`；**禁用** `next/og` 与 Image Optimization（2026 年多个 critical RCE 涉及这两处）。
 - Node `>=24.14`。所有 Route Handler **必须**显式 `export const runtime = 'nodejs'`（`node:sqlite` 不能在 Edge/middleware 用）。
@@ -36,7 +50,8 @@ spec 暗示但没有 task 明确覆盖、最容易在真实使用中咬人的输
 3. **裁判返回畸形输出**（无 JSON、带围栏、字段缺失、纯散文）：降级为"裁判不可用，仅人类投票"并出横幅，**不得**让整场 500。
 4. **沙箱内提交代码读 `os.environ`**：必须拿不到任何值（Worker 内零凭证），这是 §6.2 逃逸缓解的核心断言。
 5. **死循环代码**：必须在 wall time 内被 `terminate()` 截断，沙箱返回 `timeout`，**不得**让整个对战请求挂住。
-6. **SSE 断线重连**：重连后经 `/snapshot` 补齐已完成内容，不出现空白页。
+6. **SSE 断线重连**：重连后经 `Last-Event-ID` 续传已收内容，不出现空白页、不重复回放已显示的文本。
+7. **长输出炸屏**：某个模型输出上万字时，观战页不能因每 chunk 重渲染而卡死（这是观赏性事故，不只是性能问题）。
 
 ---
 
@@ -72,7 +87,7 @@ spec 暗示但没有 task 明确覆盖、最容易在真实使用中咬人的输
 | `lib/battle/registry.ts` | 运行中对战的内存注册表 + 事件订阅 |
 | `lib/battle/runner.ts` | 状态机与编排 |
 | `lib/battle/ratelimit.ts` | 每 IP 每分钟 5 场 |
-| `lib/client/battle-store.ts` | rAF 批量 flush 的客户端 store |
+| `lib/client/battle-store.ts` | Zustand store（rAF 批量合并写） |
 | `components/arena/arena-setup.tsx` | 选题 + 选模型 + 预检 |
 | `components/arena/battle-shell.tsx` | EventSource 订阅 + 布局 |
 | `components/arena/contestant-card.tsx` | 单个选手卡片（流式 / 失败态） |
@@ -104,7 +119,7 @@ npx create-next-app@latest . --typescript --app --tailwind --eslint --no-src-dir
 - [ ] **Step 2: 装依赖**
 
 ```
-npm i ai @ai-sdk/openai @ai-sdk/anthropic @ai-sdk/google zod pyodide
+npm i ai @ai-sdk/openai @ai-sdk/anthropic @ai-sdk/google zod pyodide zustand
 ```
 
 不锁 provider 小组件版本，用 latest 解析；装完把实际版本号写进 `package.json` 并提交。若 `pyodide` 安装因体积/网络失败，记录错误并继续 Task 9 再处理。
@@ -301,6 +316,7 @@ test('全部选手成功 → phase 依次 running/completed，contestant.done �
 test('一个选手失败 → 其余仍完成，battle 仍 completed')
 test('全部失败 → battle 变 failed 且给出 reason')
 test('cancelBattle → phase 变 cancelled，在飞的 stream 被 abort')
+test('事件 id 从 0 单调递增且不重复（Last-Event-ID 依赖它）')
 ```
 
 每条都要断言**事件顺序**（`phase.changed` 在前，`contestant.started` 在 delta 之前，`battle.completed` 在最后）。
@@ -312,7 +328,9 @@ Expected: FAIL —— `Cannot find module './runner'`
 
 - [ ] **Step 3: 实现 `arena/types.ts`、`events.ts` 与 `registry.ts`**
 
-`arena/types.ts` 逐字照 spec §4.1 的 `Arena` 接口与相关类型（**不要**加 spec 没有的字段）。`events.ts` 事件类型逐条照 spec §4.7 的载荷字段。`registry.ts` 用一个 `Map<string, BattleHandle>`；`emit` 同时把事件追加到该 battle 的内存事件缓冲（上限 500 条，超出丢最旧），供重连补发。
+`arena/types.ts` 逐字照 spec §4.1 的 `Arena` 接口与相关类型（**不要**加 spec 没有的字段）。`events.ts` 用 **Zod** 定义每个事件的 schema（`z.discriminatedUnion('type', [...])`）并从 schema 导出 TS 类型，避免手写 interface 与 schema 漂移。
+
+`registry.ts` 用一个 `Map<string, BattleHandle>`；`BattleHandle` 提供 `emit(e)`、`eventsSince(id: number): BattleEvent[]`、`subscribe(fn)`、`nextId()`。事件序列**不截断**（`Last-Event-ID` 依赖 id 连续可查，截断会让补发静默丢事件）。
 
 - [ ] **Step 4: 实现 `runner.ts`**
 
@@ -346,7 +364,7 @@ git commit -m "feat(battle): 事件契约、内存注册表与对战状态机"
 - Consumes: Task 4 的 `BattleEvent` 与 `lib/arena/types.ts`（`Arena` 接口已定义）；Task 3 的 `streamModel` 与 `generateText`
 - Produces:
   - `topics.ts`: `SOFT_TOPICS: { id, title, prompt, kind: 'debate'|'creative'|'roleplay' }[]`（≥6 道）、`CODE_TOPICS: CodeTopic[]`（5~8 道 Python 题，含 `tests: { input: string; expected: string }[]`）
-  - `judge/runner.ts`: `parseJudgeOutput(raw: string): ParsedJudgement | null`、`orderAgreement(r1: ParsedJudgement[], r2: ParsedJudgement[]): number`、`runJudge(opts: JudgeOptions): Promise<JudgeOutcome>`，`JudgeOutcome = { verdicts: Verdict[]; confidence: number; unavailable: boolean; raw?: string }`
+  - `judge/runner.ts`: `parseJudgeOutput(raw: string): ParsedJudgement | null`、`runJudge(opts: JudgeOptions): Promise<JudgeOutcome>`，`JudgeOutcome = { verdicts: Verdict[]; roundsAgreed: boolean; unavailable: boolean; raw?: string }`（**不计算统计置信度**——见 Global Constraints 与 spec §0）
   - `arena/soft.ts`: `softArena: Arena`
 
 - [ ] **Step 1: 写宽松解析的失败测试**
@@ -359,8 +377,8 @@ test('带 ```json 围栏能解析')
 test('JSON 前后夹带解释文字能解析')
 test('缺 rationale 字段时用默认理由，不抛错')
 test('完全不可解析时返回 null')
-test('两轮名次一致 → orderAgreement 为 1')
-test('两轮名次完全相反 → orderAgreement 为 0')
+test('两轮名次一致 → roundsAgreed 为 true')
+test('两轮名次完全相反 → roundsAgreed 为 false')
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -368,13 +386,15 @@ test('两轮名次完全相反 → orderAgreement 为 0')
 Run: `npm test`
 Expected: FAIL —— `Cannot find module './runner'`
 
-- [ ] **Step 3: 实现 `parseJudgeOutput` 与 `orderAgreement`**
+- [ ] **Step 3: 实现 `parseJudgeOutput` 与 `roundsAgreed`**
 
-解析顺序：整串 `JSON.parse` → 取第一个 `{` 到最后一个 `}` 的子串再 `JSON.parse` → 去掉围栏行再试。解析成功但缺 `rationale` 时补 `"未提供理由"`。`orderAgreement` 按选手 id 排序后的名次序列算 Kendall tau 的简化版：名次完全相同返 1，完全逆序返 0。
+`parseJudgeOutput` 走 **Zod**（不手写宽松正则）：`judgeSchema = z.object({ verdicts: z.array(z.object({ label: z.string(), logic: z.number(), evidence: z.number(), relevance: z.number(), rationale: z.string().optional() })) })`。解析顺序：整串 `JSON.parse` → 剥 ``` 围栏行 → 取第一个 `{` 到最后一个 `}` 的子串重试；Zod 校验不通过时按字段补默认值（`rationale` 补 `"未提供理由"`、缺失分数补 0）而不抛错；三次都失败返回 `null`。
+
+`roundsAgreed(a, b)` 只做一件事：把两轮名次（label 映射回 slot 后排序）**逐位比较**，完全相同返回 `true`，否则 `false`。**不实现 Kendall tau 或任何统计置信度**——那是评测严谨性，不是本产品的目的（spec §0）。
 
 - [ ] **Step 4: 实现 `runJudge`**
 
-`JudgeOptions = { topic, submissions, judgeModel, signal }`。用 `generateText`（非流式）一次判整场：prompt 里把答案**匿名化为 A/B/C**并要求返回 `{ "verdicts": [{ "label": "A", "logic": 0-10, "evidence": 0-10, "relevance": 0-10, "rationale": "..." }] }`。跑两轮（第二轮交换顺序），把 label 映射回 slot，取两轮分项均值，confidence = `orderAgreement`。
+`JudgeOptions = { topic, submissions, judgeModel, signal }`。用 `generateText`（非流式）一次判整场：prompt 里把答案**匿名化为 A/B/C**并要求返回 spec §0 的 verdicts JSON。跑两轮（第二轮交换顺序），把 label 映射回 slot，取两轮分项均值，`roundsAgreed = roundsAgreed(r1, r2)`。
 
 `runJudge` 自身异常或两次都解析失败 → 返回 `{ verdicts: [], confidence: 0, unavailable: true }`。
 
@@ -443,7 +463,11 @@ Expected: FAIL —— handler 尚不存在
 
 - [ ] **Step 5: 实现 `stream/route.ts`**
 
-`GET` 返回 `new Response(readableStream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' } })`。先补发 `registry` 内存缓冲里已发生的事件，再接 `subscribe`。每个事件 `data: ${JSON.stringify(e)}\n\n`。battle 终态（completed/failed/cancelled）时 `return` 关闭流。`ctx.params` 必须 `await`。
+`GET` 返回 `new Response(readableStream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' } })`。
+
+**用 SSE 协议自带的断线续传，不手写补发队列**：`registry` 给每条事件分配**该 battle 内单调递增**的整数 id，`emit` 时写成 SSE 的 `id: <n>` 行再写 `data: <json>`；连接建立时读请求头 `Last-Event-ID`（缺省视为 -1），只补发 id 大于它的历史事件，然后接 `subscribe` 继续推。battle 终态（completed/failed/cancelled）时 `return` 关闭流。`ctx.params` 必须 `await`。
+
+`emit` 侧只需在内存里保留每 battle 的事件序列供 `Last-Event-ID` 查找，**不设"最近 500 条"这种截断**（截断会让大 id 之后的补发静默丢事件）。dev 模式 HMR 可能清空内存，此时 `Last-Event-ID` 查不到就当新连接从当前时刻开始，前端有 `/snapshot` 兜底。
 
 - [ ] **Step 6: 实现 `vote` / `cancel` / `snapshot`**
 
@@ -503,42 +527,46 @@ git commit -m "feat(ui): 擂台首页选题、选阵容、预检与开打"
 
 ---
 
-### Task 8: 观战页（流式渲染）
+### Task 8: 观战页（流式渲染与观感）
 
 **Files:**
-- Create: `app/battle/[id]/page.tsx`、`lib/client/battle-store.ts`、`components/arena/battle-shell.tsx`、`components/arena/contestant-card.tsx`
+- Create: `app/battle/[id]/page.tsx`、`lib/client/battle-store.ts`、`components/arena/battle-shell.tsx`、`components/arena/contestant-card.tsx`、`components/arena/status-bar.tsx`
 - Test: 手动 + Task 12 浏览器验收
 
 **Interfaces:**
 - Consumes: `app/api/battle/[id]/stream`、`/snapshot`、`/vote`、`/cancel`
-- Produces: `createBattleStore(initial: BattleSnapshot | null)` 返回 `{ subscribe, getSnapshot, apply(event: BattleEvent) }`（`useSyncExternalStore` 兼容形状）
+- Produces: `battle-store.ts` 导出 Zustand store `useBattleStore`（`state: { phase, startedAt, contestants: Record<slot, ContestantView>, voteTally, summary }`，动作 `apply(event)` / `hydrate(snapshot)`）；`ContestantView = { slot, providerId, modelId, text, status, latencyMs, finishedAt, isFirstFinisher }`
 
-- [ ] **Step 1: 实现 `battle-store.ts`**
+- [ ] **Step 1: 实现 `battle-store.ts`（Zustand，不手搓 store）**
 
-`apply(event)` 按 slot 累积 delta 到内存 Map 并置 dirty flag；用 `requestAnimationFrame` 批量把 dirty 状态推给订阅者（**每帧最多一次通知**，这是本任务的核心性能约束）。重连时用 `getSnapshot()` 返回的整份快照覆盖。
+`apply(event)` 按 slot 累积 delta；每次改动置 dirty flag，用一个模块级 `requestAnimationFrame` 调度器批量提交——**每帧最多一次 `set()`**（这是本任务的核心性能约束，用 Zustand 的 `subscribeWithSelector` + 合并写实现，不自己实现响应式系统）。`hydrate(snapshot)` 用服务端快照整体覆盖。终态事件到达后取消调度。
 
 - [ ] **Step 2: 实现 `contestant-card.tsx`**
 
-四态：`streaming`（半透明光标 + 流式文本）、`ok`（正常）、`failed`（红色横幅 + 后端给的**可读原因**，不显示 Key）、`timeout`（黄色横幅 + "超时未完成"）。文本用 `<pre className="whitespace-pre-wrap break-words">`，长输出虚拟化不做（第一期接受）。
+四态：`streaming`（打字机光标 + 流式文本）、`ok`（正常）、`failed`（红色横幅 + 后端给的**可读原因**，不显示 Key）、`timeout`（黄色横幅 + "超时未完成"）。**先完成的卡片加一个「先手」角标**（`isFirstFinisher`），制造节奏感。文本用 `<pre className="whitespace-pre-wrap break-words">`，长输出虚拟化不做（第一期接受）。
 
-- [ ] **Step 3: 实现 `battle-shell.tsx`**
+- [ ] **Step 3: 实现 `status-bar.tsx`（观感主体）**
 
-`'use client'`。挂载时 `new EventSource(/api/battle/${id}/stream)`，`onmessage` 里 `JSON.parse` 后 `store.apply`。`onerror` 时关流、2s 后重连并先 `GET /snapshot` 补齐（连续失败 3 次后显示"连接中断，请刷新"）。顶部显示当前 `phase`；右上"取消对战"调 `/cancel`。终态时渲染 `<Settlement />`（Task 11 之前先渲染原始 `battle.completed` 载荷）。
+常驻顶部一行三段：当前 `phase`（中文词：准备中 / 开打中 / 裁判中 / 计分中 / 已结束 / 已取消）、**已完成选手数 / 总数**、**本场已用时长**（从 `startedAt` 起每秒刷新一次，用独立的轻量 `useEffect` + `setInterval`，不要放进流式 store 的渲染路径）。本场无人完成时时长仍要走。
 
-- [ ] **Step 4: 实现页面壳 `app/battle/[id]/page.tsx`**
+- [ ] **Step 4: 实现 `battle-shell.tsx`**
 
-server component，`const { id } = await params`（**必须 await**），服务端先 `getSnapshot(id)` 作为初始值传给 `BattleShell`。
+`'use client'`。挂载时 `new EventSource(/api/battle/${id}/stream)`，`onmessage` 里 `JSON.parse` 后 `store.apply`。`onerror` 时关流、2s 后重连（**浏览器会自动带 `Last-Event-ID`，服务端据此补发**，见 Task 6；仍不完整时再 `GET /snapshot` 兜底），连续失败 3 次后显示"连接中断，请刷新"。布局：顶部 `<StatusBar />`，下方选手卡片按 `slot` 网格排列，右上"取消对战"调 `/cancel`。终态时渲染 `<Settlement />`（Task 11 之前先渲染原始 `battle.completed` 载荷）。
 
-- [ ] **Step 5: 验证**
+- [ ] **Step 5: 实现页面壳 `app/battle/[id]/page.tsx`**
+
+server component，`const { id } = await params`（**必须 await**），服务端先 `getSnapshot(id)` 并 `hydrate` 作为初始值传给 `BattleShell`。
+
+- [ ] **Step 6: 验证**
 
 Run: `npm run dev`，首页用 Ollama（若未装则用 Task 3 的 fake server）开一场软战场，用内置浏览器打开 `/battle/<id>`
-Expected: 各选手卡片**逐段增长**（不是整块一次出现），失败态有可读原因，关掉页面再打开能通过 snapshot 看到已完成内容。
+Expected: 各选手卡片**逐段增长**（不是整块一次出现）；赛况条的三段数字都在动；先完成的卡片出现「先手」角标；失败态有可读原因；关掉页面再打开能看到已完成内容。
 
-- [ ] **Step 6: 提交**
+- [ ] **Step 7: 提交**
 
 ```bash
-git add app/battle components/arena lib/client
-git commit -m "feat(ui): 观战页 SSE 订阅、rAF 批量渲染与断线快照补齐"
+git add app/battle components/arena lib/client package.json package-lock.json
+git commit -m "feat(ui): 观战页 Zustand 流式渲染、赛况条与先手标记"
 ```
 
 ---
@@ -671,10 +699,14 @@ git commit -m "feat(arena): 硬战场代码抽取、Pyodide 判定与 Judge0 可
 
 - [ ] **Step 2: 实现 `settlement.tsx`**
 
-三段并列展示：
+**第一行是一句话总结**（观赏性主体，自己写模板生成、不引 NLP 库）：如「deepseek 以 2:0 通杀，本场无人翻车」「三选一全员超时，本场无人生还」。句式至少覆盖：全胜/无翻车、有翻车、全部失败、单方碾压、势均力敌（票差 ≤1）。
+
+其下三段并列：
 1. **人类票数**：条形 + 票数 + `position_index`；
-2. **裁判分**：logic/evidence/relevance 三项分 + 中文理由 + confidence（**不与票数合成总分**）；
+2. **裁判分**：logic/evidence/relevance 三项分 + 中文理由（**不与票数合成总分**）+ 一行「AI 裁判与观众票数：一致 / 不一致」（用 `judgements` 的两轮 `roundsAgreed` 与 `votes` 比对得出，**不算统计量**）；
 3. **硬战场**：passed/total + 耗时 + 隔离级别标注。
+
+**翻车榜**：底部单列最惨的若干瞬间——最短输出、最后完成、超时、空输出，各一行文字描述。这是观赏性的落点之一。
 
 降级横幅三选一：「裁判不可用，本场仅人类投票」/「沙箱不可用，本次未真实执行」/「无 OS 级隔离：本场仅限可信环境使用」。每个失败选手也要有独立一行说明。
 
@@ -778,6 +810,8 @@ git push origin main --tags
 
 **3. 类型一致性**：`Submission`/`Verdict`/`Arena` 由 Task 4 创建（在 `lib/arena/types.ts`），Task 5 只实现 `softArena`、Task 10 只实现 `hardCodeArena`——顺序已对齐，runner 不再引用尚未存在的类型。
 
-**4. Review Focus**：六条分别落在 Task 4（#1 单选手失败）、Task 10（#2 无代码块）、Task 5（#3 裁判畸形）、Task 9（#4 读不到 env）、Task 9（#5 死循环 terminate）、Task 8（#6 断线重连），每条都有对应测试步骤。
+**4. Review Focus**：六条分别落在 Task 4（#1 单选手失败、#7 事件 id 单调）、Task 10（#2 无代码块）、Task 5（#3 裁判畸形）、Task 9（#4 读不到 env）、Task 9（#5 死循环 terminate）、Task 8（#6 断线重连续传）。
+
+**6. 产品定位复核（spec §0）**：全计划只有 Task 9/10（沙箱）和 Task 5（裁判）涉及"验证"性质的严谨性投入，其余 11 个 task 的验收标准都是**观感类**的（流式是否逐段增长、先手角标是否出现、赛况条是否在动、战报一句话是否好读、翻车榜是否有内容）。这与"观赏性优先"一致。
 
 **5. 比例**：13 个 task、约 70 个 step，spec 约 400 行。plan 中代码块只出现接口签名与测试断言，无函数体转录。
