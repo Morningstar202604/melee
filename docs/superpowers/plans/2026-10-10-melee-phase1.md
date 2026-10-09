@@ -244,7 +244,7 @@ git commit -m "feat(db): node:sqlite 封装、schema 与串行写队列"
 - Consumes: Task 2 的 `lib/log/redact` 不涉及；无
 - Produces:
   - `registry.ts`: `PROVIDERS: ProviderDef[]`、`createModel(p: ProviderDef, modelId: string, apiKey: string): LanguageModel`、`listModels(p: ProviderDef, apiKey: string): Promise<{ ok: boolean; models?: string[]; reason?: string }>`
-  - `stream.ts`: `streamModel(model: LanguageModel, messages: ModelMessage[], opts: { signal: AbortSignal }): AsyncGenerator<StreamEvent>`，其中 `StreamEvent = { type: 'delta'; text: string } | { type: 'done'; usage: { prompt: number; completion: number } | null; latencyMs: number } | { type: 'error'; status: ContestantStatus; message: string }`
+  - `stream.ts`: `streamModel(model: LanguageModel, messages: ModelMessage[], opts: { signal: AbortSignal }): AsyncGenerator<StreamEvent>`，其中 `StreamEvent = { type: 'delta'; text: string } | { type: 'done'; usage: { prompt: number; completion: number } | null; latencyMs: number } | { type: 'error'; status: ContestantStatus; message: string }`；`stream.ts` **同时定义并导出** `ContestantStatus = 'ok' | 'timeout' | 'rate_limited' | 'auth_failed' | 'provider_error' | 'empty'`（该类型的唯一出处，Task 4 从这里 import）
 
 - [ ] **Step 1: 写失败的测试（provider 工厂）**
 
@@ -302,7 +302,7 @@ git commit -m "feat(providers): provider 注册表、AI SDK 流式收口与预�
 **Interfaces:**
 - Consumes: Task 3 的 `streamModel(model, messages, { signal })`；Task 2 的 repo 函数
 - Produces:
-  - `arena/types.ts`: `ArenaId`、`ContestantStatus`、`ContestantInput`、`Submission`、`Verdict`、`JudgeContext`、`Arena` —— 逐字照 spec §4.1 的签名。**本 task 必须先定义它们**，后续所有 arena 实现与 runner 都依赖这组类型。
+  - `arena/types.ts`: `ArenaId`、`ContestantInput`、`Submission`、`Verdict`、`JudgeContext`、`Arena` —— 逐字照 spec §4.1 的签名。**`ContestantStatus` 不在这里定义**，从 `../providers/stream` import 后 re-export。**本 task 必须先定义这些类型**，后续所有 arena 实现与 runner 都依赖它们。
   - `events.ts`: `BattlePhase = 'pending'|'running'|'judging'|'scoring'|'completed'|'cancelled'|'failed'`，以及 `BattleEvent` 联合类型（`phase.changed` / `contestant.started` / `contestant.delta` / `contestant.done` / `contestant.failed` / `judge.delta` / `judge.done` / `sandbox.result` / `vote.tally` / `battle.completed` / `battle.failed`）
   - `registry.ts`: `registerBattle(id, handle): void`、`getBattleHandle(id): BattleHandle | undefined`，`BattleHandle = { emit(e: BattleEvent): void; subscribe(fn: (e: BattleEvent) => void): () => void; cancel(): void }`
   - `runner.ts`: `startBattle(input: StartBattleInput): Promise<string>`（battleId，异步跑不阻塞返回）、`cancelBattle(id: string): boolean`
