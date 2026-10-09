@@ -28,6 +28,11 @@
 
 两处**有意保留手写**，理由如下，不得改为引依赖：① SQLite 用 raw SQL + 薄封装——5 张表、无迁移需求，ORM 在此是净负担；② 限流约 10 行纯函数——引依赖不划算。
 
+- **AI SDK v7 两个实测陷阱**（Task 3 读 `node_modules` 类型定义 + 离线假服务验证得出，后续所有 task 都适用）：
+  1. `@ai-sdk/openai` 的 `createOpenAI(...)` 默认走 **Responses API**。接 OpenAI 兼容第三方端点必须显式 `.chat(modelId)`，否则请求打到 `/responses` 上 400。
+  2. 取流式 delta 必须遍历 **`result.stream`（fullStream）**，不能用 `result.textStream` —— 后者在失败时抛 `NoOutputGeneratedError`，丢掉 `statusCode`，导致 401 全被误映射成 `provider_error`。
+  - token 用量取 `await result.usage`（v7 已是 `PromiseLike`）；`totalUsage` 已标 `@deprecated`；字段是 `inputTokens` / `outputTokens`（不再是 `promptTokens` / `completionTokens`）。
+  - 默认 `maxRetries: 0`：观战产品要快速诚实的失败态，SDK 默认重试 2 次会让限流的选手静默卡住数秒。
 - Next.js `>=16.3.6`；**禁用** `next/og` 与 Image Optimization（2026 年多个 critical RCE 涉及这两处）。
 - Node `>=24.14`。所有 Route Handler **必须**显式 `export const runtime = 'nodejs'`（`node:sqlite` 不能在 Edge/middleware 用）。
 - Next 16 动态路由 `ctx.params` 是 `Promise`，**必须** `await`。
