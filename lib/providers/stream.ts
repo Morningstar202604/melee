@@ -20,6 +20,7 @@ export interface StreamOptions {
   providerLabel?: string
   maxOutputTokens?: number
   maxRetries?: number
+  system?: string
 }
 
 const DETAIL_LIMIT = 300
@@ -93,6 +94,7 @@ export async function* streamModel(
     const result = streamText({
       model,
       messages,
+      system: opts.system,
       abortSignal: opts.signal,
       maxOutputTokens: opts.maxOutputTokens,
       maxRetries: opts.maxRetries ?? 0,
