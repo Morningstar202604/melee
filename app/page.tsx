@@ -1,14 +1,33 @@
+import type { Metadata } from "next";
+import { ArenaSetup } from "@/components/arena/arena-setup";
+import { CODE_TOPICS, SOFT_TOPICS } from "@/lib/arena/topics";
+import { PROVIDERS } from "@/lib/providers/registry";
+
+export const metadata: Metadata = {
+  title: "melee · AI 大乱斗",
+  description: "选多个大模型 + 一个题目，实时看它们同场竞技",
+};
+
 export default function Home() {
   return (
-    <div className="flex flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex w-full max-w-3xl flex-col items-center gap-6 px-8 py-32 text-center">
-        <h1 className="text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">
-          melee · AI 大乱斗
-        </h1>
-        <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-          脚手架就绪。擂台首页将在后续任务实现。
-        </p>
+    <div className="min-h-full bg-zinc-100 dark:bg-zinc-950">
+      <header className="border-b-2 border-amber-500/70 bg-white dark:bg-zinc-900">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-baseline gap-x-4 gap-y-1 px-5 py-5">
+          <h1 className="text-2xl font-black tracking-tight text-zinc-900 dark:text-zinc-50">
+            melee · AI 大乱斗
+          </h1>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            选赛道 · 定题目 · 点名将 → 开打
+          </p>
+        </div>
+      </header>
+      <main className="mx-auto max-w-5xl px-5 py-6">
+        <ArenaSetup
+          providers={PROVIDERS}
+          softTopics={SOFT_TOPICS}
+          codeTopics={CODE_TOPICS}
+        />
       </main>
     </div>
-  )
+  );
 }
