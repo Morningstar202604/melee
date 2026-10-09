@@ -1,0 +1,70 @@
+import { getBattleHandle } from '../../../../../lib/battle/registry.ts'
+import { getSnapshot, recordVote } from '../../../../../lib/db/repo.ts'
+import { redact } from '../../../../../lib/log/redact.ts'
+
+export const runtime = 'nodejs'
+
+interface VoteBody {
+  contestantId?: unknown
+  voterKey?: unknown
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function tallyFromVotes(votes: Array<{ contestant_id: string }>): Record<string, number> {
+  const tally: Record<string, number> = {}
+  for (const vote of votes) {
+    tally[vote.contestant_id] = (tally[vote.contestant_id] ?? 0) + 1
+  }
+  return tally
+}
+
+export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params
+
+  let body: VoteBody
+  try {
+    body = (await request.json()) as VoteBody
+  } catch {
+    return Response.json({ error: '请求体不是合法 JSON' }, { status: 400 })
+  }
+
+  const contestantId = asString(body.contestantId)
+  const voterKey = asString(body.voterKey)
+  if (!contestantId || !voterKey) {
+    return Response.json({ error: 'contestantId 与 voterKey 必填' }, { status: 400 })
+  }
+
+  const snapshot = getSnapshot(id)
+  if (!snapshot) {
+    return Response.json({ error: '对战不存在' }, { status: 404 })
+  }
+  const contestant = snapshot.contestants.find((c) => c.id === contestantId)
+  if (!contestant) {
+    return Response.json({ error: '选手不存在于该对战' }, { status: 404 })
+  }
+
+  try {
+    await recordVote({
+      battleId: id,
+      contestantId,
+      voterKey,
+      positionIndex: contestant.position_index,
+    })
+  } catch (error) {
+    const message = redact(error instanceof Error ? error.message : String(error))
+    if (message.includes('UNIQUE constraint failed')) {
+      return Response.json({ error: '同一场对战每人只能投一票' }, { status: 409 })
+    }
+    return Response.json({ error: `投票落库失败：${message}` }, { status: 500 })
+  }
+
+  const handle = getBattleHandle(id)
+  if (handle) {
+    const latest = getSnapshot(id)
+    handle.emit({ type: 'vote.tally', tally: tallyFromVotes(latest?.votes ?? []) })
+  }
+  return Response.json({ ok: true })
+}
