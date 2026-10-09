@@ -31,7 +31,7 @@
 - Next.js `>=16.3.6`；**禁用** `next/og` 与 Image Optimization（2026 年多个 critical RCE 涉及这两处）。
 - Node `>=24.14`。所有 Route Handler **必须**显式 `export const runtime = 'nodejs'`（`node:sqlite` 不能在 Edge/middleware 用）。
 - Next 16 动态路由 `ctx.params` 是 `Promise`，**必须** `await`。
-- `lib/` 内部一律**相对路径**导入且不带扩展名；**禁止**在 `lib/` 里使用 `@/` 别名（否则 `node --test` 无法解析）。`app/` 与 `components/` 可以用 `@/`。
+- `lib/` 内部一律**相对路径**导入且**必须带 `.ts` 扩展名**；**禁止**在 `lib/` 里使用 `@/` 别名。Node 的原生类型剥离走 ESM 解析，无扩展名的相对导入会报 `ERR_MODULE_NOT_FOUND`（Task 2 实测确认）。`tsconfig.json` 已开 `allowImportingTsExtensions` 配合 Next 的 noEmit。`app/` 与 `components/` 照常用 `@/`。
 - 沙箱四条硬约束（对应真实逃逸事故，不许省）：① 禁止宿主进程内 `loadPyodide()`；② 每提交新建 Worker、结束即 `terminate()`；③ Worker 内零凭证、零 DB 连接、零宿主回调；④ 禁用 Python 侧 `js` 模块与 `pyodide.globals` 互操作。
 - 沙箱参数：`SANDBOX_BACKEND` 默认 `pyodide`；Pyodide 时间上限 **15s**；Judge0 为 `wall time 5s` / `memory 256MB` / `max_processes 32` / `max_file_size 1MB` / 禁网。stdout 采集上限 64KB。
 - 各参赛模型超时 **120s**（可配）。`run` 入口限流 **每 IP 每分钟 5 场**。
