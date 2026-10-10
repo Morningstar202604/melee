@@ -77,7 +77,7 @@ function scheduleRecycle(battleId: string): void {
   const timer = setTimeout(() => {
     unregisterBattle(battleId)
   }, RECYCLE_GRACE_MS)
-  ;(timer as unknown as { unref?: () => void }).unref?.()
+  timer.unref()
 }
 
 export function cancelBattle(id: string): boolean {
@@ -263,6 +263,7 @@ async function runContestant(contestant: ContestantInput, context: RunContext): 
     usage,
     latencyMs,
     status: 'ok',
+    dbContestantId: contestantId,
   }
   handle.emit({ type: 'contestant.done', slot: contestant.slot, usage, latencyMs })
   await persist(() =>

@@ -19,6 +19,7 @@ export interface Submission {
   latencyMs: number
   status: ContestantStatus
   errorMessage?: string
+  dbContestantId?: string
 }
 
 export interface Verdict {

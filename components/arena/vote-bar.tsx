@@ -185,7 +185,7 @@ export function VoteBar({ battleId, contestants, tally, disabled }: VoteBarProps
               <button
                 type="button"
                 onClick={() => handleVote(contestant.contestantId)}
-                disabled={disabled || busy !== null}
+                disabled={disabled || busy !== null || !contestant.contestantId}
                 style={{
                   padding: `${spacing.xs} ${spacing.sm}`,
                   border: `1px solid ${v('border-strong')}`,
@@ -194,8 +194,8 @@ export function VoteBar({ battleId, contestants, tally, disabled }: VoteBarProps
                   color: v('ink-muted'),
                   fontSize: typeScale.micro,
                   fontWeight: fontWeight.bold,
-                  cursor: disabled || busy !== null ? 'not-allowed' : 'pointer',
-                  opacity: disabled || busy !== null ? 0.5 : 1,
+                  cursor: disabled || busy !== null || !contestant.contestantId ? 'not-allowed' : 'pointer',
+                  opacity: disabled || busy !== null || !contestant.contestantId ? 0.5 : 1,
                 }}
               >
                 {busy === contestant.contestantId ? '投票中…' : '投票'}

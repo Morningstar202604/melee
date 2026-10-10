@@ -54,11 +54,13 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       positionIndex: contestant.position_index,
     })
   } catch (error) {
-    const message = redact(error instanceof Error ? error.message : String(error))
-    if (message.includes('UNIQUE constraint failed')) {
+    const raw = error instanceof Error ? error.message : String(error)
+    const message = redact(raw)
+    if (/UNIQUE constraint failed/i.test(raw)) {
       return Response.json({ error: '同一场对战每人只能投一票' }, { status: 409 })
     }
-    return Response.json({ error: `投票落库失败：${message}` }, { status: 500 })
+    console.error(`投票落库失败 (battle=${id}): ${message}`)
+    return Response.json({ error: '投票落库失败，请稍后重试' }, { status: 500 })
   }
 
   const handle = getBattleHandle(id)

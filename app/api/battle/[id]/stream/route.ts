@@ -10,14 +10,14 @@ export const runtime = 'nodejs'
 const HEARTBEAT_MS = 15000
 const SETTLE_GRACE_MS = 60000
 
-const HEARTBEAT_COMMENT = ':ping'
+const HEARTBEAT_COMMENT = ':ping\n'
 
 function formatEvent(id: number, data: string): string {
   return `id: ${id}\ndata: ${data}\n\n`
 }
 
-function unref(timer: ReturnType<typeof setTimeout>): void {
-  ;(timer as unknown as { unref?: () => void }).unref?.()
+function unref(timer: NodeJS.Timeout): void {
+  timer.unref()
 }
 
 export async function GET(
@@ -100,6 +100,7 @@ export async function GET(
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
     },
   })
 }

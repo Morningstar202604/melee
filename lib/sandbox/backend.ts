@@ -43,11 +43,6 @@ export async function getBackend(): Promise<SandboxBackend> {
     const { pyodideBackend } = await import('./pyodide-worker.ts')
     return pyodideBackend
   }
-  const specifier = './judge0' + '.ts'
-  const loaded = await import(specifier).catch(() => null)
-  const backend = (loaded as { judge0Backend?: SandboxBackend } | null)?.judge0Backend
-  if (!backend) {
-    throw new Error('judge0 backend 尚未实现（Task 10）')
-  }
-  return backend
+  const { judge0Backend } = await import('./judge0.ts')
+  return judge0Backend
 }

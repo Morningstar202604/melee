@@ -277,7 +277,8 @@ export async function runJudge(opts: JudgeOptions): Promise<JudgeOutcome> {
       unavailable: false,
       raw: raws.join('\n'),
     }
-  } catch {
+  } catch (error) {
+    console.error(`裁判阶段失败: ${error instanceof Error ? error.message : String(error)}`)
     return { verdicts: [], roundsAgreed: false, unavailable: true }
   }
 }

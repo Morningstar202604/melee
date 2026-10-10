@@ -38,6 +38,7 @@ function buildSummary(
   arena: ArenaId,
   result: BattleResult,
   crashes: CrashMoment[],
+  providerLabels: Record<string, string>,
 ): string {
   const outcomes = result.contestants
   const allFailed = outcomes.length > 0 && outcomes.every((o) => o.status !== 'ok')
@@ -55,12 +56,16 @@ function buildSummary(
     const allTie = ranked.every((o) => verdictPassed(result, o.slot) === verdictPassed(result, ranked[0].slot))
     if (allFailed) return '全员翻车，本场无人生还'
     if (allTie && failCount === 0) return `全员并列通过 ${verdictPassed(result, winner.slot)} 题，势均力敌`
-    return `${winner.providerId} 以 ${verdictPassed(result, winner.slot)} 题通关${noCrash ? '，本场无人翻车' : `，${failCount} 人翻车`}`
+    const winnerLabel = providerLabelOf(providerLabels, winner.providerId, winner.providerId)
+    return `${winnerLabel} 以 ${verdictPassed(result, winner.slot)} 题通关${noCrash ? '，本场无人翻车' : `，${failCount} 人翻车`}`
   }
 
   if (allFailed) return '全员翻车，本场无人生还'
   const votedOutcomes = outcomes.filter((o) => o.status === 'ok')
-  if (votedOutcomes.length === 1) return `${providerLabelOf({}, votedOutcomes[0].providerId, votedOutcomes[0].providerId)} 技压全场，=${timeoutCount} 人超时`
+  if (votedOutcomes.length === 1) {
+    const sole = providerLabelOf(providerLabels, votedOutcomes[0].providerId, votedOutcomes[0].providerId)
+    return `${sole} 技压全场，${timeoutCount} 人超时`
+  }
   if (noCrash) return '全场健在，一场龙争虎斗'
   if (timeoutCount > 0) return `${failCount} 人翻车，${timeoutCount} 人超时，场面惨烈`
   return `${failCount} 人翻车，${outcomes.length - failCount} 人站稳`
@@ -171,7 +176,7 @@ function Banner({ tone, children }: { tone: 'degraded' | 'failure'; children: Re
 
 export function Settlement({ arena, topic, result, snapshot, providerLabels }: SettlementProps) {
   const crashes = collectCrashes(result, providerLabels)
-  const summary = buildSummary(arena, result, crashes)
+  const summary = buildSummary(arena, result, crashes, providerLabels)
   const hasDegradedJudge = result.judgeAvailable === false && arena === 'soft'
   const failedContestants = result.contestants.filter((o) => o.status !== 'ok')
   const contestsForVote = result.contestants.map((o) => ({
@@ -483,9 +488,11 @@ function HardcodePanel({
         )
       })}
       <p style={{ margin: 0, fontSize: typeScale.micro, color: v('ink-faint') }}>
-        隔离级别：{snapshot.sandboxResults[0]?.isolation_level === 'wasm-worker'
-          ? 'WASM 语言级沙箱，非 OS 级隔离'
-          : snapshot.sandboxResults[0]?.isolation_level ?? '未知'}
+        隔离级别：{new Set(snapshot.sandboxResults.map((r) => r.isolation_level)).size === 1
+          ? (snapshot.sandboxResults[0]?.isolation_level === 'wasm-worker'
+            ? 'WASM 语言级沙箱，非 OS 级隔离'
+            : snapshot.sandboxResults[0]?.isolation_level ?? '未知')
+          : '混合'}
       </p>
     </div>
   )

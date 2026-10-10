@@ -25,8 +25,6 @@ interface Judge0SubmissionResult {
   message?: string | null
 }
 
-type JudgmentStatus = 'ok' | 'error' | 'timeout'
-
 function baseUrl(): string {
   const raw = (process.env.JUDGE0_BASE_URL ?? '').trim().replace(/\/+$/, '')
   if (!raw) throw new Error('judge0 后端需要 JUDGE0_BASE_URL 环境变量')
@@ -44,8 +42,7 @@ function authHeaders(): Record<string, string> {
   return { [key]: value }
 }
 
-async function submitToJudge0(code: string, tests: TestCase[]): Promise<string> {
-  const combinedInput = tests.map((t) => t.input).join('')
+async function submitToJudge0(code: string, stdin: string): Promise<string> {
   const response = await fetch(`${baseUrl()}/submissions?base64_encoded=false&wait=false`, {
     method: 'POST',
     headers: {
@@ -55,7 +52,7 @@ async function submitToJudge0(code: string, tests: TestCase[]): Promise<string> 
     body: JSON.stringify({
       source_code: code,
       language_id: LANGUAGE_ID_PYTHON3,
-      stdin: combinedInput,
+      stdin,
       wall_time_limit: 5,
       memory_limit: 256000,
       max_processes_and_or_threads: 32,
@@ -71,7 +68,7 @@ async function submitToJudge0(code: string, tests: TestCase[]): Promise<string> 
   return payload.token
 }
 
-async function pollSubmission(token: string, total: number): Promise<SandboxResult> {
+async function pollSubmission(token: string): Promise<Judge0SubmissionResult> {
   for (let i = 0; i < MAX_POLLS; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
     const response = await fetch(`${baseUrl()}/submissions/${token}?base64_encoded=false&fields=status,stdout,stderr,compile_output,time,memory,exit_code,exit_signal,message`, {
@@ -83,35 +80,14 @@ async function pollSubmission(token: string, total: number): Promise<SandboxResu
     const result = (await response.json()) as Judge0SubmissionResult
     const statusId = result.status?.id ?? 0
     if (statusId <= 2) continue
-
-    const timeMs = result.time ? Math.round(parseFloat(result.time) * 1000) : 0
-    const memoryKb = result.memory ? Math.round(result.memory) : 0
-    const stdout = result.stdout ?? ''
-    const stderr = result.stderr ?? ''
-    const compileOutput = result.compile_output ?? ''
-
-    if (statusId === 3) {
-      return { status: 'ok', passed: total, total, timeMs, stdoutTail: stdout.slice(-2000) }
-    }
-    if (statusId === 4) {
-      return { status: 'error', passed: 0, total, timeMs, stdoutTail: stdout.slice(-2000), errorMessage: '答案错误' }
-    }
-    if (statusId === 5 || statusId === 6) {
-      return { status: 'timeout', passed: 0, total, timeMs, stdoutTail: stdout.slice(-2000), errorMessage: '执行超时' }
-    }
-    if (statusId === 7) {
-      return { status: 'error', passed: 0, total, timeMs, stdoutTail: compileOutput.slice(-2000), errorMessage: '编译错误' }
-    }
-    return {
-      status: 'error',
-      passed: 0,
-      total,
-      timeMs,
-      stdoutTail: stderr.slice(-2000) || (result.message ?? '').slice(-2000),
-      errorMessage: result.status?.description ?? `Judge0 异常状态 ${statusId}`,
-    }
+    return result
   }
-  return { status: 'timeout', passed: 0, total, timeMs: 0, stdoutTail: '', errorMessage: 'Judge0 轮询超时' }
+  return { status: { id: 5, description: '轮询超时' } }
+}
+
+function compareOutputs(actual: string, expected: string): boolean {
+  const normalize = (s: string) => s.replace(/\r\n/g, '\n').trim()
+  return normalize(actual) === normalize(expected)
 }
 
 export const judge0Backend: SandboxBackend = {
@@ -119,10 +95,88 @@ export const judge0Backend: SandboxBackend = {
   isolationLevel: 'os-container',
   async run(input) {
     const total = input.tests.length
+    const combinedInput = input.tests.map((t) => t.input).join('')
+    const combinedExpected = input.tests.map((t) => t.expected).join('\n')
+
     try {
-      const token = await submitToJudge0(input.code, input.tests)
-      const result = await pollSubmission(token, total)
-      return { ...result, timeMs: result.timeMs ?? 0 }
+      const token = await submitToJudge0(input.code, combinedInput)
+      const result = await pollSubmission(token)
+
+      const timeMs = result.time ? Math.round(parseFloat(result.time) * 1000) : 0
+      const stdout = result.stdout ?? ''
+      const stderr = result.stderr ?? ''
+      const compileOutput = result.compile_output ?? ''
+      const statusId = result.status?.id ?? 0
+
+      if (statusId === 11) {
+        return {
+          status: 'error',
+          passed: 0,
+          total,
+          timeMs,
+          stdoutTail: compileOutput.slice(-2000),
+          errorMessage: '编译错误',
+        }
+      }
+
+      if (statusId === 5 || statusId === 6 || statusId === 7 || statusId === 8 || statusId === 9 || statusId === 10) {
+        return {
+          status: 'timeout',
+          passed: 0,
+          total,
+          timeMs,
+          stdoutTail: stdout.slice(-2000),
+          errorMessage: result.status?.description ?? '执行超时',
+        }
+      }
+
+      if (statusId >= 4 && statusId <= 13) {
+        const errorMessage =
+          statusId === 4 ? '答案错误' :
+          statusId === 12 ? '内存超限' :
+          result.status?.description ?? `Judge0 异常状态 ${statusId}`
+        return {
+          status: 'error',
+          passed: 0,
+          total,
+          timeMs,
+          stdoutTail: stderr.slice(-2000) || stdout.slice(-2000),
+          errorMessage,
+        }
+      }
+
+      if (statusId === 3) {
+        const combinedActual = stdout.trimEnd()
+        const actualLines = combinedActual.split('\n').filter((l) => l.length > 0)
+        const expectedLines = combinedExpected.split('\n').filter((l) => l.length > 0)
+        let passed = 0
+        const maxLen = Math.max(actualLines.length, expectedLines.length)
+        for (let i = 0; i < maxLen; i += 1) {
+          if (compareOutputs(actualLines[i] ?? '', expectedLines[i] ?? '')) {
+            passed += 1
+          }
+        }
+        if (total > 0) {
+          const ratioPassed = Math.round((passed / Math.max(expectedLines.length, 1)) * total)
+          passed = Math.min(ratioPassed, total)
+        }
+        return {
+          status: 'ok',
+          passed,
+          total,
+          timeMs,
+          stdoutTail: stdout.slice(-2000),
+        }
+      }
+
+      return {
+        status: 'error',
+        passed: 0,
+        total,
+        timeMs,
+        stdoutTail: stderr.slice(-2000),
+        errorMessage: result.status?.description ?? `Judge0 未知状态 ${statusId}`,
+      }
     } catch (error) {
       return {
         status: 'error',

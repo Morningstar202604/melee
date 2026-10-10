@@ -1,15 +1,9 @@
 import type { Arena, JudgeContext, Submission, Verdict } from './types.ts'
-import {
-  getCodeTopic,
-  codeTimeLimitMs,
-  type CodeTopic,
-  type CodeTestCase,
-} from './topics.ts'
+import { getCodeTopic, codeTimeLimitMs } from './topics.ts'
 import { getBackend } from '../sandbox/backend.ts'
 import type { SandboxBackend } from '../sandbox/backend.ts'
 import {
   recordSandboxResult,
-  updateContestantResult,
   type NewSandboxResult,
 } from '../db/repo.ts'
 
@@ -26,9 +20,14 @@ export function extractCode(text: string): string | null {
 }
 
 interface HardJudgeOptions {
-  topic: string
-  tests: CodeTestCase[]
+  tests: CodeTestCaseOutput[]
   sandbox: SandboxBackend
+  timeLimitMs: number
+}
+
+interface CodeTestCaseOutput {
+  input: string
+  expected: string
 }
 
 export async function judgeCodeSubmissions(
@@ -48,21 +47,17 @@ export async function judgeCodeSubmissions(
       continue
     }
 
-    const limit = codeTimeLimitMs({
-      id: options.topic,
-      title: options.topic,
-      prompt: options.topic,
-      tests: options.tests,
-    })
+    const limit = options.timeLimitMs
     const startedAt = Date.now()
     let backend = options.sandbox.id
     let isolationLevel = options.sandbox.isolationLevel
     let degraded = 0
+    const contestantId = sub.dbContestantId ?? `slot-${sub.contestant.slot}`
 
     try {
       const result = await options.sandbox.run({
         code: sub.code,
-        tests: options.tests,
+        tests: options.tests.map((t) => ({ input: t.input, expected: t.expected })),
         timeLimitMs: limit,
       })
 
@@ -71,20 +66,22 @@ export async function judgeCodeSubmissions(
       const total = status === 'ok' ? result.total : options.tests.length
       const passRate = total > 0 ? Math.round((passed / total) * 100) / 100 : 0
 
+      const newResult: NewSandboxResult = {
+        contestantId,
+        backend,
+        isolationLevel,
+        language: 'python',
+        status: status === 'ok' ? 'ok' : status === 'timeout' ? 'timeout' : 'error',
+        passed,
+        total,
+        timeMs: result.timeMs,
+        memoryKb: null,
+        stdoutTail: result.stdoutTail,
+        degraded,
+      }
+      await persistResult(sub.contestant.slot, newResult)
+
       if (status === 'timeout') {
-        await persistResult(sub.contestant.slot, {
-          contestantId: '',
-          backend,
-          isolationLevel,
-          language: 'python',
-          status: 'timeout',
-          passed,
-          total,
-          timeMs: result.timeMs,
-          memoryKb: null,
-          stdoutTail: result.stdoutTail,
-          degraded,
-        })
         results.push({
           contestantSlot: sub.contestant.slot,
           scores: { pass_rate: passRate },
@@ -93,19 +90,6 @@ export async function judgeCodeSubmissions(
           rationale: `执行超时（>${limit}ms），沙箱已强制终止`,
         })
       } else if (status === 'error') {
-        await persistResult(sub.contestant.slot, {
-          contestantId: '',
-          backend,
-          isolationLevel,
-          language: 'python',
-          status: 'error',
-          passed,
-          total,
-          timeMs: result.timeMs,
-          memoryKb: null,
-          stdoutTail: result.stdoutTail,
-          degraded,
-        })
         results.push({
           contestantSlot: sub.contestant.slot,
           scores: { pass_rate: passRate },
@@ -114,19 +98,6 @@ export async function judgeCodeSubmissions(
           rationale: result.errorMessage ?? '代码执行出错',
         })
       } else {
-        await persistResult(sub.contestant.slot, {
-          contestantId: '',
-          backend,
-          isolationLevel,
-          language: 'python',
-          status: 'ok',
-          passed,
-          total,
-          timeMs: result.timeMs,
-          memoryKb: null,
-          stdoutTail: result.stdoutTail,
-          degraded,
-        })
         results.push({
           contestantSlot: sub.contestant.slot,
           scores: { pass_rate: passRate },
@@ -137,7 +108,7 @@ export async function judgeCodeSubmissions(
       }
     } catch {
       await persistResult(sub.contestant.slot, {
-        contestantId: '',
+        contestantId,
         backend: 'none',
         isolationLevel: 'none',
         language: 'python',
@@ -169,7 +140,7 @@ async function persistResult(slot: number, result: NewSandboxResult): Promise<vo
   }
 }
 
-export function getHardCodeTopic(topicId: string): CodeTopic | undefined {
+export function getHardCodeTopic(topicId: string) {
   return getCodeTopic(topicId)
 }
 
@@ -185,6 +156,17 @@ export function createHardCodeArena(backend?: SandboxBackend): Arena {
     }),
     extractCode,
     judge: async (subs: Submission[], ctx: JudgeContext): Promise<Verdict[]> => {
+      const topic = getCodeTopic(ctx.topic)
+      if (!topic) {
+        return subs.map((sub) => ({
+          contestantSlot: sub.contestant.slot,
+          scores: { pass_rate: 0 },
+          passed: 0,
+          total: 0,
+          rationale: '题目不存在',
+        }))
+      }
+
       let sandbox: SandboxBackend
       try {
         sandbox = backend ?? (await getBackend())
@@ -193,14 +175,16 @@ export function createHardCodeArena(backend?: SandboxBackend): Arena {
           contestantSlot: sub.contestant.slot,
           scores: { pass_rate: 0 },
           passed: 0,
-          total: 0,
+          total: topic.tests.length,
           rationale: '沙箱后端不可用，本次未真实执行（降级）',
         }))
       }
+
+      const limit = codeTimeLimitMs(topic)
       return judgeCodeSubmissions(subs, {
-        topic: ctx.topic,
-        tests: [],
+        tests: topic.tests.map((t) => ({ input: t.input, expected: t.expected })),
         sandbox,
+        timeLimitMs: limit,
       })
     },
   }

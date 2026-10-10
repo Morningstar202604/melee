@@ -90,8 +90,11 @@ function brandOf(providerId: string) {
   return BRAND_BY_PROVIDER[providerId] ?? FALLBACK_BRAND
 }
 
+let ROW_SEQ = 0
+
 function makeRowId() {
-  return `r${Math.random().toString(36).slice(2, 10)}`
+  ROW_SEQ += 1
+  return `r${ROW_SEQ.toString(36)}`
 }
 
 function blankRow(providerId: string): ContestantRow {
@@ -162,7 +165,13 @@ function readKeys(): Record<string, string> {
 }
 
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  if (error instanceof Error) {
+    const redacted = error.message
+      .replace(/https?:\/\/[^\s]+/gi, '[URL]')
+      .replace(/[A-Za-z0-9_-]{20,}/gi, (m) => (m.length > 32 ? '[REDACTED]' : m))
+    return redacted.length > 200 ? `${redacted.slice(0, 200)}…` : redacted
+  }
+  return '未知错误'
 }
 
 export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProps) {
