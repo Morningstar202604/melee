@@ -65,11 +65,37 @@ interface RunContext {
   timeoutMs: number
 }
 
-export function startBattle(input: StartBattleInput, deps: BattleDeps): string {
+export async function startBattle(input: StartBattleInput, deps: BattleDeps): Promise<string> {
   const battleId = randomUUID()
   const handle = createBattleHandle(battleId)
   registerBattle(battleId, handle)
-  void runBattle(battleId, input, deps, handle).finally(() => scheduleRecycle(battleId))
+
+  await createBattle({
+    id: battleId,
+    arena: input.arena,
+    topic: input.topic,
+    createdAt: (deps.now ?? Date.now)(),
+  })
+
+  const contestantIds = new Map<number, string>()
+  for (const contestant of input.contestants) {
+    const contestantId = await insertContestant({
+      battleId,
+      slot: contestant.slot,
+      providerId: contestant.providerId,
+      modelId: contestant.modelId,
+      positionIndex: contestant.slot,
+      status: 'running',
+    })
+    contestantIds.set(contestant.slot, contestantId)
+  }
+
+  const timer = setTimeout(() => {
+    void runBattle(battleId, input, deps, handle, contestantIds)
+      .finally(() => scheduleRecycle(battleId))
+  }, 0)
+  timer.unref()
+
   return battleId
 }
 
@@ -92,30 +118,11 @@ async function runBattle(
   input: StartBattleInput,
   deps: BattleDeps,
   handle: BattleHandle,
+  contestantIds: Map<number, string>,
 ): Promise<void> {
-  const now = deps.now ?? Date.now
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const now = deps.now ?? Date.now
   try {
-    await createBattle({
-      id: battleId,
-      arena: input.arena,
-      topic: input.topic,
-      createdAt: now(),
-    })
-
-    const contestantIds = new Map<number, string>()
-    for (const contestant of input.contestants) {
-      const contestantId = await insertContestant({
-        battleId,
-        slot: contestant.slot,
-        providerId: contestant.providerId,
-        modelId: contestant.modelId,
-        positionIndex: contestant.slot,
-        status: 'running',
-      })
-      contestantIds.set(contestant.slot, contestantId)
-    }
-
     const prompt = deps.arena.buildPrompt(input.topic)
     const context: RunContext = { deps, handle, battleId, prompt, contestantIds, timeoutMs }
 

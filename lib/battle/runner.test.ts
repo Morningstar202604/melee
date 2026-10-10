@@ -192,7 +192,7 @@ function isTerminal(events: BattleEvent[]): boolean {
 }
 
 async function playBattle(input: StartBattleInput, deps: BattleDeps): Promise<Played> {
-  const battleId = startBattle(input, deps)
+  const battleId = await startBattle(input, deps)
   const handle = getBattleHandle(battleId)
   assert.ok(handle, 'startBattle 之后必须能按 id 取到 handle')
 
@@ -408,7 +408,7 @@ test('cancelBattle → phase 变 cancelled，在飞的流被 abort', async () =>
     ),
     timeoutMs: 30000,
   }
-  const battleId = startBattle(
+  const battleId = await startBattle(
     { arena: 'soft', topic: '取消', contestants: twoContestants() },
     deps,
   )
@@ -463,7 +463,7 @@ test('事件 id 从 0 单调递增且不重复（Last-Event-ID 依赖它）', as
     ),
     judgeContext: JUDGE_CONTEXT,
   }
-  const battleId = startBattle(
+  const battleId = await startBattle(
     { arena: 'soft', topic: '事件 id', contestants: twoContestants() },
     deps,
   )

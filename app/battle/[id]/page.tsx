@@ -48,7 +48,9 @@ function MissingBattle({ id }: { id: string }) {
   )
 }
 
-export default async function BattlePage({ params }: PageProps<'/battle/[id]'>) {
+type PageParams = { params: Promise<{ id: string }> }
+
+export default async function BattlePage({ params }: PageParams) {
   const { id } = await params
   const snapshot = getSnapshot(id)
 

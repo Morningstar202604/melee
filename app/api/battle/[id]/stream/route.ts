@@ -4,6 +4,7 @@ import {
   unregisterBattle,
   type BattleEventListener,
 } from '../../../../../lib/battle/registry.ts'
+import type { BattleEvent } from '../../../../../lib/battle/events.ts'
 
 export const runtime = 'nodejs'
 
@@ -73,18 +74,40 @@ export async function GET(
       const lastIdHeader = request.headers.get('last-event-id')
       const parsedLastId = lastIdHeader === null ? -1 : Number(lastIdHeader)
       const lastId = Number.isFinite(parsedLastId) ? Math.trunc(parsedLastId) : -1
-      const backlog = handle.eventsSince(lastId)
-      let nextId = handle.nextId() - backlog.length
-      for (const event of backlog) {
-        writeEnvelope(event, nextId)
-        nextId += 1
-      }
-      if (closed) return
+
+      let replayDone = false
+      let closedDuringReplay = false
+      const pendingEvents: Array<[BattleEvent, number]> = []
 
       const listener: BattleEventListener = (event, eventId) => {
+        if (!replayDone) {
+          pendingEvents.push([event, eventId])
+          return
+        }
+        if (eventId <= lastId) return
         writeEnvelope(event, eventId)
       }
       unsubscribe = handle.subscribe(listener)
+
+      const backlog = handle.eventsSince(lastId)
+      let nextId = handle.nextId() - backlog.length
+      for (const event of backlog) {
+        if (closed) {
+          closedDuringReplay = true
+          break
+        }
+        writeEnvelope(event, nextId)
+        nextId += 1
+      }
+      replayDone = true
+
+      for (const [event, eventId] of pendingEvents) {
+        if (closedDuringReplay) break
+        if (eventId <= lastId) continue
+        writeEnvelope(event, eventId)
+      }
+
+      if (closed) return
 
       heartbeat = setInterval(() => {
         if (closed) return

@@ -106,6 +106,6 @@ export async function POST(request: Request) {
   }
 
   const input: StartBattleInput = { arena: arenaId, topic, contestants: parsed.contestants }
-  const battleId = startBattle(input, deps)
+  const battleId = await startBattle(input, deps)
   return Response.json({ battleId }, { status: 202 })
 }
