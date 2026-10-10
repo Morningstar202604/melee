@@ -550,7 +550,7 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
             </pre>
             {arena === 'hard-code' ? (
               <p className="mt-3 text-xs text-amber-600 dark:text-amber-400">
-                硬战场的沙箱判定后端尚未接入，当前开打会被服务端明确拒绝。
+                硬战场需要至少一个可用模型才能开打；沙箱默认走 Pyodide WASM，无需 Docker。
               </p>
             ) : null}
           </div>

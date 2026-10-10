@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { closesStream } from '@/lib/battle/registry'
 import { parseBattleEvent } from '@/lib/battle/events'
-import type { BattleResult } from '@/lib/battle/events'
 import type { ArenaId } from '@/lib/arena/types'
 import type { Snapshot } from '@/lib/db/repo'
 import {
@@ -15,6 +14,7 @@ import {
 } from '@/lib/client/battle-store'
 import { ContestantCard } from './contestant-card'
 import { StatusBar } from './status-bar'
+import { Settlement } from './settlement'
 import { arenaPalette, fontWeight, layout, radius, spacing, themeCss, typeScale, v } from './theme'
 
 const MAX_RECONNECT_FAILURES = 3
@@ -32,42 +32,6 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function RawSettlement({ result }: { result: BattleResult }) {
-  return (
-    <section style={{ maxWidth: layout.pageMaxWidth, margin: '0 auto', padding: `0 ${spacing.md} ${spacing.xxl}` }}>
-      <h2
-        style={{
-          fontSize: typeScale.title,
-          fontWeight: fontWeight.black,
-          color: v('ink'),
-        }}
-      >
-        终局载荷 · battle.completed
-      </h2>
-      <p style={{ marginTop: spacing.xs, fontSize: typeScale.label, color: v('ink-muted') }}>
-        结构化战报接入前，这里先展示服务端下发的原始终局内容；本场是否真的执行过，以下字段就是唯一依据。
-      </p>
-      <pre
-        style={{
-          marginTop: spacing.sm,
-          maxHeight: '24rem',
-          overflow: 'auto',
-          padding: spacing.md,
-          border: `1px solid ${v('border')}`,
-          borderRadius: radius.lg,
-          backgroundColor: v('surface'),
-          color: v('ink-muted'),
-          fontFamily: 'var(--font-geist-mono, monospace)',
-          fontSize: typeScale.micro,
-          lineHeight: 1.6,
-        }}
-      >
-        {JSON.stringify(result, null, 2)}
-      </pre>
-    </section>
-  )
-}
-
 export function BattleShell({
   battleId,
   topic,
@@ -82,6 +46,7 @@ export function BattleShell({
   const startedAt = useBattleStore((state) => state.startedAt)
   const contestants = useBattleStore((state) => state.contestants)
   const summary = useBattleStore((state) => state.summary)
+  const snapshot = useBattleStore((state) => state.snapshot)
   const failureReason = useBattleStore((state) => state.failureReason)
 
   const seed = useMemo(() => dataFromSnapshot(initialSnapshot), [initialSnapshot])
@@ -128,9 +93,9 @@ export function BattleShell({
       try {
         const response = await fetch(`/api/battle/${battleId}/snapshot`)
         if (!response.ok) return
-        const snapshot = (await response.json()) as Snapshot
-        if (!isTerminalPhase(snapshot.battle.phase)) return
-        hydrate(snapshot)
+        const fresh = (await response.json()) as Snapshot
+        if (!isTerminalPhase(fresh.battle.phase)) return
+        hydrate(fresh)
       } catch {
         setConnectionLost(true)
       }
@@ -194,6 +159,8 @@ export function BattleShell({
       setCancelling(false)
     }
   }
+
+  const activeSnapshot = live ? snapshot : seed.snapshot
 
   return (
     <div
@@ -354,7 +321,15 @@ export function BattleShell({
         ))}
       </main>
 
-      {summary ? <RawSettlement result={summary} /> : null}
+      {summary && activeSnapshot ? (
+        <Settlement
+          arena={arena}
+          topic={topic}
+          result={summary}
+          snapshot={activeSnapshot}
+          providerLabels={providerLabels}
+        />
+      ) : null}
     </div>
   )
 }

@@ -27,6 +27,7 @@ export interface BattleData {
   summary: BattleResult | null
   failureReason: string | null
   hydratedBattleId: string | null
+  snapshot: Snapshot | null
 }
 
 export interface BattleStoreState extends BattleData {
@@ -54,6 +55,7 @@ const EMPTY_DATA: BattleData = {
   summary: null,
   failureReason: null,
   hydratedBattleId: null,
+  snapshot: null,
 }
 
 const rafScheduler: FrameScheduler = {
@@ -223,6 +225,7 @@ export function dataFromSnapshot(snapshot: Snapshot): BattleData {
     summary: null,
     failureReason: snapshot.battle.error,
     hydratedBattleId: null,
+    snapshot,
   }
 }
 
@@ -246,6 +249,7 @@ export function createBattleStore(scheduler: FrameScheduler = rafScheduler): Bat
       summary: state.summary,
       failureReason: state.failureReason,
       hydratedBattleId: state.hydratedBattleId,
+      snapshot: state.snapshot,
     }
   }
 

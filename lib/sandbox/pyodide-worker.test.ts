@@ -11,11 +11,13 @@ test('getBackend 默认返回 pyodide 后端且隔离级别为 wasm-worker', asy
   assert.equal(backend.isolationLevel, 'wasm-worker')
 })
 
-test('getBackend 在 SANDBOX_BACKEND=judge0 时报尚未实现', async () => {
+test('getBackend 在 SANDBOX_BACKEND=judge0 时返回 judge0 后端且隔离级别为 os-container', async () => {
   const previous = process.env.SANDBOX_BACKEND
   process.env.SANDBOX_BACKEND = 'judge0'
   try {
-    await assert.rejects(() => getBackend(), /尚未实现/)
+    const backend = await getBackend()
+    assert.equal(backend.id, 'judge0')
+    assert.equal(backend.isolationLevel, 'os-container')
   } finally {
     if (previous === undefined) delete process.env.SANDBOX_BACKEND
     else process.env.SANDBOX_BACKEND = previous
