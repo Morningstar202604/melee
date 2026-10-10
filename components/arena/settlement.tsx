@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react'
 import type { ArenaId } from '@/lib/arena/types'
-import type { BattleResult, ContestantOutcome } from '@/lib/battle/events'
+import type { BattleResult, ContestantOutcome, ContestantStatus } from '@/lib/battle/events'
 import type { Snapshot } from '@/lib/db/repo'
 import { VoteBar } from './vote-bar'
 import {
@@ -52,12 +52,14 @@ function buildSummary(
       const bPassed = verdictPassed(result, b.slot)
       return bPassed - aPassed
     })
+    if (ranked.length === 0) return '本场无有效选手'
     const winner = ranked[0]
-    const allTie = ranked.every((o) => verdictPassed(result, o.slot) === verdictPassed(result, ranked[0].slot))
+    const topScore = verdictPassed(result, winner.slot)
+    const allTie = ranked.every((o) => verdictPassed(result, o.slot) === topScore)
     if (allFailed) return '全员翻车，本场无人生还'
-    if (allTie && failCount === 0) return `全员并列通过 ${verdictPassed(result, winner.slot)} 题，势均力敌`
+    if (allTie && failCount === 0) return `全员并列通过 ${topScore} 题，势均力敌`
     const winnerLabel = providerLabelOf(providerLabels, winner.providerId, winner.providerId)
-    return `${winnerLabel} 以 ${verdictPassed(result, winner.slot)} 题通关${noCrash ? '，本场无人翻车' : `，${failCount} 人翻车`}`
+    return `${winnerLabel} 以 ${topScore} 题通关${noCrash ? '，本场无人翻车' : `，${failCount} 人翻车`}`
   }
 
   if (allFailed) return '全员翻车，本场无人生还'
@@ -498,7 +500,7 @@ function HardcodePanel({
   )
 }
 
-function statusText(status: string): string {
+function statusText(status: ContestantStatus): string {
   switch (status) {
     case 'timeout':
       return '超时未完成'
@@ -510,8 +512,8 @@ function statusText(status: string): string {
       return '调用失败'
     case 'empty':
       return '未返回内容'
-    case 'no_code':
-      return '未产出可执行代码'
+    case 'ok':
+      return '完成'
     default:
       return '执行出错'
   }

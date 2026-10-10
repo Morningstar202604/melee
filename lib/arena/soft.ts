@@ -24,12 +24,17 @@ export function createSoftArena(deps: Partial<SoftArenaDeps> = {}): Arena {
     }),
     extractCode: () => null,
     judge: async (subs: Submission[], ctx: JudgeContext): Promise<Verdict[]> => {
-      const outcome = await judgeRun({
-        topic: ctx.topic,
-        submissions: subs,
-        judgeModel: resolveJudgeModel(ctx),
-      })
-      return outcome.verdicts
+      try {
+        const outcome = await judgeRun({
+          topic: ctx.topic,
+          submissions: subs,
+          judgeModel: resolveJudgeModel(ctx),
+        })
+        return outcome.verdicts
+      } catch (error) {
+        console.error(`软战场裁判异常: ${error instanceof Error ? error.message : String(error)}`)
+        return []
+      }
     },
   }
 }

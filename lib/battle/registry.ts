@@ -90,7 +90,3 @@ export function getBattleHandle(id: string): BattleHandle | undefined {
 export function unregisterBattle(id: string): void {
   battles.delete(id)
 }
-
-export function listBattleIds(): string[] {
-  return [...battles.keys()]
-}

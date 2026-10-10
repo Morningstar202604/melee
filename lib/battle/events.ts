@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import type { ArenaId, ContestantStatus } from '../arena/types.ts'
 
+export type { ContestantStatus }
+
 const contestantStatusValues = [
   'ok',
   'timeout',
