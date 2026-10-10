@@ -533,6 +533,8 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
         </div>
         <div className="flex flex-col gap-3 p-5">
           <select
+            id="topic-select"
+            aria-label="选择本场题目"
             value={topicId}
             onChange={(event) =>
               arena === 'soft'
@@ -608,6 +610,7 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
                   </span>
                   <select
                     value={row.providerId}
+                    aria-label={`选手 ${index + 1} 模型提供方`}
                     onChange={(event) => {
                       const providerId = event.target.value
                       updateRow(row.rowId, {
@@ -665,6 +668,7 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
                   ) : (
                     <input
                       value={row.modelId}
+                      aria-label={`选手 ${index + 1} 模型 ID`}
                       onChange={(event) => {
                         updateRow(row.rowId, { modelId: event.target.value })
                         setPing((current) => {
@@ -724,6 +728,7 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
                   <input
                     type="password"
                     value={row.apiKey}
+                    aria-label={`选手 ${index + 1} API Key`}
                     onChange={(event) => updateRow(row.rowId, { apiKey: event.target.value })}
                     placeholder={provider?.id === 'ollama' ? '本地 Ollama 无需 Key，已预填占位值' : 'sk-…'}
                     autoComplete="off"

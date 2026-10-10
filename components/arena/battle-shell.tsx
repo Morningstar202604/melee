@@ -285,6 +285,7 @@ export function BattleShell({
 
       {connectionLost ? (
         <p
+          role="alert"
           style={{
             maxWidth: layout.pageMaxWidth,
             margin: `${spacing.md} auto 0`,

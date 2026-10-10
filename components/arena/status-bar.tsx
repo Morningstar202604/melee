@@ -159,8 +159,11 @@ export function StatusBar({ phase, startedAt, contestants, failureReason }: Stat
         </span>
 
         <span
-          role="img"
+          role="progressbar"
           aria-label={`已完成 ${finished} 名，共 ${total} 名选手`}
+          aria-valuenow={finished}
+          aria-valuemin={0}
+          aria-valuemax={total}
           style={{
             display: 'flex',
             flex: 1,

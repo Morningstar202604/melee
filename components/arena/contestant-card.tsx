@@ -79,8 +79,11 @@ function LatencyMeter({ view, maxLatencyMs }: { view: ContestantView; maxLatency
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: spacing.sm }}>
       <span
-        role="img"
+        role="meter"
         aria-label={`响应耗时 ${(view.latencyMs / 1000).toFixed(1)} 秒，为本场最慢的 ${percent}%`}
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
         style={{
           display: 'block',
           width: metricBar.width,
