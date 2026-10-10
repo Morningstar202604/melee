@@ -4,10 +4,12 @@ const REDACTED = '***'
 
 export function redact(text: string, secrets: readonly string[] = []): string {
   let out = text
-  for (const secret of secrets) {
-    if (typeof secret === 'string' && secret.length >= 6) {
-      out = out.split(secret).join(REDACTED)
-    }
+  const meaningfulSecrets = secrets.filter((s) => typeof s === 'string' && s.length >= 6)
+  if (meaningfulSecrets.length === 1) {
+    out = out.split(meaningfulSecrets[0]).join(REDACTED)
+  } else if (meaningfulSecrets.length > 1) {
+    const escaped = meaningfulSecrets.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    out = out.replace(new RegExp(escaped.join('|'), 'g'), REDACTED)
   }
   for (const pattern of SECRET_PATTERNS) {
     out = out.replace(pattern, REDACTED)

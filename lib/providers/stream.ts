@@ -117,6 +117,9 @@ export async function* streamModel(
         yield { type: 'error', status: 'timeout', message: redact(`${label} 超时未完成`) }
         return
       }
+      if (part.type === 'finish') {
+        continue
+      }
     }
 
     const usage = await result.usage

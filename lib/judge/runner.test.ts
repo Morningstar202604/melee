@@ -131,18 +131,18 @@ async function judgeWith(rounds: string[]): Promise<{
   return { outcome: await runJudge(options), prompts }
 }
 
-test('runJudge 取两轮分项均值、按 slot 输出并在两轮一致时标记 agreed', async () => {
+test('runJudge 取三轮分项均值、按 slot 输出并在三轮一致时标记 agreed', async () => {
   const { outcome, prompts } = await judgeWith([ROUND_ONE, ROUND_TWO])
   assert.equal(outcome.unavailable, false)
   assert.equal(outcome.roundsAgreed, true)
   assert.equal(outcome.verdicts.length, 2)
   assert.equal(outcome.verdicts[0]?.contestantSlot, 1)
-  assert.deepEqual(outcome.verdicts[0]?.scores, { logic: 7, evidence: 6, relevance: 5 })
+  assert.deepEqual(outcome.verdicts[0]?.scores, { logic: 6.7, evidence: 5.7, relevance: 4.7 })
   assert.equal(outcome.verdicts[1]?.contestantSlot, 2)
   assert.deepEqual(outcome.verdicts[1]?.scores, { logic: 4, evidence: 3, relevance: 2 })
   assert.ok(outcome.verdicts[0]?.rationale.includes('先手发挥稳'))
   assert.ok(outcome.verdicts[0]?.rationale.includes('第二轮追分了'))
-  assert.equal(prompts.length, 2)
+  assert.equal(prompts.length, 3)
 })
 
 test('runJudge 第二轮交换出场顺序（匿名标签重新分配）', async () => {

@@ -19,6 +19,17 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, reason: `未知 provider：${providerId}` }, { status: 400 })
   }
 
-  const result = await listModels(provider, apiKey)
-  return Response.json(result)
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 15000)
+  try {
+    const result = await listModels(provider, apiKey, { signal: controller.signal })
+    return Response.json(result)
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return Response.json({ ok: false, reason: '获取模型列表超时（15s）' }, { status: 504 })
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }

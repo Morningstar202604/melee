@@ -47,16 +47,16 @@ export function isTerminalPhase(phase: BattlePhase): boolean {
   return TERMINAL_PHASES.includes(phase)
 }
 
-const EMPTY_DATA: BattleData = {
+const EMPTY_DATA: BattleData = Object.freeze({
   phase: 'pending',
   startedAt: null,
-  contestants: {},
-  voteTally: {},
+  contestants: Object.freeze({}),
+  voteTally: Object.freeze({}),
   summary: null,
   failureReason: null,
   hydratedBattleId: null,
   snapshot: null,
-}
+})
 
 const rafScheduler: FrameScheduler = {
   schedule: (flush) => {

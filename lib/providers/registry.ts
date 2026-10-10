@@ -110,7 +110,11 @@ export function createModel(p: ProviderDef, modelId: string, apiKey: string): La
   return createGoogleGenerativeAI({ apiKey })(modelId)
 }
 
-export async function listModels(p: ProviderDef, apiKey: string): Promise<ListModelsResult> {
+export async function listModels(
+  p: ProviderDef,
+  apiKey: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<ListModelsResult> {
   if (p.kind !== 'openai-compatible' || !p.baseUrl) {
     return { ok: false, reason: '该 provider 需手填模型 id' }
   }
@@ -118,6 +122,7 @@ export async function listModels(p: ProviderDef, apiKey: string): Promise<ListMo
   try {
     const response = await fetch(`${baseUrl}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
+      signal: options.signal,
     })
     if (!response.ok) {
       return { ok: false, reason: redact(`HTTP ${response.status}`, [apiKey]) }
@@ -129,6 +134,9 @@ export async function listModels(p: ProviderDef, apiKey: string): Promise<ListMo
       .sort((a, b) => a.localeCompare(b))
     return { ok: true, models }
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return { ok: false, reason: '拉取模型列表超时' }
+    }
     const reason = error instanceof Error ? error.message : String(error)
     return { ok: false, reason: redact(`${p.label} 拉取模型列表失败：${reason}`, [apiKey]) }
   }

@@ -74,9 +74,8 @@ export async function POST(request: Request) {
   const arenaId = arena as ArenaId
   try {
     getArena(arenaId)
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    return Response.json({ error: reason }, { status: 400 })
+  } catch {
+    return Response.json({ error: 'arena 仅支持 soft 或 hard-code' }, { status: 400 })
   }
 
   const topic = asString(payload.topic)

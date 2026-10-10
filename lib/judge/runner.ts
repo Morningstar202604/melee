@@ -248,15 +248,33 @@ function defaultJudgeCall(opts: JudgeOptions): JudgeCall {
   }
 }
 
+function deterministicRotate<T>(input: T[]): T[] {
+  if (input.length <= 1) return [...input]
+  return [...input.slice(1), input[0]]
+}
+
 export async function runJudge(opts: JudgeOptions): Promise<JudgeOutcome> {
   const raws: string[] = []
   try {
     const active = opts.submissions.filter((item) => item.text.trim().length > 0)
     if (active.length === 0) return { verdicts: [], roundsAgreed: false, unavailable: true }
+    if (active.length === 1) {
+      const call = opts.callJudge ?? defaultJudgeCall(opts)
+      const labels: RoundAssignment[] = [{ label: labelForIndex(0), slot: active[0].contestant.slot }]
+      const text = await call({ system: JUDGE_SYSTEM_PROMPT, user: buildJudgeUser(opts.topic, active, labels) })
+      raws.push(text)
+      const mapped = mapRound(parseJudgeOutput(text), labels)
+      const rounds = mapped ? [mapped] : []
+      if (rounds.length === 0) {
+        return { verdicts: [], roundsAgreed: false, unavailable: true, raw: raws.join('\n') }
+      }
+      return { verdicts: toVerdicts(rounds), roundsAgreed: false, unavailable: false, raw: raws.join('\n') }
+    }
 
     const call = opts.callJudge ?? defaultJudgeCall(opts)
     const rounds: MappedVerdict[][] = []
-    for (const order of [active, [...active].reverse()]) {
+    const orders = [active, [...active].reverse(), deterministicRotate(active)]
+    for (const order of orders) {
       const labels: RoundAssignment[] = order.map((item, index) => ({
         label: labelForIndex(index),
         slot: item.contestant.slot,
@@ -271,9 +289,11 @@ export async function runJudge(opts: JudgeOptions): Promise<JudgeOutcome> {
       return { verdicts: [], roundsAgreed: false, unavailable: true, raw: raws.join('\n') }
     }
 
+    const deterministicAgreed = rounds.length >= 2 ? roundsAgreed(rounds[0], rounds[1]) : false
+
     return {
       verdicts: toVerdicts(rounds),
-      roundsAgreed: rounds.length === 2 ? roundsAgreed(rounds[0], rounds[1]) : false,
+      roundsAgreed: deterministicAgreed,
       unavailable: false,
       raw: raws.join('\n'),
     }
