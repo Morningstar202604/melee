@@ -1,16 +1,18 @@
 /**
- * 安全头中间件（零依赖）。
+ * 安全头（零依赖）。
  *
- * 覆盖 Next.js App Router 与 API route 共通的几类 HTTP 安全头。
+ * 覆盖 API route 的 response 级头。
  *
- * 🔗 工程逻辑：
- *   - 这些头对所有 route 生效、与业务逻辑解耦，所以抽出单一模块，由 layout
- *     在 root <head> 处注入 meta 级头，由 API route 由函数注入 response 级头。
- *   - 不引入 helmet：Next.js 16 不反序列 helmet 的全家桶，且我们只需要一小组
- *    静态头，不必付出 ~120KB 的代价。
+ * 选型：不引入 helmet——Next.js 16 反序列 helmet 全家桶没有收益，且我们只需要
+ * 一小组静态头。
+ *
+ * 范围说明：这些头只覆盖 API route（由 secureResponse 注入）。页面路由未注入
+ * 页面级 CSP，原因是 Next.js 的 client bundle 与 dev overlay 依赖 inline 脚本，
+ * 页面级 script-src 'self' 会直接破坏 hydration 与开发期报错浮层；
+ * X-Frame-Options / HSTS 也无法用 meta 表达。若将来要把页面也纳入覆盖，走
+ * middleware/proxy 在 response 上注入，并需为 Next 内联脚本放开相应来源。
  */
 
-/** CSP：仅允许同源 + 内联 style + data: 协议的图片 / 字体。 */
 const CONTENT_SECURITY_POLICY =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
@@ -29,10 +31,6 @@ export const SECURITY_HEADERS: Record<string, string> = {
   'Permissions-Policy': PERMISSIONS_POLICY,
 }
 
-/**
- * 把安全头合并到已有的 ResponseInit 里，返回新的 ResponseInit。
- * 不破坏调用方原有的 status / headers。
- */
 export function withSecurityHeaders(init?: ResponseInit): ResponseInit {
   const headers = new Headers(init?.headers)
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
@@ -41,9 +39,6 @@ export function withSecurityHeaders(init?: ResponseInit): ResponseInit {
   return { ...init, headers }
 }
 
-/**
- * 把安全头包裹到一个已有的 Response 上（方便在 route handler 里一行链式调用）。
- */
 export function secureResponse(body: BodyInit | null, init?: ResponseInit): Response {
   return new Response(body, withSecurityHeaders(init))
 }
