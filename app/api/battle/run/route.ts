@@ -7,8 +7,14 @@ import {
   type StartBattleInput,
 } from '../../../../lib/battle/runner.ts'
 import { createModel, getProvider } from '../../../../lib/providers/registry.ts'
+import { logger } from '../../../../lib/log/logger.ts'
+import { secureResponse } from '../../../../security.ts'
 
 export const runtime = 'nodejs'
+
+const MAX_TOPIC_LENGTH = 2000
+const MAX_API_KEY_LENGTH = 500
+const MAX_MODEL_ID_LENGTH = 200
 
 function clientIp(request: Request): string {
   const forwardedFor = request.headers.get('x-forwarded-for')
@@ -27,6 +33,7 @@ function asString(value: unknown): string {
 function parseContestants(raw: unknown): { contestants?: ContestantInput[]; error?: string } {
   if (!Array.isArray(raw)) return { error: 'contestants 必须是数组' }
   if (raw.length < 2) return { error: '至少需要 2 名选手' }
+  if (raw.length > 8) return { error: '最多支持 8 名选手' }
   const contestants: ContestantInput[] = []
   for (const [index, entry] of raw.entries()) {
     const item = (entry ?? {}) as Record<string, unknown>
@@ -36,6 +43,12 @@ function parseContestants(raw: unknown): { contestants?: ContestantInput[]; erro
     const apiKey = typeof item.apiKey === 'string' ? item.apiKey.trim() : ''
     if (!providerId || !modelId || !apiKey) {
       return { error: `第 ${index + 1} 名选手缺少 providerId / modelId / apiKey` }
+    }
+    if (modelId.length > MAX_MODEL_ID_LENGTH) {
+      return { error: `第 ${index + 1} 名选手的模型 ID 超出长度上限` }
+    }
+    if (apiKey.length > MAX_API_KEY_LENGTH) {
+      return { error: `第 ${index + 1} 名选手的 API Key 超出长度上限` }
     }
     if (!getProvider(providerId)) {
       return { error: `第 ${index + 1} 名选手的 provider 未注册：${providerId}` }
@@ -56,36 +69,43 @@ function buildJudgeModelRef(): string | undefined {
 export async function POST(request: Request) {
   const ip = clientIp(request)
   if (!allow(ip)) {
-    return Response.json({ error: '请求过于频繁：每 IP 每分钟最多发起 5 场对战' }, { status: 429 })
+    logger.warn('限流拒绝', { ip })
+    return secureResponse(
+      JSON.stringify({ error: '请求过于频繁：每 IP 每分钟最多发起 5 场对战' }),
+      { status: 429 },
+    )
   }
 
   let body: unknown
   try {
     body = await request.json()
   } catch {
-    return Response.json({ error: '请求体不是合法 JSON' }, { status: 400 })
+    return secureResponse(JSON.stringify({ error: '请求体不是合法 JSON' }), { status: 400 })
   }
   const payload = (body ?? {}) as Record<string, unknown>
 
   const arena = asString(payload.arena)
   if (!arena) {
-    return Response.json({ error: 'arena 必填（soft / hard-code）' }, { status: 400 })
+    return secureResponse(JSON.stringify({ error: 'arena 必填（soft / hard-code）' }), { status: 400 })
   }
   const arenaId = arena as ArenaId
   try {
     getArena(arenaId)
   } catch {
-    return Response.json({ error: 'arena 仅支持 soft 或 hard-code' }, { status: 400 })
+    return secureResponse(JSON.stringify({ error: 'arena 仅支持 soft 或 hard-code' }), { status: 400 })
   }
 
   const topic = asString(payload.topic)
   if (!topic) {
-    return Response.json({ error: 'topic 必填' }, { status: 400 })
+    return secureResponse(JSON.stringify({ error: 'topic 必填' }), { status: 400 })
+  }
+  if (topic.length > MAX_TOPIC_LENGTH) {
+    return secureResponse(JSON.stringify({ error: '题面长度超出上限' }), { status: 400 })
   }
 
   const parsed = parseContestants(payload.contestants)
   if (!parsed.contestants) {
-    return Response.json({ error: parsed.error ?? ' contestants 不合法' }, { status: 400 })
+    return secureResponse(JSON.stringify({ error: parsed.error ?? 'contestants 不合法' }), { status: 400 })
   }
 
   const deps: BattleDeps = {
@@ -105,7 +125,13 @@ export async function POST(request: Request) {
     deps.judgeContext = { topic, judgeModelId: judgeModelRef, judgeApiKey }
   }
 
-  const input: StartBattleInput = { arena: arenaId, topic, contestants: parsed.contestants }
-  const battleId = await startBattle(input, deps)
-  return Response.json({ battleId }, { status: 202 })
+  try {
+    const input: StartBattleInput = { arena: arenaId, topic, contestants: parsed.contestants }
+    const battleId = await startBattle(input, deps)
+    logger.info('对战已接受', { battleId, arena: arenaId, ip, contestants: parsed.contestants.length })
+    return secureResponse(JSON.stringify({ battleId }), { status: 202 })
+  } catch (error) {
+    logger.error('对战创建失败', { error: error instanceof Error ? error.message : String(error) })
+    return secureResponse(JSON.stringify({ error: '对战编排失败，请检查选手配置' }), { status: 500 })
+  }
 }

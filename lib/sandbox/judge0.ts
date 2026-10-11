@@ -1,4 +1,4 @@
-import type { SandboxBackend, SandboxResult, TestCase } from './backend.ts'
+import type { SandboxBackend } from './backend.ts'
 
 const LANGUAGE_ID_PYTHON3 = 100
 const POLL_INTERVAL_MS = 1000
@@ -42,7 +42,7 @@ function authHeaders(): Record<string, string> {
   return { [key]: value }
 }
 
-async function submitToJudge0(code: string, stdin: string): Promise<string> {
+async function submitToJudge0(code: string, stdin: string, signal?: AbortSignal): Promise<string> {
   const response = await fetch(`${baseUrl()}/submissions?base64_encoded=false&wait=false`, {
     method: 'POST',
     headers: {
@@ -59,6 +59,7 @@ async function submitToJudge0(code: string, stdin: string): Promise<string> {
       max_file_size: 1024,
       enable_network: false,
     }),
+    signal,
   })
   if (!response.ok) {
     throw new Error(`Judge0 提交失败：HTTP ${response.status}`)
@@ -68,11 +69,12 @@ async function submitToJudge0(code: string, stdin: string): Promise<string> {
   return payload.token
 }
 
-async function pollSubmission(token: string): Promise<Judge0SubmissionResult> {
+async function pollSubmission(token: string, signal?: AbortSignal): Promise<Judge0SubmissionResult> {
   for (let i = 0; i < MAX_POLLS; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
     const response = await fetch(`${baseUrl()}/submissions/${token}?base64_encoded=false&fields=status,stdout,stderr,compile_output,time,memory,exit_code,exit_signal,message`, {
       headers: { ...authHeaders() },
+      signal,
     })
     if (!response.ok) {
       throw new Error(`Judge0 轮询失败：HTTP ${response.status}`)
@@ -90,6 +92,8 @@ function compareOutputs(actual: string, expected: string): boolean {
   return normalize(actual) === normalize(expected)
 }
 
+const FETCH_TIMEOUT_MS = 30000
+
 export const judge0Backend: SandboxBackend = {
   id: 'judge0',
   isolationLevel: 'os-container',
@@ -97,10 +101,12 @@ export const judge0Backend: SandboxBackend = {
     const total = input.tests.length
     const combinedInput = input.tests.map((t) => t.input).join('')
     const combinedExpected = input.tests.map((t) => t.expected).join('\n')
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
 
     try {
-      const token = await submitToJudge0(input.code, combinedInput)
-      const result = await pollSubmission(token)
+      const token = await submitToJudge0(input.code, combinedInput, controller.signal)
+      const result = await pollSubmission(token, controller.signal)
 
       const timeMs = result.time ? Math.round(parseFloat(result.time) * 1000) : 0
       const stdout = result.stdout ?? ''
@@ -186,6 +192,8 @@ export const judge0Backend: SandboxBackend = {
         stdoutTail: '',
         errorMessage: error instanceof Error ? error.message : String(error),
       }
+    } finally {
+      clearTimeout(timer)
     }
   },
 }

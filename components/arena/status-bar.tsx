@@ -7,16 +7,6 @@ import {
   type BattlePhase,
 } from '@/lib/battle/events'
 import type { ContestantView } from '@/lib/client/battle-store'
-import {
-  fontWeight,
-  layout,
-  radius,
-  spacing,
-  statusTone,
-  tonePair,
-  typeScale,
-  v,
-} from './theme'
 
 export interface StatusBarProps {
   phase: BattlePhase
@@ -59,50 +49,25 @@ function segmentLabel(view: ContestantView): string {
 }
 
 function ProgressSegment({ view }: { view: ContestantView }) {
-  const tone = tonePair[statusTone(view.status)]
   const streaming = view.status === 'streaming'
+  const isOk = view.status === 'ok'
+  const isFailed = view.status !== 'streaming' && view.status !== 'ok'
+
+  let colorClasses = 'bg-zinc-300 dark:bg-zinc-600'
+  if (streaming) colorClasses = 'bg-emerald-500 animate-glow-pulse'
+  else if (isOk) colorClasses = 'bg-emerald-500'
+  else if (isFailed) colorClasses = 'bg-red-500'
+
   return (
     <span
-      role="img"
       title={segmentLabel(view)}
       aria-label={segmentLabel(view)}
-      style={{
-        position: 'relative',
-        display: 'flex',
-        flex: 1,
-        minWidth: 0,
-        height: 18,
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-        borderRadius: radius.sm,
-        backgroundColor: v('scoreboard-line'),
-        color: v('scoreboard-ink'),
-        fontSize: typeScale.micro,
-        fontWeight: fontWeight.black,
-        fontVariantNumeric: 'tabular-nums',
-      }}
+      className={`relative flex flex-1 items-center justify-center overflow-hidden rounded text-xs font-black tabular-nums text-white min-w-0 h-[22px] ${colorClasses}`}
     >
       {streaming ? (
-        <span
-          className="motion-safe:animate-pulse"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            backgroundColor: v(tone.base),
-            opacity: 0.45,
-          }}
-        />
-      ) : (
-        <span
-          style={{
-            position: 'absolute',
-            inset: 0,
-            backgroundColor: v(tone.base),
-          }}
-        />
-      )}
-      <span style={{ position: 'relative' }}>{view.slot}</span>
+        <span className="animate-shimmer absolute inset-0 bg-white/20" />
+      ) : null}
+      <span className="relative">{view.slot}</span>
     </span>
   )
 }
@@ -115,150 +80,64 @@ export function StatusBar({ phase, startedAt, contestants, failureReason }: Stat
   const live = LIVE_PHASES.has(phase)
 
   return (
-    <div
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 30,
-        backgroundColor: v('scoreboard'),
-        color: v('scoreboard-ink'),
-        borderBottom: `2px solid ${v('scoreboard-accent')}`,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: `${spacing.sm} ${spacing.lg}`,
-          maxWidth: layout.pageMaxWidth,
-          margin: '0 auto',
-          padding: `${spacing.sm} ${spacing.md}`,
-        }}
-      >
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: spacing.sm }}>
+    <div className="sticky top-0 z-30 border-b border-zinc-200 bg-white/95 backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95">
+      <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
+        {/* Phase indicator */}
+        <span className="inline-flex items-center gap-2">
           <span
-            className={live ? 'motion-safe:animate-pulse' : undefined}
-            style={{
-              display: 'inline-block',
-              width: 10,
-              height: 10,
-              borderRadius: radius.pill,
-              backgroundColor: v(live ? 'scoreboard-accent' : 'success'),
-            }}
+            className={`inline-block h-2.5 w-2.5 rounded-full ${
+              live ? 'bg-emerald-500 animate-glow-pulse' : 'bg-zinc-400'
+            }`}
           />
-          <span
-            style={{
-              fontSize: typeScale.phase,
-              fontWeight: fontWeight.black,
-              letterSpacing: '0.02em',
-            }}
-          >
+          <span className="text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
             {battlePhaseLabels[phase]}
           </span>
         </span>
 
+        {/* Progress bar */}
         <span
           role="progressbar"
           aria-label={`已完成 ${finished} 名，共 ${total} 名选手`}
           aria-valuenow={finished}
           aria-valuemin={0}
           aria-valuemax={total}
-          style={{
-            display: 'flex',
-            flex: 1,
-            minWidth: 120,
-            gap: 3,
-            padding: `${spacing.xs} 0`,
-          }}
+          className="flex flex-1 gap-1 py-1"
         >
           {contestants.map((view) => (
             <ProgressSegment key={view.slot} view={view} />
           ))}
         </span>
 
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'baseline',
-            gap: spacing.xs,
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          <span
-            style={{
-              fontSize: typeScale.scoreboard,
-              fontWeight: fontWeight.black,
-              color: v('scoreboard-accent'),
-              lineHeight: 1,
-            }}
-          >
+        {/* Counter */}
+        <span className="inline-flex items-baseline gap-1 tabular-nums">
+          <span className="text-lg font-black leading-none text-orange-500">
             {finished}
           </span>
-          <span style={{ fontSize: typeScale.label, color: v('scoreboard-muted') }}>
-            / {total} 名选手完成
-          </span>
+          <span className="text-xs text-zinc-400">/ {total}</span>
           {streaming > 0 ? (
-            <span
-              style={{
-                marginLeft: spacing.xs,
-                padding: `1px ${spacing.sm}`,
-                borderRadius: radius.pill,
-                backgroundColor: v('live-soft'),
-                color: v('live'),
-                fontSize: typeScale.micro,
-                fontWeight: fontWeight.bold,
-              }}
-            >
-              {streaming} 人仍在输出
+            <span className="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+              {streaming} 输出中
             </span>
           ) : null}
         </span>
 
-        <span
-          style={{
-            marginLeft: 'auto',
-            display: 'inline-flex',
-            alignItems: 'baseline',
-            gap: spacing.sm,
-          }}
-        >
-          <span
-            style={{
-              fontSize: typeScale.micro,
-              letterSpacing: '0.14em',
-              color: v('scoreboard-muted'),
-            }}
-          >
-            本场用时
-          </span>
+        {/* Elapsed timer */}
+        <span className="inline-flex items-baseline gap-1.5">
+          <span className="text-[10px] font-medium tracking-wider text-zinc-400">用时</span>
           <span
             suppressHydrationWarning
-            style={{
-              fontFamily: 'var(--font-geist-mono, monospace)',
-              fontSize: typeScale.title,
-              fontWeight: fontWeight.black,
-              fontVariantNumeric: 'tabular-nums',
-            }}
+            className="font-mono text-sm font-bold tabular-nums text-orange-500"
           >
             {elapsed}
           </span>
         </span>
       </div>
 
+      {/* Failure banner */}
       {failureReason ? (
-        <p
-          style={{
-            margin: 0,
-            padding: `${spacing.xs} ${spacing.md}`,
-            backgroundColor: v('failure'),
-            color: v('on-tone'),
-            fontSize: typeScale.label,
-            fontWeight: fontWeight.bold,
-          }}
-        >
+        <div className="bg-red-500 px-4 py-1.5 text-center text-xs font-bold text-white">
           {failureReason}
-        </p>
+        </div>
       ) : null}
     </div>
   )

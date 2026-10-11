@@ -90,3 +90,7 @@ export function getBattleHandle(id: string): BattleHandle | undefined {
 export function unregisterBattle(id: string): void {
   battles.delete(id)
 }
+
+export function getActiveBattleCount(): number {
+  return battles.size
+}

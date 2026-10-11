@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import type { LanguageModel, ModelMessage } from 'ai'
 import type {
   Arena,
@@ -10,12 +9,12 @@ import type {
   Verdict,
 } from '../arena/types.ts'
 import {
-  createBattle,
-  insertContestant,
+  createBattleWithContestants,
   updateBattlePhase,
   updateContestantResult,
 } from '../db/repo.ts'
 import { redact } from '../log/redact.ts'
+import { logger } from '../log/logger.ts'
 import { streamModel } from '../providers/stream.ts'
 import {
   battlePhaseLabels,
@@ -66,29 +65,23 @@ interface RunContext {
 }
 
 export async function startBattle(input: StartBattleInput, deps: BattleDeps): Promise<string> {
-  const battleId = randomUUID()
+  const newContestants = input.contestants.map((c) => ({
+    slot: c.slot,
+    providerId: c.providerId,
+    modelId: c.modelId,
+    positionIndex: c.slot,
+    status: 'running' as const,
+  }))
+  const { battleId, contestantIds } = await createBattleWithContestants(
+    {
+      arena: input.arena,
+      topic: input.topic,
+      createdAt: (deps.now ?? Date.now)(),
+    },
+    newContestants,
+  )
   const handle = createBattleHandle(battleId)
   registerBattle(battleId, handle)
-
-  await createBattle({
-    id: battleId,
-    arena: input.arena,
-    topic: input.topic,
-    createdAt: (deps.now ?? Date.now)(),
-  })
-
-  const contestantIds = new Map<number, string>()
-  for (const contestant of input.contestants) {
-    const contestantId = await insertContestant({
-      battleId,
-      slot: contestant.slot,
-      providerId: contestant.providerId,
-      modelId: contestant.modelId,
-      positionIndex: contestant.slot,
-      status: 'running',
-    })
-    contestantIds.set(contestant.slot, contestantId)
-  }
 
   const timer = setTimeout(() => {
     void runBattle(battleId, input, deps, handle, contestantIds)
@@ -334,7 +327,7 @@ async function persist(op: () => Promise<unknown>, label = '数据库写入失�
   try {
     await op()
   } catch (error) {
-    console.error(redact(`${label}：${readableMessage(error)}`))
+    logger.error(label, { msg: readableMessage(error) })
   }
 }
 

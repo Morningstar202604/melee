@@ -1,6 +1,8 @@
 import { getBattleHandle } from '../../../../../lib/battle/registry.ts'
 import { getSnapshot, recordVote } from '../../../../../lib/db/repo.ts'
 import { redact } from '../../../../../lib/log/redact.ts'
+import { logger } from '../../../../../lib/log/logger.ts'
+import { secureResponse } from '../../../../../security.ts'
 
 export const runtime = 'nodejs'
 
@@ -59,8 +61,8 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     if (/UNIQUE constraint failed/i.test(raw)) {
       return Response.json({ error: '同一场对战每人只能投一票' }, { status: 409 })
     }
-    console.error(`投票落库失败 (battle=${id}): ${message}`)
-    return Response.json({ error: '投票落库失败，请稍后重试' }, { status: 500 })
+    logger.error('投票落库失败', { battleId: id, error: message })
+    return secureResponse(JSON.stringify({ error: '投票落库失败，请稍后重试' }), { status: 500 })
   }
 
   const handle = getBattleHandle(id)

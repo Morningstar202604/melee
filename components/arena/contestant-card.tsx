@@ -2,18 +2,7 @@
 
 import { contestantStatusLabels } from '@/lib/battle/events'
 import type { ContestantView } from '@/lib/client/battle-store'
-import {
-  fontWeight,
-  layout,
-  lineHeight,
-  metricBar,
-  radius,
-  spacing,
-  statusTone,
-  tonePair,
-  typeScale,
-  v,
-} from './theme'
+import { statusTone, toneClasses } from './theme'
 
 export interface ContestantCardProps {
   view: ContestantView
@@ -33,33 +22,13 @@ function failureTitle(view: ContestantView): string {
 }
 
 function StatusChip({ view }: { view: ContestantView }) {
-  const tone = tonePair[statusTone(view.status)]
+  const tone = toneClasses[statusTone(view.status)]
   return (
     <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: spacing.xs,
-        padding: `2px ${spacing.sm}`,
-        borderRadius: radius.sm,
-        backgroundColor: v(tone.soft),
-        color: v(tone.base),
-        fontSize: typeScale.micro,
-        fontWeight: fontWeight.black,
-        whiteSpace: 'nowrap',
-      }}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${tone.bg} ${tone.text}`}
     >
       {view.status === 'streaming' ? (
-        <span
-          className="motion-safe:animate-pulse"
-          style={{
-            display: 'inline-block',
-            width: 6,
-            height: 6,
-            borderRadius: radius.pill,
-            backgroundColor: v(tone.base),
-          }}
-        />
+        <span className={`inline-block h-1.5 w-1.5 rounded-full animate-glow-pulse ${tone.dot}`} />
       ) : null}
       {statusLabel(view)}
     </span>
@@ -69,219 +38,128 @@ function StatusChip({ view }: { view: ContestantView }) {
 function LatencyMeter({ view, maxLatencyMs }: { view: ContestantView; maxLatencyMs: number }) {
   if (view.latencyMs === null) {
     return (
-      <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-        {view.status === 'streaming' ? '计时中' : '—'}
+      <span className="text-xs font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
+        {view.status === 'streaming' ? '计时中…' : '—'}
       </span>
     )
   }
   const ratio = maxLatencyMs > 0 ? view.latencyMs / maxLatencyMs : 1
   const percent = Math.max(4, Math.min(100, Math.round(ratio * 100)))
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: spacing.sm }}>
+    <span className="inline-flex items-center gap-2">
       <span
         role="meter"
-        aria-label={`响应耗时 ${(view.latencyMs / 1000).toFixed(1)} 秒，为本场最慢的 ${percent}%`}
+        aria-label={`响应耗时 ${(view.latencyMs / 1000).toFixed(1)} 秒`}
         aria-valuenow={percent}
         aria-valuemin={0}
         aria-valuemax={100}
-        style={{
-          display: 'block',
-          width: metricBar.width,
-          height: metricBar.height,
-          borderRadius: radius.pill,
-          backgroundColor: v('surface-sunken'),
-          overflow: 'hidden',
-        }}
+        className="block h-2 w-20 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
       >
         <span
-          style={{
-            display: 'block',
-            height: '100%',
-            width: `${percent}%`,
-            borderRadius: radius.pill,
-            backgroundColor: v('ink-muted'),
-            transition: 'width 240ms ease-out',
-          }}
+          className="block h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-400 transition-[width] duration-300"
+          style={{ width: `${percent}%` }}
         />
       </span>
-      <span
-        style={{
-          fontVariantNumeric: 'tabular-nums',
-          fontWeight: fontWeight.bold,
-          color: v('ink-muted'),
-        }}
-      >
+      <span className="text-xs font-bold tabular-nums text-zinc-900 dark:text-zinc-50">
         {(view.latencyMs / 1000).toFixed(1)}s
       </span>
     </span>
   )
 }
 
+const TONE_BAR: Record<string, string> = {
+  live: 'bg-emerald-500',
+  success: 'bg-emerald-500',
+  failure: 'bg-red-500',
+  timeout: 'bg-amber-500',
+}
+
+const TONE_SHADOW: Record<string, string> = {
+  live: 'shadow-[0_0_0_2px_rgba(16,185,129,0.2),0_8px_24px_rgba(16,185,129,0.1)]',
+  success: 'shadow-[0_0_0_2px_rgba(16,185,129,0.1)]',
+  failure: 'shadow-[0_0_0_2px_rgba(239,68,68,0.15)]',
+  timeout: 'shadow-[0_0_0_2px_rgba(245,158,11,0.15)]',
+}
+
 export function ContestantCard({ view, providerLabel, maxLatencyMs }: ContestantCardProps) {
-  const tone = tonePair[statusTone(view.status)]
+  const tone = statusTone(view.status)
   const streaming = view.status === 'streaming'
   const failed = view.status !== 'streaming' && view.status !== 'ok'
 
   return (
     <article
-      style={{
-        position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: layout.cardMinHeight,
-        overflow: 'hidden',
-        border: `1px solid ${v('border')}`,
-        borderRadius: radius.lg,
-        backgroundColor: v('surface'),
-      }}
+      className={`relative flex min-h-[16rem] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white transition-all dark:border-zinc-800 dark:bg-zinc-900 ${
+        streaming ? TONE_SHADOW[tone] : 'shadow-sm'
+      } ${streaming ? 'animate-fade-in-up' : ''}`}
     >
-      <div style={{ height: 4, backgroundColor: v(tone.base) }} />
+      {/* Top accent bar */}
+      <div className={`h-1 ${TONE_BAR[tone]}`} />
 
-      <header
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: spacing.sm,
-          padding: spacing.md,
-          borderBottom: `1px solid ${v('border')}`,
-        }}
-      >
+      {/* Header */}
+      <header className="flex flex-wrap items-center gap-2 px-5 pt-4 pb-2">
         <span
           title={`${view.slot} 号选手`}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: layout.badge.size,
-            height: layout.badge.size,
-            borderRadius: radius.md,
-            backgroundColor: v('scoreboard'),
-            color: v('scoreboard-accent'),
-            fontSize: typeScale.label,
-            fontWeight: fontWeight.black,
-            fontVariantNumeric: 'tabular-nums',
-          }}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-900 text-xs font-black tabular-nums text-amber-400 dark:bg-zinc-800"
         >
           {view.slot}
         </span>
         {view.isFirstFinisher ? (
-          <span
-            style={{
-              padding: `2px ${spacing.sm}`,
-              borderRadius: radius.pill,
-              border: `1px solid ${v('first')}`,
-              backgroundColor: v('first-soft'),
-              color: v('first'),
-              fontSize: typeScale.micro,
-              fontWeight: fontWeight.black,
-              letterSpacing: '0.08em',
-            }}
-          >
-            先手
+          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+            ⚡ 先手
           </span>
         ) : null}
-        <span style={{ fontSize: typeScale.label, fontWeight: fontWeight.black, color: v('ink') }}>
+        <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
           {providerLabel ?? view.providerId}
         </span>
-        <span
-          style={{
-            padding: `1px ${spacing.xs}`,
-            borderRadius: radius.sm,
-            backgroundColor: v('surface-alt'),
-            color: v('ink-faint'),
-            fontFamily: 'var(--font-geist-mono, monospace)',
-            fontSize: typeScale.micro,
-          }}
-        >
+        <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
           {view.modelId}
         </span>
-        <span style={{ marginLeft: 'auto' }}>
+        <span className="ml-auto">
           <StatusChip view={view} />
         </span>
       </header>
 
+      {/* Failure banner */}
       {failed ? (
-        <div
-          style={{
-            padding: `${spacing.sm} ${spacing.md}`,
-            borderBottom: `1px solid ${v('border')}`,
-            backgroundColor: v(tone.soft),
-            color: v(tone.base),
-          }}
-        >
-          <p style={{ fontSize: typeScale.label, fontWeight: fontWeight.black }}>
+        <div className={`px-5 py-2 ${toneClasses[tone].bg} border-t ${toneClasses[tone].border}`}>
+          <p className={`text-xs font-bold ${toneClasses[tone].text}`}>
             {failureTitle(view)}
           </p>
           {view.failureMessage ? (
-            <p
-              style={{
-                marginTop: 2,
-                fontSize: typeScale.body,
-                fontWeight: fontWeight.medium,
-                opacity: 0.92,
-              }}
-            >
+            <p className={`mt-0.5 text-xs font-medium ${toneClasses[tone].text} opacity-85`}>
               {view.failureMessage}
             </p>
           ) : null}
         </div>
       ) : null}
 
+      {/* Content area */}
       {view.text ? (
-        <pre
-          className="whitespace-pre-wrap break-words"
-          style={{
-            margin: 0,
-            padding: spacing.md,
-            fontFamily: 'inherit',
-            fontSize: typeScale.body,
-            lineHeight: lineHeight.body,
-            color: v('ink'),
-          }}
-        >
+        <div className="whitespace-pre-wrap break-words px-5 py-3 text-[15px] leading-[1.7] text-zinc-800 dark:text-zinc-200 flex-1 overflow-y-auto max-h-96">
           {view.text}
           {streaming ? (
-            <span
-              className="motion-safe:animate-pulse"
-              style={{
-                display: 'inline-block',
-                width: 3,
-                height: '0.9em',
-                marginLeft: 2,
-                verticalAlign: 'baseline',
-                backgroundColor: v('live'),
-              }}
-            />
+            <span className="ml-0.5 inline-block h-[1em] w-[3px] translate-y-[2px] rounded-sm bg-orange-500 animate-glow-pulse align-baseline" />
           ) : null}
-        </pre>
+        </div>
       ) : (
-        <p
-          style={{
-            margin: 0,
-            padding: spacing.md,
-            fontSize: typeScale.body,
-            color: v('ink-faint'),
-          }}
-        >
-          {streaming ? '正在等待第一行输出…' : '本场没有留下任何输出'}
-        </p>
+        <div className="flex flex-1 items-center justify-center px-5 py-8">
+          <p className="text-sm text-zinc-400">
+            {streaming ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-glow-pulse" />
+                等待第一行输出…
+              </span>
+            ) : (
+              '本场没有留下任何输出'
+            )}
+          </p>
+        </div>
       )}
 
-      <footer
-        style={{
-          marginTop: 'auto',
-          display: 'flex',
-          alignItems: 'center',
-          gap: spacing.sm,
-          padding: `${spacing.sm} ${spacing.md}`,
-          borderTop: `1px solid ${v('border')}`,
-          color: v('ink-faint'),
-          fontSize: typeScale.micro,
-        }}
-      >
+      {/* Footer */}
+      <footer className="flex items-center gap-2 border-t border-zinc-100 px-5 py-2 text-[11px] text-zinc-400 dark:border-zinc-800">
         <span>{view.text.length} 字</span>
-        <span style={{ marginLeft: 'auto' }}>
+        <span className="ml-auto">
           <LatencyMeter view={view} maxLatencyMs={maxLatencyMs} />
         </span>
       </footer>

@@ -1,18 +1,9 @@
 'use client'
 
-import type { ReactNode } from 'react'
 import type { ArenaId } from '@/lib/arena/types'
 import type { BattleResult, ContestantOutcome, ContestantStatus } from '@/lib/battle/events'
 import type { Snapshot } from '@/lib/db/repo'
 import { VoteBar } from './vote-bar'
-import {
-  fontWeight,
-  layout,
-  radius,
-  spacing,
-  typeScale,
-  v,
-} from './theme'
 
 export interface SettlementProps {
   arena: ArenaId
@@ -59,7 +50,7 @@ function buildSummary(
     if (allFailed) return '全员翻车，本场无人生还'
     if (allTie && failCount === 0) return `全员并列通过 ${topScore} 题，势均力敌`
     const winnerLabel = providerLabelOf(providerLabels, winner.providerId, winner.providerId)
-    return `${winnerLabel} 以 ${topScore} 题通关${noCrash ? '，本场无人翻车' : `，${failCount} 人翻车`}`
+    return `${winnerLabel} 以 ${topScore} 题通关${noCrash ? '，全场零失误' : `，${failCount} 人翻车`}`
   }
 
   if (allFailed) return '全员翻车，本场无人生还'
@@ -68,7 +59,7 @@ function buildSummary(
     const sole = providerLabelOf(providerLabels, votedOutcomes[0].providerId, votedOutcomes[0].providerId)
     return `${sole} 技压全场，${timeoutCount} 人超时`
   }
-  if (noCrash) return '全场健在，一场龙争虎斗'
+  if (noCrash) return '全员完赛，一场龙争虎斗'
   if (timeoutCount > 0) return `${failCount} 人翻车，${timeoutCount} 人超时，场面惨烈`
   return `${failCount} 人翻车，${outcomes.length - failCount} 人站稳`
 }
@@ -142,10 +133,6 @@ function collectCrashes(result: BattleResult, labels: Record<string, string>): C
   return moments
 }
 
-function judgeVerdictForSlot(result: BattleResult, slot: number) {
-  return result.verdicts.find((v) => v.contestantSlot === slot)
-}
-
 function judgeScores(verdict: { scores: Record<string, number> } | undefined) {
   if (!verdict) return null
   return {
@@ -153,27 +140,6 @@ function judgeScores(verdict: { scores: Record<string, number> } | undefined) {
     evidence: verdict.scores.evidence ?? 0,
     relevance: verdict.scores.relevance ?? 0,
   }
-}
-
-function Banner({ tone, children }: { tone: 'degraded' | 'failure'; children: ReactNode }) {
-  const colorToken = tone === 'degraded' ? 'degraded' : 'failure'
-  const softToken = tone === 'degraded' ? 'degraded-soft' : 'failure-soft'
-  return (
-    <p
-      style={{
-        margin: 0,
-        padding: `${spacing.sm} ${spacing.md}`,
-        border: `1px solid ${v(colorToken)}`,
-        borderRadius: radius.md,
-        backgroundColor: v(softToken),
-        color: v(colorToken),
-        fontSize: typeScale.label,
-        fontWeight: fontWeight.bold,
-      }}
-    >
-      {children}
-    </p>
-  )
 }
 
 export function Settlement({ arena, topic, result, snapshot, providerLabels }: SettlementProps) {
@@ -193,75 +159,21 @@ export function Settlement({ arena, topic, result, snapshot, providerLabels }: S
   }
 
   return (
-    <section
-      style={{
-        maxWidth: layout.pageMaxWidth,
-        margin: '0 auto',
-        padding: `0 ${spacing.md} ${spacing.xxl}`,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: spacing.lg,
-      }}
-    >
-      <header>
-        <p
-          style={{
-            margin: 0,
-            fontSize: typeScale.micro,
-            fontWeight: fontWeight.bold,
-            letterSpacing: '0.16em',
-            color: v('ink-faint'),
-          }}
-        >
-          战报 · {arena === 'soft' ? '软战场' : '硬战场'}
+    <section className="mx-auto flex max-w-5xl flex-col gap-6 px-4 pb-16 sm:px-6">
+      {/* ── Summary Banner ─────────────────────────────────── */}
+      <header className="animate-fade-in-up overflow-hidden rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 p-6 shadow-xl shadow-orange-500/20 sm:p-8 dark:shadow-orange-500/10">
+        <p className="text-xs font-bold tracking-widest text-white/80 uppercase">
+          {arena === 'soft' ? '🎭 软战场战报' : '🐍 硬战场战报'}
         </p>
-        <h2
-          style={{
-            margin: `${spacing.xs} 0 0`,
-            fontSize: typeScale.scoreboard,
-            fontWeight: fontWeight.black,
-            lineHeight: 1.25,
-            color: v('ink'),
-          }}
-        >
+        <h2 className="mt-2 text-2xl font-black leading-tight text-white sm:text-3xl">
           {summary}
         </h2>
-        <p
-          style={{
-            marginTop: spacing.sm,
-            fontSize: typeScale.body,
-            color: v('ink-muted'),
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-          }}
-        >
+        <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-white/85">
           {topic}
         </p>
       </header>
 
-      {hasDegradedJudge ? (
-        <Banner tone="degraded">裁判不可用，本场仅人类投票</Banner>
-      ) : null}
-
-      {failedContestants.length > 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
-          {failedContestants.map((o) => (
-            <p
-              key={o.slot}
-              style={{
-                margin: 0,
-                fontSize: typeScale.body,
-                color: v('failure'),
-                fontWeight: fontWeight.bold,
-              }}
-            >
-              · {providerLabelOf(providerLabels, o.providerId, o.providerId)}（{o.modelId}）{statusText(o.status)}
-              {o.errorMessage ? ` — ${o.errorMessage}` : ''}
-            </p>
-          ))}
-        </div>
-      ) : null}
-
+      {/* ── Vote Bar ──────────────────────────────────────── */}
       <VoteBar
         battleId={result.battleId}
         contestants={contestsForVote}
@@ -269,13 +181,26 @@ export function Settlement({ arena, topic, result, snapshot, providerLabels }: S
         disabled={arena === 'hard-code'}
       />
 
-      <div
-        style={{
-          display: 'grid',
-          gap: spacing.lg,
-          gridTemplateColumns: arena === 'soft' ? 'repeat(auto-fit, minmax(18rem, 1fr))' : '1fr',
-        }}
-      >
+      {/* ── Banners ───────────────────────────────────────── */}
+      {hasDegradedJudge ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+          裁判模型不可用，本场仅靠人类投票判定
+        </div>
+      ) : null}
+
+      {failedContestants.length > 0 ? (
+        <div className="flex flex-col gap-1">
+          {failedContestants.map((o) => (
+            <p key={o.slot} className="text-sm font-medium text-red-600 dark:text-red-400">
+              · {providerLabelOf(providerLabels, o.providerId, o.providerId)}（{o.modelId}）{statusText(o.status)}
+              {o.errorMessage ? ` — ${o.errorMessage}` : ''}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {/* ── Judge / Hardcode Panels ───────────────────────── */}
+      <div className={`grid gap-4 ${arena === 'soft' ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
         {arena === 'soft' ? (
           <JudgePanel result={result} providerLabels={providerLabels} />
         ) : null}
@@ -285,22 +210,16 @@ export function Settlement({ arena, topic, result, snapshot, providerLabels }: S
         ) : null}
       </div>
 
+      {/* ── Crash Moments ────────────────────────────────── */}
       {crashes.length > 0 ? (
         <div>
-          <p
-            style={{
-              margin: 0,
-              fontSize: typeScale.micro,
-              fontWeight: fontWeight.black,
-              letterSpacing: '0.14em',
-              color: v('ink-faint'),
-            }}
-          >
-            翻车榜
-          </p>
-          <ul style={{ margin: `${spacing.sm} 0 0`, paddingLeft: spacing.md }}>
+          <p className="text-xs font-bold tracking-wider text-zinc-400 uppercase">翻车榜</p>
+          <ul className="mt-2 list-disc pl-5 space-y-1">
             {crashes.map((crash, index) => (
-              <li key={`${crash.kind}-${crash.slot}-${index}`} style={{ fontSize: typeScale.body, color: v('ink-muted') }}>
+              <li
+                key={`${crash.kind}-${crash.slot}-${index}`}
+                className="text-sm leading-relaxed text-zinc-500"
+              >
                 {crash.text}
               </li>
             ))}
@@ -319,50 +238,45 @@ function JudgePanel({
   providerLabels: Record<string, string>
 }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: spacing.sm,
-        padding: spacing.md,
-        border: `1px solid ${v('border')}`,
-        borderRadius: radius.lg,
-        backgroundColor: v('surface'),
-      }}
-    >
-      <p style={{ margin: 0, fontSize: typeScale.label, fontWeight: fontWeight.black, letterSpacing: '0.12em', color: v('ink-faint') }}>
+    <div className="flex flex-col gap-2 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
         AI 裁判（双轮位置对调）
       </p>
       {result.verdicts.length === 0 ? (
-        <p style={{ margin: 0, fontSize: typeScale.body, color: v('ink-muted') }}>本场无裁判打分</p>
+        <p className="text-sm text-zinc-500">本场无裁判打分</p>
       ) : (
         result.verdicts.map((verdict) => {
           const scores = judgeScores(verdict)
           const outcome = result.contestants.find((c) => c.slot === verdict.contestantSlot)
           const label = outcome ? providerLabelOf(providerLabels, outcome.providerId, outcome.providerId) : `${verdict.contestantSlot} 号`
           return (
-            <div key={verdict.contestantSlot} style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
-              <span style={{ fontSize: typeScale.label, fontWeight: fontWeight.bold, color: v('ink') }}>
-                {label}
-              </span>
+            <div
+              key={verdict.contestantSlot}
+              className="flex flex-col gap-1 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800"
+            >
+              <span className="text-xs font-bold text-zinc-900 dark:text-zinc-50">{label}</span>
               {scores ? (
-                <div style={{ display: 'flex', gap: spacing.md, fontSize: typeScale.micro, color: v('ink-muted') }}>
-                  <span>逻辑 {scores.logic}</span>
-                  <span>论据 {scores.evidence}</span>
-                  <span>切题 {scores.relevance}</span>
+                <div className="flex gap-4">
+                  {[
+                    { key: 'logic', label: '逻辑', value: scores.logic },
+                    { key: 'evidence', label: '论据', value: scores.evidence },
+                    { key: 'relevance', label: '切题', value: scores.relevance },
+                  ].map((item) => (
+                    <span key={item.key} className="text-[11px] text-zinc-500 font-medium">
+                      {item.label} <strong className="text-zinc-900 dark:text-zinc-50">{item.value}</strong>
+                    </span>
+                  ))}
                 </div>
               ) : null}
               {verdict.rationale ? (
-                <p style={{ margin: 0, fontSize: typeScale.body, color: v('ink-muted'), lineHeight: 1.6 }}>
-                  {verdict.rationale}
-                </p>
+                <p className="text-sm leading-relaxed text-zinc-500">{verdict.rationale}</p>
               ) : null}
             </div>
           )
         })
       )}
-      <p style={{ margin: 0, fontSize: typeScale.micro, color: v('ink-faint') }}>
-        {result.judgeAvailable ? 'AI 裁判与观众票数：见上栏分项，不合成总分' : '本场仅人类投票'}
+      <p className="text-[11px] text-zinc-400">
+        {result.judgeAvailable ? '分数独立展示，不合成总分' : '本场仅人类投票'}
       </p>
     </div>
   )
@@ -378,18 +292,8 @@ function HardcodePanel({
   providerLabels: Record<string, string>
 }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: spacing.sm,
-        padding: spacing.md,
-        border: `1px solid ${v('border')}`,
-        borderRadius: radius.lg,
-        backgroundColor: v('surface'),
-      }}
-    >
-      <p style={{ margin: 0, fontSize: typeScale.label, fontWeight: fontWeight.black, letterSpacing: '0.12em', color: v('ink-faint') }}>
+    <div className="flex flex-col gap-2 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
         沙箱执行结果
       </p>
       {result.contestants.map((outcome) => {
@@ -403,93 +307,45 @@ function HardcodePanel({
         return (
           <div
             key={outcome.slot}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: spacing.sm,
-              padding: `${spacing.sm} 0`,
-              borderBottom: `1px solid ${v('border')}`,
-            }}
+            className="flex items-center gap-4 border-b border-zinc-100 py-3 last:border-0 dark:border-zinc-800"
           >
-            <span
-              title={`${outcome.slot} 号选手`}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 22,
-                height: 22,
-                borderRadius: radius.sm,
-                backgroundColor: v('scoreboard'),
-                color: v('scoreboard-accent'),
-                fontSize: typeScale.micro,
-                fontWeight: fontWeight.black,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
+            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-zinc-900 text-[11px] font-black tabular-nums text-amber-400 dark:bg-zinc-800">
               {outcome.slot}
             </span>
-            <span style={{ fontSize: typeScale.body, fontWeight: fontWeight.bold, color: v('ink') }}>
-              {providerLabelOf(providerLabels, outcome.providerId, outcome.providerId)}
+            <span className="min-w-0 flex-1">
+              <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
+                {providerLabelOf(providerLabels, outcome.providerId, outcome.providerId)}
+              </span>
+              <span className="ml-2 font-mono text-[11px] text-zinc-400">
+                {outcome.modelId}
+              </span>
             </span>
-            <span
-              style={{
-                fontFamily: 'var(--font-geist-mono, monospace)',
-                fontSize: typeScale.micro,
-                color: v('ink-faint'),
-              }}
-            >
-              {outcome.modelId}
-            </span>
-            <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: spacing.sm }}>
-              <span
-                role="img"
-                aria-label={`通过率 ${rate}%`}
-                style={{
-                  position: 'relative',
-                  display: 'block',
-                  width: 56,
-                  height: 6,
-                  borderRadius: radius.pill,
-                  backgroundColor: v('surface-sunken'),
-                  overflow: 'hidden',
-                }}
-              >
+            {/* Rate bar */}
+            <span className="flex items-center gap-2">
+              <span className="relative block h-2 w-16 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
                 <span
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: `${rate}%`,
-                    backgroundColor: rate >= 80 ? v('success') : rate >= 40 ? v('scoreboard-accent') : v('failure'),
-                    borderRadius: radius.pill,
-                  }}
+                  className={`absolute inset-0 h-full rounded-full transition-[width] duration-500 ease-out ${
+                    rate >= 80 ? 'bg-emerald-500' : rate >= 40 ? 'bg-amber-400' : 'bg-red-500'
+                  }`}
+                  style={{ width: `${rate}%` }}
                 />
               </span>
-              <span
-                style={{
-                  minWidth: 48,
-                  textAlign: 'right',
-                  fontFamily: 'var(--font-geist-mono, monospace)',
-                  fontSize: typeScale.label,
-                  fontWeight: fontWeight.bold,
-                  color: v('ink'),
-                }}
-              >
+              <span className="min-w-12 text-right font-mono text-xs font-bold tabular-nums text-zinc-900 dark:text-zinc-50">
                 {passed}/{total}
               </span>
             </span>
             {sandbox ? (
-              <span style={{ fontSize: typeScale.micro, color: v('ink-faint') }}>
+              <span className="text-[11px] text-zinc-400">
                 {sandbox.time_ms ?? 0}ms · {sandbox.isolation_level === 'wasm-worker' ? 'WASM' : sandbox.isolation_level}
               </span>
             ) : null}
             {sandbox?.degraded ? (
-              <span style={{ fontSize: typeScale.micro, color: v('degraded') }}>降级未真实执行</span>
+              <span className="text-[11px] text-amber-600 dark:text-amber-400">降级</span>
             ) : null}
           </div>
         )
       })}
-      <p style={{ margin: 0, fontSize: typeScale.micro, color: v('ink-faint') }}>
+      <p className="text-[11px] text-zinc-400">
         隔离级别：{new Set(snapshot.sandboxResults.map((r) => r.isolation_level)).size === 1
           ? (snapshot.sandboxResults[0]?.isolation_level === 'wasm-worker'
             ? 'WASM 语言级沙箱，非 OS 级隔离'

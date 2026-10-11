@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { BattleShell } from '@/components/arena/battle-shell'
-import { fontWeight, radius, spacing, themeCss, typeScale, v } from '@/components/arena/theme'
 import { getSnapshot } from '@/lib/db/repo'
 import { PROVIDERS } from '@/lib/providers/registry'
 
@@ -12,35 +11,17 @@ export const metadata: Metadata = {
 
 function MissingBattle({ id }: { id: string }) {
   return (
-    <div style={{ maxWidth: '42rem', margin: '0 auto', padding: '4rem 1.25rem' }}>
-      <style dangerouslySetInnerHTML={{ __html: themeCss }} />
-      <h1 style={{ fontSize: typeScale.scoreboard, fontWeight: fontWeight.black, color: v('ink') }}>
+    <div className="mx-auto max-w-lg px-5 py-16">
+      <h1 className="text-3xl font-black text-zinc-900 dark:text-zinc-50">
         对战不存在
       </h1>
-      <p
-        style={{
-          marginTop: spacing.md,
-          fontSize: typeScale.body,
-          lineHeight: 1.7,
-          color: v('ink-muted'),
-        }}
-      >
-        id 为 <span style={{ fontFamily: 'var(--font-geist-mono, monospace)' }}>{id}</span>{' '}
+      <p className="mt-3 text-sm leading-[1.7] text-zinc-500">
+        id 为 <span className="font-mono">{id}</span>{' '}
         的对战没有记录，可能从未创建，也可能已被清理。请回擂台首页重新开一场。
       </p>
       <Link
         href="/"
-        style={{
-          marginTop: spacing.xl,
-          display: 'inline-block',
-          padding: `${spacing.md} ${spacing.xl}`,
-          borderRadius: radius.md,
-          backgroundColor: v('scoreboard-accent'),
-          color: v('scoreboard'),
-          fontSize: typeScale.label,
-          fontWeight: fontWeight.black,
-          textDecoration: 'none',
-        }}
+        className="mt-6 inline-block rounded-lg bg-amber-400 px-6 py-2.5 text-sm font-black text-zinc-900 no-underline transition-colors hover:bg-amber-500"
       >
         回擂台首页
       </Link>

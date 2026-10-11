@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useShallow } from 'zustand/react/shallow'
 import { closesStream } from '@/lib/battle/registry'
 import { parseBattleEvent } from '@/lib/battle/events'
 import type { ArenaId } from '@/lib/arena/types'
@@ -15,7 +16,7 @@ import {
 import { ContestantCard } from './contestant-card'
 import { StatusBar } from './status-bar'
 import { Settlement } from './settlement'
-import { arenaPalette, fontWeight, layout, radius, spacing, themeCss, typeScale, v } from './theme'
+import { arenaPalette } from './theme'
 
 const MAX_RECONNECT_FAILURES = 3
 const RECONNECT_DELAY_MS = 2000
@@ -39,15 +40,20 @@ export function BattleShell({
   initialSnapshot,
   providerLabels,
 }: BattleShellProps) {
-  const apply = useBattleStore((state) => state.apply)
-  const hydrate = useBattleStore((state) => state.hydrate)
-  const hydratedBattleId = useBattleStore((state) => state.hydratedBattleId)
-  const phase = useBattleStore((state) => state.phase)
-  const startedAt = useBattleStore((state) => state.startedAt)
-  const contestants = useBattleStore((state) => state.contestants)
-  const summary = useBattleStore((state) => state.summary)
-  const snapshot = useBattleStore((state) => state.snapshot)
-  const failureReason = useBattleStore((state) => state.failureReason)
+  const { apply, hydrate, hydratedBattleId, phase, startedAt, contestants, summary, snapshot, failureReason } =
+    useBattleStore(
+      useShallow((state) => ({
+        apply: state.apply,
+        hydrate: state.hydrate,
+        hydratedBattleId: state.hydratedBattleId,
+        phase: state.phase,
+        startedAt: state.startedAt,
+        contestants: state.contestants,
+        summary: state.summary,
+        snapshot: state.snapshot,
+        failureReason: state.failureReason,
+      })),
+    )
 
   const seed = useMemo(() => dataFromSnapshot(initialSnapshot), [initialSnapshot])
   const live = hydratedBattleId === battleId
@@ -163,119 +169,20 @@ export function BattleShell({
   const activeSnapshot = live ? snapshot : seed.snapshot
 
   return (
-    <div
-      style={{
-        minHeight: '100%',
-        backgroundColor: v('page-bg'),
-        color: v('ink'),
-      }}
-    >
-      <style dangerouslySetInnerHTML={{ __html: themeCss }} />
-
-      <header
-        style={{
-          borderBottom: `2px solid ${v('border-strong')}`,
-          backgroundColor: v('surface'),
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: spacing.md,
-            maxWidth: layout.pageMaxWidth,
-            margin: '0 auto',
-            padding: `${spacing.md} ${spacing.md} 0`,
-          }}
-        >
+    <div className="min-h-full bg-[var(--background)] text-[var(--foreground)]">
+      {/* ── Header ─────────────────────────────────────────── */}
+      <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-4 sm:px-6">
           <Link
             href="/"
-            style={{
-              fontSize: typeScale.title,
-              fontWeight: fontWeight.black,
-              color: v('ink'),
-              textDecoration: 'none',
-            }}
+            className="text-sm font-bold text-zinc-500 hover:text-orange-500 dark:text-zinc-400 dark:hover:text-orange-400"
           >
-            melee · 观战
+            ← 回首页
           </Link>
-          <span
-            style={{
-              padding: `1px ${spacing.sm}`,
-              borderRadius: radius.sm,
-              backgroundColor: v('surface-alt'),
-              color: v('ink-faint'),
-              fontFamily: 'var(--font-geist-mono, monospace)',
-              fontSize: typeScale.micro,
-            }}
-          >
-            {battleId}
-          </span>
-          <div
-            style={{
-              marginLeft: 'auto',
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              gap: spacing.md,
-            }}
-          >
-            {cancelNotice ? (
-              <span style={{ fontSize: typeScale.micro, fontWeight: fontWeight.bold, color: v('ink-muted') }}>
-                {cancelNotice}
-              </span>
-            ) : null}
-            <button
-              type="button"
-              onClick={handleCancel}
-              disabled={cancelling || settled}
-              style={{
-                padding: `${spacing.sm} ${spacing.md}`,
-                border: `1px solid ${v('border-strong')}`,
-                borderRadius: radius.md,
-                backgroundColor: 'transparent',
-                color: v('ink'),
-                fontSize: typeScale.label,
-                fontWeight: fontWeight.bold,
-                cursor: cancelling || settled ? 'not-allowed' : 'pointer',
-                opacity: cancelling || settled ? 0.4 : 1,
-              }}
-            >
-              {cancelling ? '取消中…' : '取消对战'}
-            </button>
-          </div>
-        </div>
-        <div style={{ maxWidth: layout.pageMaxWidth, margin: '0 auto', padding: `${spacing.sm} ${spacing.md} ${spacing.md}` }}>
-          <p
-            style={{
-              margin: 0,
-              fontSize: typeScale.micro,
-              fontWeight: fontWeight.black,
-              letterSpacing: '0.14em',
-              color: v('ink-faint'),
-            }}
-          >
-            本场题目
-          </p>
-          <p
-            style={{
-              margin: `${spacing.xs} 0 0`,
-              padding: `${spacing.sm} ${spacing.md}`,
-              borderLeft: `4px solid ${arenaPalette[arena]}`,
-              backgroundColor: v('surface-alt'),
-              fontSize: typeScale.body,
-              lineHeight: 1.7,
-              color: v('ink-muted'),
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
-          >
-            {topic}
-          </p>
         </div>
       </header>
 
+      {/* ── Status Bar ───────────────────────────────────── */}
       <StatusBar
         phase={shownPhase}
         startedAt={shownStartedAt}
@@ -283,35 +190,46 @@ export function BattleShell({
         failureReason={shownFailureReason}
       />
 
+      {/* ── Connection Lost Alert ─────────────────────────── */}
       {connectionLost ? (
-        <p
+        <div
           role="alert"
-          style={{
-            maxWidth: layout.pageMaxWidth,
-            margin: `${spacing.md} auto 0`,
-            padding: `${spacing.sm} ${spacing.md}`,
-            border: `1px solid ${v('failure')}`,
-            borderRadius: radius.md,
-            backgroundColor: v('failure-soft'),
-            color: v('failure'),
-            fontSize: typeScale.label,
-            fontWeight: fontWeight.bold,
-          }}
+          className="mx-auto mt-6 max-w-5xl rounded-xl border-2 border-red-200 bg-red-50 px-4 py-3 text-center text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300"
         >
-          连接中断，请刷新
-        </p>
+          连接已中断 — 请刷新页面恢复实时画面
+        </div>
       ) : null}
 
-      <main
-        style={{
-          display: 'grid',
-          gap: spacing.md,
-          gridTemplateColumns: 'repeat(auto-fill, minmax(20rem, 1fr))',
-          maxWidth: layout.pageMaxWidth,
-          margin: '0 auto',
-          padding: `${spacing.lg} ${spacing.md}`,
-        }}
-      >
+      {/* ── Topic & Battle Info ─────────────────────────── */}
+      <div className="mx-auto max-w-5xl px-4 pt-5 sm:px-6">
+        <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-500 dark:text-zinc-400">
+            <span className="font-mono text-xs text-zinc-400">{battleId}</span>
+            <span
+              className="rounded-full px-2.5 py-0.5 text-xs font-bold"
+              style={{ backgroundColor: `${arenaPalette[arena]}18`, color: arenaPalette[arena] }}
+            >
+              {arena === 'soft' ? '🎭 软战场' : '🐍 硬战场'}
+            </span>
+            {cancelNotice ? <span className="text-xs">{cancelNotice}</span> : null}
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={cancelling || settled}
+              className="ml-auto rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-red-300 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600 dark:text-zinc-400 dark:hover:border-red-700 dark:hover:text-red-400"
+            >
+              {cancelling ? '取消中…' : '取消对战'}
+            </button>
+          </div>
+          <p className="mt-2 text-xs font-bold tracking-wider text-zinc-400">本场题目</p>
+          <pre className="mt-1 whitespace-pre-wrap break-words border-l-4 pl-3 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300" style={{ borderColor: arenaPalette[arena] }}>
+            {topic}
+          </pre>
+        </div>
+      </div>
+
+      {/* ── Contestant Cards ─────────────────────────────── */}
+      <main className="mx-auto grid max-w-5xl gap-4 px-4 py-6 sm:grid-cols-2 sm:px-6">
         {views.map((view) => (
           <ContestantCard
             key={view.slot}
@@ -322,6 +240,7 @@ export function BattleShell({
         ))}
       </main>
 
+      {/* ── Settlement ────────────────────────────────────── */}
       {summary && activeSnapshot ? (
         <Settlement
           arena={arena}

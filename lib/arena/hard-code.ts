@@ -6,6 +6,7 @@ import {
   recordSandboxResult,
   type NewSandboxResult,
 } from '../db/repo.ts'
+import { logger } from '../log/logger.ts'
 
 const CODE_BLOCK_RE = /```(?:python|py)?\s*\n([\s\S]*?)```/m
 const UNTERMINATED_CODE_BLOCK_RE = /```(?:python|py)?\s*\n([\s\S]*)$/m
@@ -49,9 +50,9 @@ export async function judgeCodeSubmissions(
 
     const limit = options.timeLimitMs
     const startedAt = Date.now()
-    let backend = options.sandbox.id
-    let isolationLevel = options.sandbox.isolationLevel
-    let degraded = 0
+    const backend = options.sandbox.id
+    const isolationLevel = options.sandbox.isolationLevel
+    const degraded = 0
     const contestantId = sub.dbContestantId ?? `slot-${sub.contestant.slot}`
 
     try {
@@ -136,7 +137,7 @@ async function persistResult(slot: number, result: NewSandboxResult): Promise<vo
   try {
     await recordSandboxResult(result)
   } catch (error) {
-    console.error(`写入沙箱结果失败 (slot=${slot}): ${error instanceof Error ? error.message : String(error)}`)
+    logger.error('写入沙箱结果失败', { slot, error: error instanceof Error ? error.message : String(error) })
   }
 }
 

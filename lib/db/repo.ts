@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { getDb } from './client.ts'
+import type { ContestantStatus } from '../providers/stream.ts'
 
 export type BattlePhase =
   | 'pending'
@@ -10,11 +11,14 @@ export type BattlePhase =
   | 'cancelled'
   | 'failed'
 
+/** 选手在数据库中的状态：运行中 + 终态 */
+export type DbContestantStatus = ContestantStatus | 'running'
+
 export interface NewBattle {
   id?: string
   arena: string
   topic: string
-  status?: string
+  status?: BattlePhase
   phase?: BattlePhase
   createdAt?: number
 }
@@ -23,7 +27,7 @@ export interface BattleRow {
   id: string
   arena: string
   topic: string
-  status: string
+  status: BattlePhase
   phase: BattlePhase
   created_at: number
   completed_at: number | null
@@ -37,13 +41,18 @@ export interface NewContestant {
   providerId: string
   modelId: string
   positionIndex: number
-  status: string
+  status: DbContestantStatus
   promptTokens?: number | null
   completionTokens?: number | null
   latencyMs?: number | null
   outputText?: string | null
   code?: string | null
   errorMessage?: string | null
+}
+
+/** 内部用：批量创建时 battleId 由 createBattleWithContestants 填充 */
+interface BulkNewContestant extends Omit<NewContestant, 'battleId'> {
+  battleId?: string
 }
 
 export interface ContestantRow {
@@ -68,7 +77,7 @@ export interface ContestantPatch {
   latencyMs?: number | null
   outputText?: string | null
   code?: string | null
-  status?: string
+  status?: DbContestantStatus
   errorMessage?: string | null
 }
 
@@ -170,7 +179,7 @@ function battleFromRow(row: Record<string, unknown> | undefined): BattleRow | un
     id: String(row.id),
     arena: String(row.arena),
     topic: String(row.topic),
-    status: String(row.status),
+    status: String(row.status) as BattlePhase,
     phase: String(row.phase) as BattlePhase,
     created_at: Number(row.created_at),
     completed_at: row.completed_at == null ? null : Number(row.completed_at),
@@ -239,6 +248,20 @@ function sandboxResultFromRow(row: Record<string, unknown>): SandboxResultRow {
   }
 }
 
+/** 在事务中执行多个写入操作 */
+function runInTransaction<T>(fn: () => T): T {
+  const db = getDb()
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    const result = fn()
+    db.exec('COMMIT')
+    return result
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+}
+
 export async function createBattle(b: NewBattle): Promise<string> {
   const id = b.id ?? randomUUID()
   const createdAt = b.createdAt ?? now()
@@ -284,6 +307,57 @@ export async function insertContestant(c: NewContestant): Promise<string> {
       )
   })
   return id
+}
+
+/** 在同一事务中批量创建 battle + contestants（原子性保证） */
+export async function createBattleWithContestants(
+  battle: NewBattle,
+  contestants: BulkNewContestant[],
+): Promise<{ battleId: string; contestantIds: Map<number, string> }> {
+  const battleId = battle.id ?? randomUUID()
+  const createdAt = battle.createdAt ?? now()
+  const contestantIds = new Map<number, string>()
+
+  return enqueueWrite(() =>
+    runInTransaction(() => {
+      getDb()
+        .prepare(
+          'INSERT INTO battles (id, arena, topic, status, phase, created_at, completed_at, error) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)',
+        )
+        .run(
+          battleId,
+          battle.arena,
+          battle.topic,
+          battle.status ?? 'pending',
+          battle.phase ?? 'pending',
+          createdAt,
+        )
+      for (const c of contestants) {
+        const cid = c.id ?? randomUUID()
+        contestantIds.set(c.slot, cid)
+        getDb()
+          .prepare(
+            'INSERT INTO contestants (id, battle_id, slot, provider_id, model_id, position_index, prompt_tokens, completion_tokens, latency_ms, output_text, code, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          )
+          .run(
+            cid,
+            battleId,
+            c.slot,
+            c.providerId,
+            c.modelId,
+            c.positionIndex,
+            c.promptTokens ?? null,
+            c.completionTokens ?? null,
+            c.latencyMs ?? null,
+            c.outputText ?? null,
+            c.code ?? null,
+            c.status,
+            c.errorMessage ?? null,
+          )
+      }
+      return { battleId, contestantIds }
+    }),
+  )
 }
 
 export async function updateContestantResult(id: string, patch: ContestantPatch): Promise<void> {

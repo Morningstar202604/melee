@@ -2,6 +2,7 @@ import { generateText, type LanguageModel } from 'ai'
 import { z } from 'zod'
 import type { JudgeContext, Submission, Verdict } from '../arena/types.ts'
 import { createModel, getProvider } from '../providers/registry.ts'
+import { logger } from '../log/logger.ts'
 
 const DEFAULT_RATIONALE = '未提供理由'
 const DEFAULT_SCORE = 0
@@ -298,7 +299,7 @@ export async function runJudge(opts: JudgeOptions): Promise<JudgeOutcome> {
       raw: raws.join('\n'),
     }
   } catch (error) {
-    console.error(`裁判阶段失败: ${error instanceof Error ? error.message : String(error)}`)
+    logger.error('裁判阶段失败', { error: error instanceof Error ? error.message : String(error) })
     return { verdicts: [], roundsAgreed: false, unavailable: true }
   }
 }

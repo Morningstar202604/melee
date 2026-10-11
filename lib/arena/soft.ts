@@ -5,6 +5,7 @@ import {
   type JudgeOptions,
   type JudgeOutcome,
 } from '../judge/runner.ts'
+import { logger } from '../log/logger.ts'
 
 export interface SoftArenaDeps {
   runJudge: (opts: JudgeOptions) => Promise<JudgeOutcome>
@@ -32,7 +33,7 @@ export function createSoftArena(deps: Partial<SoftArenaDeps> = {}): Arena {
         })
         return outcome.verdicts
       } catch (error) {
-        console.error(`软战场裁判异常: ${error instanceof Error ? error.message : String(error)}`)
+        logger.error('软战场裁判异常', { error: error instanceof Error ? error.message : String(error) })
         return []
       }
     },
