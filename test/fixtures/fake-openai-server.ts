@@ -11,6 +11,7 @@ export interface FakeServerOptions {
   chunks?: string[]
   failWith?: number
   latencyMs?: number
+  rejectJsonSchema?: boolean
 }
 
 const DEFAULT_CHUNKS = ['你', '好']
@@ -51,6 +52,48 @@ export function startFakeServer(options: FakeServerOptions = {}): Promise<FakeOp
           res.end(
             JSON.stringify({
               error: { message: `fake ${forcedStatus}，收到的凭证是 ${auth}`, type: 'fake_error' },
+            }),
+          )
+          return
+        }
+
+        const rawBody = Buffer.concat(bodyChunks).toString('utf8')
+        let parsedBody: { stream?: unknown; response_format?: { type?: string } } = {}
+        try {
+          parsedBody = JSON.parse(rawBody) as typeof parsedBody
+        } catch {
+          parsedBody = {}
+        }
+
+        if (options.rejectJsonSchema && parsedBody.response_format?.type === 'json_schema') {
+          res.writeHead(400, { 'content-type': 'application/json' })
+          res.end(
+            JSON.stringify({
+              error: { message: 'fake provider 不支持 response_format=json_schema', type: 'invalid_request_error' },
+            }),
+          )
+          return
+        }
+
+        if (parsedBody.stream !== true) {
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(
+            JSON.stringify({
+              id: 'fake',
+              object: 'chat.completion',
+              model: 'fake-model',
+              choices: [
+                {
+                  index: 0,
+                  message: { role: 'assistant', content: chunks.join('') },
+                  finish_reason: 'stop',
+                },
+              ],
+              usage: {
+                prompt_tokens: PROMPT_TOKENS,
+                completion_tokens: COMPLETION_TOKENS,
+                total_tokens: PROMPT_TOKENS + COMPLETION_TOKENS,
+              },
             }),
           )
           return

@@ -507,3 +507,87 @@ test('事件 id 从 0 单调递增且不重复（Last-Event-ID 依赖它）', as
   assert.deepEqual(handle.eventsSince(all.length - 1), [])
   assert.equal(all.at(-1)?.type, 'battle.completed')
 })
+
+test('arena 上报的沙箱进度以 sandbox.result 事件进流，并先于 judge.done', async () => {
+  const recorder: FakeRecorder = { signals: [], abortedStreams: 0 }
+  const deps: BattleDeps = {
+    arena: makeArena(async (subs, ctx) => {
+      for (const sub of subs) {
+        ctx.onSandboxResult?.({
+          slot: sub.contestant.slot,
+          status: 'ok',
+          passed: 2,
+          total: 3,
+          timeMs: 120,
+          memoryKb: null,
+        })
+      }
+      return subs.map((sub) => ({
+        contestantSlot: sub.contestant.slot,
+        scores: { pass_rate: 0.67 },
+        passed: 2,
+        total: 3,
+        rationale: '通过 2/3',
+      }))
+    }),
+    createModel: createModelFor(
+      new Map([
+        [1, { chunks: ['print(1)'] }],
+        [2, { chunks: ['print(2)'] }],
+      ]),
+      recorder,
+    ),
+    judgeContext: JUDGE_CONTEXT,
+  }
+  const played = await playBattle(
+    { arena: 'hard-code', topic: '两数之和', contestants: twoContestants() },
+    deps,
+  )
+
+  const sandboxEvents = played.events.filter(
+    (event): event is Extract<BattleEvent, { type: 'sandbox.result' }> =>
+      event.type === 'sandbox.result',
+  )
+  assert.equal(sandboxEvents.length, 2)
+  assert.deepEqual(
+    sandboxEvents.map((event) => event.slot).sort((a, b) => a - b),
+    [1, 2],
+  )
+  assert.ok(sandboxEvents.every((event) => event.passed === 2 && event.total === 3))
+
+  const sandboxIndex = played.events.findIndex((event) => event.type === 'sandbox.result')
+  const judgeDoneIndex = played.events.findIndex((event) => event.type === 'judge.done')
+  assert.ok(sandboxIndex >= 0, '必须出现 sandbox.result')
+  assert.ok(judgeDoneIndex > sandboxIndex, 'sandbox.result 必须排在 judge.done 之前')
+  assert.equal(played.events.at(-1)?.type, 'battle.completed')
+})
+
+test('软战场裁判分写入 judgements 表（带 position_index 与裁判模型）', async () => {
+  const recorder: FakeRecorder = { signals: [], abortedStreams: 0 }
+  const deps: BattleDeps = {
+    arena: makeArena(),
+    createModel: createModelFor(
+      new Map([
+        [1, { chunks: ['甲组立论'] }],
+        [2, { chunks: ['乙组立论'] }],
+      ]),
+      recorder,
+    ),
+    judgeContext: JUDGE_CONTEXT,
+  }
+  const played = await playBattle(
+    { arena: 'soft', topic: '裁判分落库', contestants: twoContestants() },
+    deps,
+  )
+
+  const snapshot = getSnapshot(played.battleId)
+  assert.ok(snapshot)
+  assert.equal(snapshot.judgements.length, 2)
+  assert.deepEqual(
+    snapshot.judgements.map((row) => row.position_index).sort((a, b) => a - b),
+    [1, 2],
+  )
+  assert.ok(snapshot.judgements.every((row) => row.judge_model === JUDGE_CONTEXT.judgeModelId))
+  const scores = JSON.parse(snapshot.judgements[0]!.scores_json) as Record<string, number>
+  assert.deepEqual(scores, { logic: 8, evidence: 7, relevance: 9 })
+})

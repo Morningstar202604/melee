@@ -1,7 +1,7 @@
 import { getDb } from '@/lib/db/client'
 import { logger } from '@/lib/log/logger.ts'
 import { getActiveBattleCount } from '@/lib/battle/registry.ts'
-import { secureResponse } from '@/security.ts'
+import { secureResponse } from '@/lib/security.ts'
 
 export const runtime = 'nodejs'
 

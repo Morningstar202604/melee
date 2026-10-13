@@ -389,3 +389,90 @@ test('快照兜底时按已落库耗时把先手标给最快的完成者', () =>
   assert.equal(contestants[1].isFirstFinisher, false)
   assert.equal(contestants[2].isFirstFinisher, false)
 })
+
+test('已结束的软战场快照能重建战报：裁判分取均值、标注裁判可用', () => {
+  const scheduler = makeScheduler()
+  const store = createBattleStore(scheduler)
+  const snapshot = makeSnapshot()
+  snapshot.battle.phase = 'completed'
+  snapshot.battle.status = 'completed'
+  snapshot.contestants[1].status = 'ok'
+  snapshot.judgements = [
+    {
+      id: 'j1',
+      battle_id: 'b1',
+      contestant_id: 'c1',
+      round: 0,
+      judge_model: 'deepseek:deepseek-chat',
+      position_index: 1,
+      scores_json: JSON.stringify({ logic: 8, evidence: 7, relevance: 9 }),
+      rationale: '立论稳',
+      created_at: 1700000006000,
+    },
+    {
+      id: 'j2',
+      battle_id: 'b1',
+      contestant_id: 'c1',
+      round: 0,
+      judge_model: 'deepseek:deepseek-chat',
+      position_index: 1,
+      scores_json: JSON.stringify({ logic: 6, evidence: 5, relevance: 7 }),
+      rationale: '二轮收敛',
+      created_at: 1700000007000,
+    },
+  ]
+  store.getState().hydrate(snapshot)
+
+  const summary = store.getState().summary
+  assert.ok(summary, '已结束对战必须能重建战报')
+  assert.equal(summary.judgeAvailable, true)
+  assert.equal(summary.contestants.length, 2)
+  assert.equal(summary.verdicts.length, 1)
+  assert.deepEqual(summary.verdicts[0]?.scores, { logic: 7, evidence: 6, relevance: 8 })
+  assert.ok(summary.verdicts[0]?.rationale.includes('立论稳'))
+  assert.ok(summary.verdicts[0]?.rationale.includes('二轮收敛'))
+})
+
+test('已结束的硬战场快照用沙箱结果重建通过率', () => {
+  const scheduler = makeScheduler()
+  const store = createBattleStore(scheduler)
+  const snapshot = makeSnapshot()
+  snapshot.battle.phase = 'completed'
+  snapshot.battle.status = 'completed'
+  snapshot.battle.arena = 'hard-code'
+  snapshot.contestants[0].status = 'ok'
+  snapshot.contestants[0].code = 'print(1)'
+  snapshot.contestants[1].status = 'ok'
+  snapshot.sandboxResults = [
+    {
+      id: 's1',
+      contestant_id: 'c1',
+      backend: 'pyodide',
+      isolation_level: 'wasm-worker',
+      language: 'python',
+      status: 'ok',
+      passed: 3,
+      total: 3,
+      time_ms: 412,
+      memory_kb: null,
+      compile_output: null,
+      stdout_tail: '',
+      degraded: 0,
+    },
+  ]
+  store.getState().hydrate(snapshot)
+
+  const summary = store.getState().summary
+  assert.ok(summary)
+  assert.equal(summary.arena, 'hard-code')
+  const verdict = summary.verdicts.find((v) => v.contestantSlot === 1)
+  assert.equal(verdict?.passed, 3)
+  assert.equal(verdict?.total, 3)
+})
+
+test('运行中的快照不重建战报', () => {
+  const scheduler = makeScheduler()
+  const store = createBattleStore(scheduler)
+  store.getState().hydrate(makeSnapshot())
+  assert.equal(store.getState().summary, null)
+})

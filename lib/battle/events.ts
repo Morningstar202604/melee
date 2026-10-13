@@ -126,9 +126,12 @@ export const judgeDoneSchema = z.object({
   available: z.boolean(),
 })
 
+export const sandboxProgressStatusSchema = z.enum(['ok', 'timeout', 'error', 'unavailable'])
+
 export const sandboxResultSchema = z.object({
   type: z.literal('sandbox.result'),
   slot: z.number(),
+  status: sandboxProgressStatusSchema,
   passed: z.number(),
   total: z.number(),
   timeMs: z.number().nullable(),

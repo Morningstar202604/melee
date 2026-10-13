@@ -1,7 +1,7 @@
 import { create, type StoreApi, type UseBoundStore } from 'zustand'
 import { isTerminalEvent } from '../battle/registry.ts'
 import type { BattleEvent, BattlePhase, BattleResult } from '../battle/events.ts'
-import type { ContestantStatus } from '../arena/types.ts'
+import type { ArenaId, ContestantStatus, SandboxProgress } from '../arena/types.ts'
 import type { Snapshot } from '../db/repo.ts'
 
 export type ContestantStreamStatus = 'streaming'
@@ -17,6 +17,7 @@ export interface ContestantView {
   latencyMs: number | null
   finishedAt: number | null
   isFirstFinisher: boolean
+  sandbox: SandboxProgress | null
 }
 
 export interface BattleData {
@@ -86,6 +87,7 @@ function blankContestant(
     latencyMs: null,
     finishedAt: null,
     isFirstFinisher: false,
+    sandbox: null,
   }
 }
 
@@ -162,6 +164,28 @@ export function reduceEvent(data: BattleData, event: BattleEvent): BattleData {
       }
     }
 
+    case 'sandbox.result': {
+      const current = data.contestants[event.slot]
+      if (!current) return data
+      return {
+        ...data,
+        contestants: {
+          ...data.contestants,
+          [event.slot]: {
+            ...current,
+            sandbox: {
+              slot: event.slot,
+              status: event.status,
+              passed: event.passed,
+              total: event.total,
+              timeMs: event.timeMs,
+              memoryKb: event.memoryKb,
+            },
+          },
+        },
+      }
+    }
+
     case 'vote.tally':
       return { ...data, voteTally: { ...event.tally } }
 
@@ -193,10 +217,124 @@ function markFirstFinisherFromSnapshot(contestants: Record<number, ContestantVie
   contestants[fastest.slot] = { ...fastest, isFirstFinisher: true }
 }
 
+function parseScores(json: string): Record<string, number> {
+  try {
+    const parsed = JSON.parse(json) as Record<string, unknown>
+    const scores: Record<string, number> = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === 'number' && Number.isFinite(value)) scores[key] = value
+    }
+    return scores
+  } catch {
+    return {}
+  }
+}
+
+function averageScores(rows: Array<{ scores_json: string }>): Record<string, number> {
+  const totals = new Map<string, { sum: number; count: number }>()
+  for (const row of rows) {
+    for (const [key, value] of Object.entries(parseScores(row.scores_json))) {
+      const entry = totals.get(key) ?? { sum: 0, count: 0 }
+      entry.sum += value
+      entry.count += 1
+      totals.set(key, entry)
+    }
+  }
+  const scores: Record<string, number> = {}
+  for (const [key, entry] of totals) {
+    scores[key] = Math.round((entry.sum / entry.count) * 10) / 10
+  }
+  return scores
+}
+
+/** 从快照重建赛果，让结束后的对战重开页面也能看到战报。 */
+export function summaryFromSnapshot(snapshot: Snapshot): BattleResult | null {
+  if (snapshot.battle.phase !== 'completed') return null
+
+  const contestants = snapshot.contestants.map((row) => ({
+    slot: row.slot,
+    providerId: row.provider_id,
+    modelId: row.model_id,
+    status: (row.status === 'running' ? 'provider_error' : row.status) as ContestantStatus,
+    usage:
+      row.prompt_tokens === null && row.completion_tokens === null
+        ? null
+        : { prompt: row.prompt_tokens ?? 0, completion: row.completion_tokens ?? 0 },
+    latencyMs: row.latency_ms ?? 0,
+    outputLength: row.output_text?.length ?? 0,
+    code: row.code,
+    errorMessage: row.error_message,
+  }))
+
+  const contestantById = new Map(snapshot.contestants.map((row) => [row.id, row]))
+  const judgementsById = new Map<string, Array<{ scores_json: string; rationale: string }>>()
+  for (const row of snapshot.judgements) {
+    const list = judgementsById.get(row.contestant_id) ?? []
+    list.push({ scores_json: row.scores_json, rationale: row.rationale })
+    judgementsById.set(row.contestant_id, list)
+  }
+
+  const verdicts: BattleResult['verdicts'] = []
+  for (const [contestantId, rows] of judgementsById) {
+    const contestant = contestantById.get(contestantId)
+    if (!contestant) continue
+    const rationale = rows
+      .map((row) => row.rationale)
+      .filter((text) => text.length > 0)
+      .join(' ｜ ')
+    verdicts.push({
+      contestantSlot: contestant.slot,
+      scores: averageScores(rows),
+      passed: 0,
+      total: 0,
+      rationale: rationale || '未提供理由',
+    })
+  }
+
+  if (snapshot.battle.arena === 'hard-code') {
+    for (const result of snapshot.sandboxResults) {
+      const contestant = contestantById.get(result.contestant_id)
+      if (!contestant || verdicts.some((v) => v.contestantSlot === contestant.slot)) continue
+      verdicts.push({
+        contestantSlot: contestant.slot,
+        scores: {
+          pass_rate: result.total > 0 ? Math.round((result.passed / result.total) * 100) / 100 : 0,
+        },
+        passed: result.passed,
+        total: result.total,
+        rationale:
+          result.total > 0 ? `通过 ${result.passed}/${result.total} 个测试用例` : '本题无测试用例',
+      })
+    }
+  }
+  verdicts.sort((a, b) => a.contestantSlot - b.contestantSlot)
+
+  return {
+    battleId: snapshot.battle.id,
+    arena: snapshot.battle.arena as ArenaId,
+    topic: snapshot.battle.topic,
+    contestants,
+    verdicts,
+    judgeAvailable: snapshot.judgements.length > 0,
+  }
+}
+
 export function dataFromSnapshot(snapshot: Snapshot): BattleData {
+  const sandboxByContestant = new Map<string, { status: string; passed: number; total: number; timeMs: number | null; memoryKb: number | null }>()
+  for (const row of snapshot.sandboxResults) {
+    sandboxByContestant.set(row.contestant_id, {
+      status: row.status,
+      passed: row.passed,
+      total: row.total,
+      timeMs: row.time_ms,
+      memoryKb: row.memory_kb,
+    })
+  }
+
   const contestants: Record<number, ContestantView> = {}
   for (const row of snapshot.contestants) {
     const running = row.status === 'running'
+    const sandbox = sandboxByContestant.get(row.id)
     contestants[row.slot] = {
       slot: row.slot,
       contestantId: row.id,
@@ -208,6 +346,16 @@ export function dataFromSnapshot(snapshot: Snapshot): BattleData {
       latencyMs: row.latency_ms,
       finishedAt: null,
       isFirstFinisher: false,
+      sandbox: sandbox
+        ? {
+            slot: row.slot,
+            status: sandbox.status as SandboxProgress['status'],
+            passed: sandbox.passed,
+            total: sandbox.total,
+            timeMs: sandbox.timeMs,
+            memoryKb: sandbox.memoryKb,
+          }
+        : null,
     }
   }
   markFirstFinisherFromSnapshot(contestants)
@@ -222,7 +370,7 @@ export function dataFromSnapshot(snapshot: Snapshot): BattleData {
     startedAt: snapshot.battle.created_at,
     contestants,
     voteTally,
-    summary: null,
+    summary: summaryFromSnapshot(snapshot),
     failureReason: snapshot.battle.error,
     hydratedBattleId: null,
     snapshot,

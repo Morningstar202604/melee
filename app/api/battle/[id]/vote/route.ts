@@ -2,7 +2,7 @@ import { getBattleHandle } from '../../../../../lib/battle/registry.ts'
 import { getSnapshot, recordVote } from '../../../../../lib/db/repo.ts'
 import { redact } from '../../../../../lib/log/redact.ts'
 import { logger } from '../../../../../lib/log/logger.ts'
-import { secureResponse } from '../../../../../security.ts'
+import { secureResponse } from '../../../../../lib/security.ts'
 
 export const runtime = 'nodejs'
 

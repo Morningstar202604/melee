@@ -30,10 +30,22 @@ export interface Verdict {
   rationale: string
 }
 
+export type SandboxProgressStatus = 'ok' | 'timeout' | 'error' | 'unavailable'
+
+export interface SandboxProgress {
+  slot: number
+  status: SandboxProgressStatus
+  passed: number
+  total: number
+  timeMs: number | null
+  memoryKb: number | null
+}
+
 export interface JudgeContext {
   topic: string
   judgeModelId: string
   judgeApiKey: string
+  onSandboxResult?: (progress: SandboxProgress) => void
 }
 
 export interface Arena {

@@ -8,7 +8,7 @@ import {
 } from '../../../../lib/battle/runner.ts'
 import { createModel, getProvider } from '../../../../lib/providers/registry.ts'
 import { logger } from '../../../../lib/log/logger.ts'
-import { secureResponse } from '../../../../security.ts'
+import { secureResponse } from '../../../../lib/security.ts'
 
 export const runtime = 'nodejs'
 

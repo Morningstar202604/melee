@@ -26,6 +26,30 @@ except Exception:
     pass
 `
 
+const SNAPSHOT = `
+import sys as _sys
+import builtins as _b
+_KEEP_BUILTINS = dict(_b.__dict__)
+_KEEP_MODULES = set(_sys.modules)
+_KEEP_PATH = list(_sys.path)
+`
+
+const RESET = `
+import sys as _sys
+import os as _os
+import builtins as _b
+_b.__dict__.clear()
+_b.__dict__.update(_KEEP_BUILTINS)
+for _k in list(_sys.modules):
+    if _k not in _KEEP_MODULES:
+        _sys.modules.pop(_k, None)
+_sys.path[:] = _KEEP_PATH
+try:
+    _os.environ.clear()
+except Exception:
+    pass
+`
+
 const HARNESS = `
 import io as _io
 import json as _json
@@ -113,7 +137,7 @@ function buildRunner(code, tests) {
   const metaLiteral = JSON.stringify(
     JSON.stringify({ code, tests, outputLimitBytes: OUTPUT_LIMIT_BYTES }),
   )
-  return HARDEN + '\n' + HARNESS.replace('_META_LITERAL', metaLiteral)
+  return RESET + '\n' + HARNESS.replace('_META_LITERAL', metaLiteral)
 }
 
 function tail(text) {
@@ -123,6 +147,20 @@ function tail(text) {
 
 function totalOf(tests) {
   return Array.isArray(tests) ? tests.length : 0
+}
+
+let pyodide = null
+
+async function boot() {
+  pyodide = await loadPyodide({
+    indexURL: INDEX_URL,
+    jsglobals: JS_GLOBALS,
+  })
+  pyodide.setStdout({ batched: () => {} })
+  pyodide.setStderr({ batched: () => {} })
+  await pyodide.runPythonAsync(HARDEN)
+  await pyodide.runPythonAsync(SNAPSHOT)
+  return pyodide
 }
 
 async function execute(message) {
@@ -140,23 +178,12 @@ async function execute(message) {
     }
   }
 
-  const pyodide = await loadPyodide({
-    indexURL: INDEX_URL,
-    jsglobals: JS_GLOBALS,
-  })
-
-  parentPort.postMessage({ type: 'ready' })
-
-  pyodide.setStdout({
-    batched: (chunk) => {
-      collect(chunk)
-    },
-  })
-  pyodide.setStderr({
-    batched: (chunk) => {
-      collect(chunk)
-    },
-  })
+  if (!pyodide) {
+    await boot()
+    parentPort.postMessage({ type: 'ready' })
+  }
+  pyodide.setStdout({ batched: collect })
+  pyodide.setStderr({ batched: collect })
 
   const runStartedAt = Date.now()
   try {
@@ -192,7 +219,26 @@ async function execute(message) {
 
 if (parentPort) {
   parentPort.on('message', (message) => {
-    if (!message || message.type !== 'run') return
+    if (!message) return
+    if (message.type === 'prewarm') {
+      Promise.resolve()
+        .then(async () => {
+          if (!pyodide) {
+            await boot()
+            parentPort.postMessage({ type: 'ready' })
+          } else {
+            parentPort.postMessage({ type: 'ready' })
+          }
+        })
+        .catch((error) => {
+          parentPort.postMessage({
+            type: 'boot-error',
+            errorMessage: error instanceof Error ? error.message : String(error),
+          })
+        })
+      return
+    }
+    if (message.type !== 'run') return
     execute(message).catch((error) => {
       parentPort.postMessage({
         type: 'result',

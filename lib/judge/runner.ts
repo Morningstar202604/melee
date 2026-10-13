@@ -1,7 +1,8 @@
-import { generateText, type LanguageModel } from 'ai'
+import { APICallError, NoObjectGeneratedError, generateText, Output, type LanguageModel } from 'ai'
 import { z } from 'zod'
 import type { JudgeContext, Submission, Verdict } from '../arena/types.ts'
 import { createModel, getProvider } from '../providers/registry.ts'
+import { redact } from '../log/redact.ts'
 import { logger } from '../log/logger.ts'
 
 const DEFAULT_RATIONALE = '未提供理由'
@@ -232,20 +233,46 @@ function toVerdicts(rounds: MappedVerdict[][]): Verdict[] {
   })
 }
 
+/** provider 不支持结构化输出（或模型没按 schema 输出）时，退回纯文本 + 宽松解析。 */
+function isStructuredOutputUnsupported(error: unknown): boolean {
+  if (NoObjectGeneratedError.isInstance(error)) return true
+  if (APICallError.isInstance(error)) {
+    const code = error.statusCode
+    return code === 400 || code === 404 || code === 422
+  }
+  return false
+}
+
 function defaultJudgeCall(opts: JudgeOptions): JudgeCall {
   const model = opts.judgeModel
   if (!model) {
     throw new Error('裁判模型缺失：runJudge 需要 judgeModel，或可注入的 callJudge')
   }
   return async ({ system, user }) => {
-    const result = await generateText({
-      model,
-      system,
-      prompt: user,
-      maxRetries: 0,
-      abortSignal: opts.signal,
-    })
-    return result.text
+    try {
+      const result = await generateText({
+        model,
+        system,
+        prompt: user,
+        maxRetries: 0,
+        abortSignal: opts.signal,
+        output: Output.object({ schema: judgePayloadSchema }),
+      })
+      return JSON.stringify(result.output)
+    } catch (error) {
+      if (!isStructuredOutputUnsupported(error)) throw error
+      logger.debug('裁判模型不支持结构化输出，退回纯文本解析', {
+        detail: redact(error instanceof Error ? error.message : String(error)),
+      })
+      const fallback = await generateText({
+        model,
+        system,
+        prompt: user,
+        maxRetries: 0,
+        abortSignal: opts.signal,
+      })
+      return fallback.text
+    }
   }
 }
 

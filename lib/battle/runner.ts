@@ -10,6 +10,7 @@ import type {
 } from '../arena/types.ts'
 import {
   createBattleWithContestants,
+  recordJudgement,
   updateBattlePhase,
   updateContestantResult,
 } from '../db/repo.ts'
@@ -140,7 +141,7 @@ async function runBattle(
     let verdicts: Verdict[] = []
     let judgeAvailable = false
     if (deps.judgeContext) {
-      const judged = await runJudgePhase(succeeded, deps, handle, battleId)
+      const judged = await runJudgePhase(succeeded, deps, handle, battleId, input.arena)
       if (!judged) {
         await emitPhase(handle, battleId, 'cancelled', { error: '对战在裁判阶段取消' })
         return
@@ -285,6 +286,7 @@ async function runJudgePhase(
   deps: BattleDeps,
   handle: BattleHandle,
   battleId: string,
+  arena: ArenaId,
 ): Promise<{ verdicts: Verdict[]; judgeAvailable: boolean } | undefined> {
   const ctx = deps.judgeContext
   if (!ctx) return undefined
@@ -299,8 +301,24 @@ async function runJudgePhase(
   let verdicts: Verdict[] = []
   let judgeAvailable = false
   try {
-    verdicts = await deps.arena.judge(submissions, ctx)
+    verdicts = await deps.arena.judge(submissions, {
+      ...ctx,
+      onSandboxResult: (progress) => {
+        handle.emit({
+          type: 'sandbox.result',
+          slot: progress.slot,
+          status: progress.status,
+          passed: progress.passed,
+          total: progress.total,
+          timeMs: progress.timeMs,
+          memoryKb: progress.memoryKb,
+        })
+      },
+    })
     judgeAvailable = verdicts.length > 0
+    if (arena === 'soft' && verdicts.length > 0) {
+      await persistJudgements(succeeded, verdicts, ctx.judgeModelId, battleId)
+    }
   } catch {
     verdicts = []
     judgeAvailable = false
@@ -311,6 +329,32 @@ async function runJudgePhase(
   }
   handle.emit({ type: 'judge.done', verdicts, available: judgeAvailable })
   return { verdicts, judgeAvailable }
+}
+
+async function persistJudgements(
+  succeeded: ContestantRun[],
+  verdicts: Verdict[],
+  judgeModel: string,
+  battleId: string,
+): Promise<void> {
+  const contestantIdBySlot = new Map(
+    succeeded.map((run) => [run.contestant.slot, run.contestantId]),
+  )
+  for (const verdict of verdicts) {
+    const contestantId = contestantIdBySlot.get(verdict.contestantSlot)
+    if (!contestantId) continue
+    await persist(() =>
+      recordJudgement({
+        battleId,
+        contestantId,
+        round: 0,
+        judgeModel,
+        positionIndex: verdict.contestantSlot,
+        scoresJson: JSON.stringify(verdict.scores),
+        rationale: verdict.rationale,
+      }),
+    )
+  }
 }
 
 async function emitPhase(

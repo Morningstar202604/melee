@@ -1,4 +1,4 @@
-import type { Arena, JudgeContext, Submission, Verdict } from './types.ts'
+import type { Arena, JudgeContext, SandboxProgress, Submission, Verdict } from './types.ts'
 import { getCodeTopic, codeTimeLimitMs } from './topics.ts'
 import { getBackend } from '../sandbox/backend.ts'
 import type { SandboxBackend } from '../sandbox/backend.ts'
@@ -24,6 +24,7 @@ interface HardJudgeOptions {
   tests: CodeTestCaseOutput[]
   sandbox: SandboxBackend
   timeLimitMs: number
+  onSandboxResult?: (progress: SandboxProgress) => void
 }
 
 interface CodeTestCaseOutput {
@@ -35,102 +36,109 @@ export async function judgeCodeSubmissions(
   subs: Submission[],
   options: HardJudgeOptions,
 ): Promise<Verdict[]> {
-  const results: Verdict[] = []
-  for (const sub of subs) {
-    if (!sub.code) {
-      results.push({
-        contestantSlot: sub.contestant.slot,
-        scores: { pass_rate: 0 },
-        passed: 0,
-        total: options.tests.length,
-        rationale: '未产出可执行代码',
-      })
-      continue
-    }
+  return Promise.all(subs.map((sub) => judgeOneSubmission(sub, options)))
+}
 
-    const limit = options.timeLimitMs
-    const startedAt = Date.now()
-    const backend = options.sandbox.id
-    const isolationLevel = options.sandbox.isolationLevel
-    const degraded = 0
-    const contestantId = sub.dbContestantId ?? `slot-${sub.contestant.slot}`
-
-    try {
-      const result = await options.sandbox.run({
-        code: sub.code,
-        tests: options.tests.map((t) => ({ input: t.input, expected: t.expected })),
-        timeLimitMs: limit,
-      })
-
-      const status = result.status
-      const passed = status === 'ok' ? result.passed : 0
-      const total = status === 'ok' ? result.total : options.tests.length
-      const passRate = total > 0 ? Math.round((passed / total) * 100) / 100 : 0
-
-      const newResult: NewSandboxResult = {
-        contestantId,
-        backend,
-        isolationLevel,
-        language: 'python',
-        status: status === 'ok' ? 'ok' : status === 'timeout' ? 'timeout' : 'error',
-        passed,
-        total,
-        timeMs: result.timeMs,
-        memoryKb: null,
-        stdoutTail: result.stdoutTail,
-        degraded,
-      }
-      await persistResult(sub.contestant.slot, newResult)
-
-      if (status === 'timeout') {
-        results.push({
-          contestantSlot: sub.contestant.slot,
-          scores: { pass_rate: passRate },
-          passed,
-          total,
-          rationale: `执行超时（>${limit}ms），沙箱已强制终止`,
-        })
-      } else if (status === 'error') {
-        results.push({
-          contestantSlot: sub.contestant.slot,
-          scores: { pass_rate: passRate },
-          passed,
-          total,
-          rationale: result.errorMessage ?? '代码执行出错',
-        })
-      } else {
-        results.push({
-          contestantSlot: sub.contestant.slot,
-          scores: { pass_rate: passRate },
-          passed,
-          total,
-          rationale: total > 0 ? `通过 ${passed}/${total} 个测试用例` : '本题无测试用例',
-        })
-      }
-    } catch {
-      await persistResult(sub.contestant.slot, {
-        contestantId,
-        backend: 'none',
-        isolationLevel: 'none',
-        language: 'python',
-        status: 'unavailable',
-        passed: 0,
-        total: options.tests.length,
-        timeMs: Date.now() - startedAt,
-        memoryKb: null,
-        stdoutTail: '',
-        degraded: 1,
-      })
-      results.push({
-        contestantSlot: sub.contestant.slot,
-        scores: { pass_rate: 0 },
-        passed: 0,
-        total: options.tests.length,
-        rationale: '沙箱后端不可用，本次未真实执行（降级）',
-      })
+async function judgeOneSubmission(
+  sub: Submission,
+  options: HardJudgeOptions,
+): Promise<Verdict> {
+  const report = options.onSandboxResult
+  if (!sub.code) {
+    report?.({ slot: sub.contestant.slot, status: 'unavailable', passed: 0, total: options.tests.length, timeMs: null, memoryKb: null })
+    return {
+      contestantSlot: sub.contestant.slot,
+      scores: { pass_rate: 0 },
+      passed: 0,
+      total: options.tests.length,
+      rationale: '未产出可执行代码',
     }
   }
-  return results
+
+  const limit = options.timeLimitMs
+  const startedAt = Date.now()
+  const backend = options.sandbox.id
+  const isolationLevel = options.sandbox.isolationLevel
+  const contestantId = sub.dbContestantId ?? `slot-${sub.contestant.slot}`
+
+  try {
+    const result = await options.sandbox.run({
+      code: sub.code,
+      tests: options.tests.map((t) => ({ input: t.input, expected: t.expected })),
+      timeLimitMs: limit,
+    })
+
+    const status = result.status
+    const passed = status === 'ok' ? result.passed : 0
+    const total = status === 'ok' ? result.total : options.tests.length
+    const passRate = total > 0 ? Math.round((passed / total) * 100) / 100 : 0
+    const dbStatus = status === 'ok' ? 'ok' : status === 'timeout' ? 'timeout' : 'error'
+
+    report?.({ slot: sub.contestant.slot, status: dbStatus, passed, total, timeMs: result.timeMs, memoryKb: null })
+
+    const newResult: NewSandboxResult = {
+      contestantId,
+      backend,
+      isolationLevel,
+      language: 'python',
+      status: dbStatus,
+      passed,
+      total,
+      timeMs: result.timeMs,
+      memoryKb: null,
+      stdoutTail: result.stdoutTail,
+      degraded: 0,
+    }
+    await persistResult(sub.contestant.slot, newResult)
+
+    if (status === 'timeout') {
+      return {
+        contestantSlot: sub.contestant.slot,
+        scores: { pass_rate: passRate },
+        passed,
+        total,
+        rationale: `执行超时（>${limit}ms），沙箱已强制终止`,
+      }
+    }
+    if (status === 'error') {
+      return {
+        contestantSlot: sub.contestant.slot,
+        scores: { pass_rate: passRate },
+        passed,
+        total,
+        rationale: result.errorMessage ?? '代码执行出错',
+      }
+    }
+    return {
+      contestantSlot: sub.contestant.slot,
+      scores: { pass_rate: passRate },
+      passed,
+      total,
+      rationale: total > 0 ? `通过 ${passed}/${total} 个测试用例` : '本题无测试用例',
+    }
+  } catch {
+    report?.({ slot: sub.contestant.slot, status: 'unavailable', passed: 0, total: options.tests.length, timeMs: null, memoryKb: null })
+    await persistResult(sub.contestant.slot, {
+      contestantId,
+      backend: 'none',
+      isolationLevel: 'none',
+      language: 'python',
+      status: 'unavailable',
+      passed: 0,
+      total: options.tests.length,
+      timeMs: Date.now() - startedAt,
+      memoryKb: null,
+      stdoutTail: '',
+      degraded: 1,
+    })
+    return {
+      contestantSlot: sub.contestant.slot,
+      scores: { pass_rate: 0 },
+      passed: 0,
+      total: options.tests.length,
+      rationale: '沙箱后端不可用，本次未真实执行（降级）',
+    }
+  }
 }
 
 async function persistResult(slot: number, result: NewSandboxResult): Promise<void> {
@@ -186,6 +194,7 @@ export function createHardCodeArena(backend?: SandboxBackend): Arena {
         tests: topic.tests.map((t) => ({ input: t.input, expected: t.expected })),
         sandbox,
         timeLimitMs: limit,
+        onSandboxResult: ctx.onSandboxResult,
       })
     },
   }

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { createOpenAI } from '@ai-sdk/openai'
+import { startFakeServer } from '../../test/fixtures/fake-openai-server.ts'
 import type { Submission } from '../arena/types.ts'
 import {
   parseJudgeOutput,
@@ -191,4 +193,44 @@ test('runJudge 未提供裁判模型且未注入调用时返回 unavailable', as
   const outcome = await runJudge({ topic: '题目', submissions: [submission(1, '作答')] })
   assert.deepEqual(outcome.verdicts, [])
   assert.equal(outcome.unavailable, true)
+})
+
+test('默认裁判调用走结构化输出，能把模型返回的 JSON 解析成 verdicts', async () => {
+  const server = await startFakeServer({ chunks: [TWO_VERDICTS], latencyMs: 1 })
+  try {
+    const model = createOpenAI({ baseURL: server.baseUrl, apiKey: 'test-key' }).chat('fake-model')
+    const outcome = await runJudge({
+      topic: '年轻人该不该躺平',
+      submissions: [submission(1, '一号选手作答'), submission(2, '二号选手作答')],
+      judgeModel: model,
+    })
+    assert.equal(outcome.unavailable, false)
+    assert.equal(outcome.verdicts.length, 2)
+    assert.equal(outcome.verdicts[0]?.contestantSlot, 1)
+    assert.deepEqual(outcome.verdicts[0]?.scores, { logic: 6, evidence: 6.3, relevance: 7.7 })
+    assert.ok(server.paths.every((path) => path === '/chat/completions'))
+  } finally {
+    await server.close()
+  }
+})
+
+test('provider 不支持 json_schema 时退回纯文本解析，裁判不降级', async () => {
+  const server = await startFakeServer({
+    chunks: [TWO_VERDICTS],
+    latencyMs: 1,
+    rejectJsonSchema: true,
+  })
+  try {
+    const model = createOpenAI({ baseURL: server.baseUrl, apiKey: 'test-key' }).chat('fake-model')
+    const outcome = await runJudge({
+      topic: '年轻人该不该躺平',
+      submissions: [submission(1, '一号选手作答'), submission(2, '二号选手作答')],
+      judgeModel: model,
+    })
+    assert.equal(outcome.unavailable, false)
+    assert.equal(outcome.verdicts.length, 2)
+    assert.deepEqual(outcome.verdicts[0]?.scores, { logic: 6, evidence: 6.3, relevance: 7.7 })
+  } finally {
+    await server.close()
+  }
 })
