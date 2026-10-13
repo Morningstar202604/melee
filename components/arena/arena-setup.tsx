@@ -5,7 +5,10 @@ import { useRouter } from 'next/navigation'
 import {
   Check,
   ChevronLeft,
+  Crown,
+  Flame,
   MessagesSquare,
+  Scale,
   Search,
   ShieldCheck,
   Swords,
@@ -14,20 +17,30 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import type { ArenaId } from '@/lib/arena/types'
-import type { CodeTopic, SoftTopic } from '@/lib/arena/topics'
+import type {
+  BanterTopic,
+  CodeTopic,
+  DebateTopic,
+  SoftTopic,
+} from '@/lib/arena/topics'
+import { banterTopic } from '@/lib/arena/topics'
+import { chessTopic, type ChessPuzzle } from '@/lib/arena/chess'
 import type { ProviderDef } from '@/lib/providers/registry'
 import { ARENA_IDS, ARENA_SKINS } from './theme'
+import { ChessBoard } from './chess-board'
 import { LineupEditor } from './lineup-editor'
 
 export interface ArenaSetupProps {
   providers: ProviderDef[]
   softTopics: SoftTopic[]
+  debateTopics: DebateTopic[]
+  banterTopics: BanterTopic[]
   codeTopics: CodeTopic[]
+  chessPuzzles: ChessPuzzle[]
 }
 
 const LINEUP_STORAGE_KEY = 'melee.lineup'
 const KEY_STORAGE_KEY = 'melee.keys'
-const MIN_CONTESTANTS = 2
 
 interface ContestantRow {
   rowId: string
@@ -49,11 +62,14 @@ interface ModelNotice {
 
 const ARENA_ICONS: Record<ArenaId, LucideIcon> = {
   soft: MessagesSquare,
+  debate: Scale,
+  banter: Flame,
   'hard-code': Terminal,
+  chess: Crown,
 }
 
 const STEPS = [
-  { id: 1, label: '选赛道', hint: '决定比赛方式' },
+  { id: 1, label: '选赛场', hint: '五种玩法，判定方式不同' },
   { id: 2, label: '定题目', hint: '同一道题，所有选手' },
   { id: 3, label: '点大将', hint: '模型 + API Key' },
   { id: 4, label: '开打', hint: '确认阵容，发起对战' },
@@ -80,16 +96,16 @@ function blankRow(providerId: string): ContestantRow {
   }
 }
 
-function readLineup(providers: ProviderDef[]): {
+interface RestoredLineup {
   arena: ArenaId
-  softTopicId: string
-  codeTopicId: string
+  topicByArena: Record<string, string>
   rows: ContestantRow[]
-} {
-  const fallback = {
-    arena: 'soft' as ArenaId,
-    softTopicId: '',
-    codeTopicId: '',
+}
+
+function readLineup(providers: ProviderDef[]): RestoredLineup {
+  const fallback: RestoredLineup = {
+    arena: 'soft',
+    topicByArena: {},
     rows: [blankRow('ollama'), blankRow('deepseek')],
   }
   try {
@@ -109,16 +125,26 @@ function readLineup(providers: ProviderDef[]): {
         return { rowId, providerId, modelId, apiKey: storedKeys[rowId] ?? '' }
       })
       .filter((row): row is ContestantRow => row !== null)
-    if (rows.length < MIN_CONTESTANTS) return fallback
+    if (rows.length < 2) return fallback
+
+    const topicByArena: Record<string, string> = {}
+    const storedTopics = parsed.topicByArena
+    if (storedTopics && typeof storedTopics === 'object') {
+      for (const [key, value] of Object.entries(storedTopics as Record<string, unknown>)) {
+        if (typeof value === 'string') topicByArena[key] = value
+      }
+    }
+    if (typeof parsed.softTopicId === 'string' && parsed.softTopicId) {
+      topicByArena.soft = parsed.softTopicId
+    }
+    if (typeof parsed.codeTopicId === 'string' && parsed.codeTopicId) {
+      topicByArena['hard-code'] = parsed.codeTopicId
+    }
+
     const arena = ARENA_IDS.includes(parsed.arena as ArenaId)
       ? (parsed.arena as ArenaId)
       : fallback.arena
-    return {
-      arena,
-      softTopicId: typeof parsed.softTopicId === 'string' ? parsed.softTopicId : '',
-      codeTopicId: typeof parsed.codeTopicId === 'string' ? parsed.codeTopicId : '',
-      rows,
-    }
+    return { arena, topicByArena, rows }
   } catch {
     return fallback
   }
@@ -148,21 +174,21 @@ function errorText(error: unknown): string {
   return '未知错误'
 }
 
-export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProps) {
+export function ArenaSetup({
+  providers,
+  softTopics,
+  debateTopics,
+  banterTopics,
+  codeTopics,
+  chessPuzzles,
+}: ArenaSetupProps) {
   const router = useRouter()
-  const providerById = useMemo(
-    () => new Map(providers.map((p) => [p.id, p])),
-    [providers],
-  )
+  const providerById = useMemo(() => new Map(providers.map((p) => [p.id, p])), [providers])
 
   const [step, setStep] = useState(1)
   const [arena, setArena] = useState<ArenaId>('soft')
-  const [softTopicId, setSoftTopicId] = useState(softTopics[0]?.id ?? '')
-  const [codeTopicId, setCodeTopicId] = useState(codeTopics[0]?.id ?? '')
-  const [rows, setRows] = useState<ContestantRow[]>([
-    blankRow('ollama'),
-    blankRow('deepseek'),
-  ])
+  const [topicByArena, setTopicByArena] = useState<Record<string, string>>({})
+  const [rows, setRows] = useState<ContestantRow[]>([blankRow('ollama'), blankRow('deepseek')])
   const [ping, setPing] = useState<Record<string, PingOutcome>>({})
   const [modelLists, setModelLists] = useState<Record<string, string[]>>({})
   const [modelNotices, setModelNotices] = useState<Record<string, ModelNotice>>({})
@@ -173,24 +199,18 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
   const [hydrated, setHydrated] = useState(false)
   const hydratedRef = useRef(false)
 
-  const topicId = arena === 'soft' ? softTopicId : codeTopicId
-  const activeSoftTopic = softTopics.find((topic) => topic.id === softTopicId)
-  const activeCodeTopic = codeTopics.find((topic) => topic.id === codeTopicId)
-  const topicPrompt =
-    arena === 'soft' ? activeSoftTopic?.prompt ?? '' : activeCodeTopic?.prompt ?? ''
+  const skin = ARENA_SKINS[arena]
 
-  const topicOptions: Array<{ id: string; label: string }> =
-    arena === 'soft'
-      ? softTopics.map((topic) => ({ id: topic.id, label: `${topic.title}（${topic.kind}）` }))
-      : codeTopics.map((topic) => ({
-          id: topic.id,
-          label: `${topic.title}（${topic.tests.length} 个用例）`,
-        }))
-
-  const step1Valid = !!arena
-  const step2Valid = !!topicPrompt
-  const greenCount = rows.filter((row) => ping[row.rowId]?.ok === true).length
-  const step3Valid = greenCount >= MIN_CONTESTANTS
+  const defaultTopicId = useCallback(
+    (id: ArenaId): string => {
+      if (id === 'soft') return softTopics[0]?.id ?? ''
+      if (id === 'debate') return debateTopics[0]?.id ?? ''
+      if (id === 'banter') return banterTopics[0]?.id ?? ''
+      if (id === 'hard-code') return codeTopics[0]?.id ?? ''
+      return chessPuzzles[0]?.id ?? ''
+    },
+    [banterTopics, chessPuzzles, codeTopics, debateTopics, softTopics],
+  )
 
   useEffect(() => {
     if (hydratedRef.current) return
@@ -198,14 +218,60 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
     const restored = readLineup(providers)
     setArena(restored.arena)
     setRows(restored.rows)
-    if (softTopics.some((topic) => topic.id === restored.softTopicId)) {
-      setSoftTopicId(restored.softTopicId)
-    }
-    if (codeTopics.some((topic) => topic.id === restored.codeTopicId)) {
-      setCodeTopicId(restored.codeTopicId)
-    }
+    setTopicByArena(restored.topicByArena)
     setHydrated(true)
-  }, [providers, softTopics, codeTopics])
+  }, [providers])
+
+  const topicId = topicByArena[arena] || defaultTopicId(arena)
+
+  const topicOptions = useMemo((): Array<{ id: string; label: string }> => {
+    if (arena === 'soft') {
+      return softTopics.map((topic) => ({ id: topic.id, label: `${topic.title}（${topic.kind}）` }))
+    }
+    if (arena === 'debate') {
+      return debateTopics.map((topic) => ({ id: topic.id, label: topic.title }))
+    }
+    if (arena === 'banter') {
+      return banterTopics.map((topic) => ({ id: topic.id, label: topic.title }))
+    }
+    if (arena === 'hard-code') {
+      return codeTopics.map((topic) => ({
+        id: topic.id,
+        label: `${topic.title}（${topic.tests.length} 个用例）`,
+      }))
+    }
+    return chessPuzzles.map((puzzle) => ({
+      id: puzzle.id,
+      label: `${puzzle.title}（白先 ${puzzle.mateIn} 步杀）`,
+    }))
+  }, [arena, banterTopics, chessPuzzles, codeTopics, debateTopics, softTopics])
+
+  const activePuzzle = useMemo(
+    () => (arena === 'chess' ? chessPuzzles.find((p) => p.id === topicId) ?? chessPuzzles[0] : undefined),
+    [arena, chessPuzzles, topicId],
+  )
+
+  const topicPrompt = useMemo((): string => {
+    if (arena === 'soft') {
+      return softTopics.find((t) => t.id === topicId)?.prompt ?? ''
+    }
+    if (arena === 'debate') {
+      return debateTopics.find((t) => t.id === topicId)?.motion ?? ''
+    }
+    if (arena === 'banter') {
+      const found = banterTopics.find((t) => t.id === topicId)
+      return found ? banterTopic(found) : ''
+    }
+    if (arena === 'hard-code') {
+      return codeTopics.find((t) => t.id === topicId)?.prompt ?? ''
+    }
+    return activePuzzle ? chessTopic(activePuzzle) : ''
+  }, [activePuzzle, arena, banterTopics, codeTopics, debateTopics, softTopics, topicId])
+
+  const step1Valid = !!arena
+  const step2Valid = !!topicPrompt
+  const greenCount = rows.filter((row) => ping[row.rowId]?.ok === true).length
+  const step3Valid = greenCount >= skin.minContestants && rows.length <= skin.maxContestants
 
   const persist = useCallback(() => {
     try {
@@ -213,8 +279,7 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
         LINEUP_STORAGE_KEY,
         JSON.stringify({
           arena,
-          softTopicId,
-          codeTopicId,
+          topicByArena,
           rows: rows.map((row) => ({
             rowId: row.rowId,
             providerId: row.providerId,
@@ -230,47 +295,56 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
     } catch {
       // ignore
     }
-  }, [arena, softTopicId, codeTopicId, rows])
+  }, [arena, rows, topicByArena])
 
   useEffect(() => {
     if (hydrated) persist()
   }, [hydrated, persist])
 
+  const selectArena = useCallback(
+    (next: ArenaId) => {
+      setArena(next)
+      setPageError('')
+      const max = ARENA_SKINS[next].maxContestants
+      setRows((current) => (current.length > max ? current.slice(0, max) : current))
+    },
+    [],
+  )
+
   const updateRow = useCallback((rowId: string, patch: Partial<ContestantRow>) => {
-    setRows((current) =>
-      current.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)),
-    )
+    setRows((current) => current.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)))
   }, [])
 
   const addRow = useCallback(() => {
-    setRows((current) => [
-      ...current,
-      blankRow(current[current.length - 1]?.providerId ?? 'ollama'),
-    ])
-  }, [])
+    setRows((current) => {
+      if (current.length >= skin.maxContestants) return current
+      return [...current, blankRow(current[current.length - 1]?.providerId ?? 'ollama')]
+    })
+  }, [skin.maxContestants])
 
-  const removeRow = useCallback((rowId: string) => {
-    setRows((current) =>
-      current.length > MIN_CONTESTANTS
-        ? current.filter((row) => row.rowId !== rowId)
-        : current,
-    )
-    setPing((current) => {
-      const next = { ...current }
-      delete next[rowId]
-      return next
-    })
-    setModelLists((current) => {
-      const next = { ...current }
-      delete next[rowId]
-      return next
-    })
-    setModelNotices((current) => {
-      const next = { ...current }
-      delete next[rowId]
-      return next
-    })
-  }, [])
+  const removeRow = useCallback(
+    (rowId: string) => {
+      setRows((current) =>
+        current.length > skin.minContestants ? current.filter((row) => row.rowId !== rowId) : current,
+      )
+      setPing((current) => {
+        const next = { ...current }
+        delete next[rowId]
+        return next
+      })
+      setModelLists((current) => {
+        const next = { ...current }
+        delete next[rowId]
+        return next
+      })
+      setModelNotices((current) => {
+        const next = { ...current }
+        delete next[rowId]
+        return next
+      })
+    },
+    [skin.minContestants],
+  )
 
   const clearRowCache = useCallback((rowId: string) => {
     setPing((current) => {
@@ -362,10 +436,7 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
           setModelLists((current) => ({ ...current, [rowId]: payload.models as string[] }))
           setModelNotices((current) => ({
             ...current,
-            [rowId]: {
-              kind: 'info',
-              text: `拉到 ${(payload.models as string[]).length} 个模型`,
-            },
+            [rowId]: { kind: 'info', text: `拉到 ${(payload.models as string[]).length} 个模型` },
           }))
         } else {
           setModelLists((current) => {
@@ -411,10 +482,10 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
 
     const eligible = rows.filter((row) => currentPing[row.rowId]?.ok === true)
     const skipped = rows.filter((row) => currentPing[row.rowId]?.ok !== true)
-    if (eligible.length < MIN_CONTESTANTS) {
+    if (eligible.length < skin.minContestants) {
       setBusy('')
       setPageError(
-        `预检通过的选手只有 ${eligible.length} 名，至少需要 ${MIN_CONTESTANTS} 名才能开打`,
+        `预检通过的选手只有 ${eligible.length} 名，本赛场至少需要 ${skin.minContestants} 名才能开打`,
       )
       return
     }
@@ -472,7 +543,7 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
     } finally {
       setBusy('')
     }
-  }, [arena, persist, providerById, pingContestants, router, rows, topicPrompt])
+  }, [arena, persist, providerById, pingContestants, router, rows, skin.minContestants, topicPrompt])
 
   const goNext = useCallback(() => {
     if (step === 1 && !step1Valid) return
@@ -481,8 +552,6 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
     setPageError('')
     setStep(step + 1)
   }, [step, step1Valid, step2Valid, step3Valid])
-
-  const meta = ARENA_SKINS[arena]
 
   return (
     <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
@@ -540,45 +609,50 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
         {step === 1 && (
           <section className="animate-rise rounded-xl border border-hairline bg-panel p-5 sm:p-6">
             <header className="flex flex-col gap-1">
-              <h2 className="text-lg font-bold">选赛道</h2>
+              <h2 className="text-lg font-bold">选赛场</h2>
               <p className="text-[13px] leading-relaxed text-ash">
-                靠嘴皮子还是拼真功夫 — 两条赛道的判定方式完全不同。
+                五种玩法：从同题抢答到多轮互怼、残局杀法——判定方式各不相同。
               </p>
             </header>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {ARENA_IDS.map((id) => {
-                const skin = ARENA_SKINS[id]
+                const item = ARENA_SKINS[id]
                 const Icon = ARENA_ICONS[id]
                 const active = arena === id
                 return (
                   <button
                     key={id}
                     type="button"
-                    onClick={() => setArena(id)}
+                    onClick={() => selectArena(id)}
                     aria-pressed={active}
                     className={cn(
-                      'relative flex items-start gap-4 rounded-xl border p-5 text-left transition-colors',
-                      active
-                        ? cn('bg-raise', skin.accentEdge)
-                        : 'border-hairline bg-void hover:border-dust/60',
+                      'relative flex items-start gap-3.5 rounded-xl border p-4 text-left transition-colors',
+                      active ? cn('bg-raise', item.accentEdge) : 'border-hairline bg-void hover:border-dust/60',
                     )}
                   >
                     <span
                       className={cn(
-                        'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border',
-                        active ? skin.accentChip : 'border-hairline bg-raise text-ash',
+                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border',
+                        active ? item.accentChip : 'border-hairline bg-raise text-ash',
                       )}
                     >
-                      <Icon className="h-5 w-5" />
+                      <Icon className="h-4.5 w-4.5" />
                     </span>
                     <span className="flex min-w-0 flex-col gap-1">
-                      <span className="text-base font-bold">{skin.label}</span>
-                      <span className="text-[13px] leading-relaxed text-ash">{skin.tagline}</span>
+                      <span className="flex items-center gap-2 text-[15px] font-bold">
+                        {item.label}
+                        <span className="rounded-full border border-hairline px-1.5 py-px font-mono text-[10px] font-medium text-dust">
+                          {item.minContestants === item.maxContestants
+                            ? `${item.minContestants} 人`
+                            : `${item.minContestants}~${item.maxContestants} 人`}
+                        </span>
+                      </span>
+                      <span className="text-[12.5px] leading-relaxed text-ash">{item.tagline}</span>
                     </span>
                     <span
                       aria-hidden
                       className={cn(
-                        'absolute right-4 top-4 h-2 w-2 rounded-full transition-colors',
+                        'absolute right-3.5 top-3.5 h-2 w-2 rounded-full transition-colors',
                         active ? 'bg-blaze' : 'bg-hairline',
                       )}
                     />
@@ -594,23 +668,21 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
             <header className="flex flex-col gap-1">
               <h2 className="text-lg font-bold">定题目</h2>
               <p className="text-[13px] leading-relaxed text-ash">
-                {arena === 'soft'
-                  ? '选一个辩题、创意任务或角色扮演场景，全场选手作答同一道题。'
-                  : '选一道 Python 编程题，选手作答后由沙箱跑测试用例。'}
+                {arena === 'soft' && '选一个辩题、创意任务或角色扮演场景，全场选手作答同一道题。'}
+                {arena === 'debate' && '选一个辩题：1 号位自动执正方、2 号位执反方，三轮定胜负。'}
+                {arena === 'banter' && '选一个吵架场景：角色按座位号自动分配，风格天生产生分化。'}
+                {arena === 'hard-code' && '选一道 Python 编程题，选手作答后由沙箱跑测试用例。'}
+                {arena === 'chess' && '选一个残局：白先、限步将杀，着法由棋规真实校验。'}
               </p>
             </header>
             <div className="mt-5 flex flex-col gap-4">
               <label className="flex flex-col gap-2">
                 <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-dust">
-                  题目
+                  {arena === 'chess' ? '残局' : '题目'}
                 </span>
                 <select
                   value={topicId}
-                  onChange={(event) =>
-                    arena === 'soft'
-                      ? setSoftTopicId(event.target.value)
-                      : setCodeTopicId(event.target.value)
-                  }
+                  onChange={(event) => setTopicByArena((current) => ({ ...current, [arena]: event.target.value }))}
                   className="w-full rounded-lg border border-hairline bg-void px-3.5 py-2.5 text-sm text-ink outline-none transition-colors focus:border-blaze/60 sm:max-w-md"
                 >
                   {topicOptions.map((option) => (
@@ -621,26 +693,60 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
                 </select>
               </label>
 
-              <div
-                className={cn(
-                  'rounded-lg border-l-2 bg-void px-4 py-3.5',
-                  arena === 'soft' ? 'border-soft-arena/60' : 'border-hard-arena/60',
-                )}
-              >
-                <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-dust">
-                  题面
-                </span>
-                <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-sm leading-[1.75] text-ink/90">
-                  {topicPrompt || '（请先选择一道题）'}
-                </pre>
-              </div>
-
-              {arena === 'hard-code' && topicPrompt ? (
-                <p className="flex items-center gap-2 font-mono text-[11px] text-dust">
-                  <Terminal className="h-3.5 w-3.5 text-hard-arena" />
-                  代码在 Pyodide WASM 沙箱中真实执行，无需 Docker
-                </p>
-              ) : null}
+              {arena === 'chess' && activePuzzle ? (
+                <div className="flex flex-col gap-4 rounded-lg border-l-2 border-arena-chess/60 bg-void px-4 py-3.5 sm:flex-row sm:items-start">
+                  <div className="w-full max-w-64 shrink-0">
+                    <ChessBoard fen={activePuzzle.fen} />
+                  </div>
+                  <div className="flex min-w-0 flex-col gap-1.5">
+                    <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-dust">
+                      题面
+                    </span>
+                    <p className="text-sm font-bold">
+                      {activePuzzle.title} · 白先 {activePuzzle.mateIn} 步杀
+                    </p>
+                    <p className="text-[13px] leading-relaxed text-ash">{activePuzzle.brief}</p>
+                    <p className="mt-auto font-mono text-[11px] text-dust">
+                      大写=白方 小写=黑方 · 提交着法按 SAN 记法
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className={cn(
+                    'rounded-lg border-l-2 bg-void px-4 py-3.5',
+                    arena === 'soft' && 'border-soft-arena/60',
+                    arena === 'debate' && 'border-arena-debate/60',
+                    arena === 'banter' && 'border-arena-banter/60',
+                    arena === 'hard-code' && 'border-hard-arena/60',
+                  )}
+                >
+                  <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-dust">
+                    {arena === 'debate' ? '辩题' : '题面'}
+                  </span>
+                  <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-sm leading-[1.75] text-ink/90">
+                    {topicPrompt || '（请先选择一道题）'}
+                  </pre>
+                  {arena === 'hard-code' && topicPrompt ? (
+                    <p className="mt-3 flex items-center gap-2 font-mono text-[11px] text-dust">
+                      <Terminal className="h-3.5 w-3.5 text-hard-arena" />
+                      代码在 Pyodide WASM 沙箱中真实执行，无需 Docker
+                    </p>
+                  ) : null}
+                  {arena === 'debate' && topicPrompt ? (
+                    <p className="mt-3 flex items-center gap-2 font-mono text-[11px] text-dust">
+                      <Scale className="h-3.5 w-3.5 text-arena-debate" />
+                      立论 → 驳斥 → 结辩 三轮，裁判按逻辑 / 论据 / 交锋打分
+                    </p>
+                  ) : null}
+                  {arena === 'banter' && topicPrompt ? (
+                    <p className="mt-3 flex items-center gap-2 font-mono text-[11px] text-dust">
+                      <Flame className="h-3.5 w-3.5 text-arena-banter" />
+                      三轮互怼，每轮 ≤80 字；毒舌但越线会被扣分
+                    </p>
+                  ) : null}
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -652,16 +758,14 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
               <span
                 className={cn(
                   'rounded-full border px-2.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums',
-                  step3Valid
-                    ? 'border-ok/25 bg-ok/10 text-ok'
-                    : 'border-warn/25 bg-warn/10 text-warn',
+                  step3Valid ? 'border-ok/25 bg-ok/10 text-ok' : 'border-warn/25 bg-warn/10 text-warn',
                 )}
               >
                 {greenCount}/{rows.length} 就绪
-                {step3Valid ? '' : ` · 至少 ${MIN_CONTESTANTS} 名`}
+                {step3Valid ? '' : ` · 本赛场需要 ${skin.minContestants}~${skin.maxContestants} 人`}
               </span>
               <span className="w-full text-[13px] leading-relaxed text-ash sm:w-auto">
-                每位选手 = 一个 provider + 一个模型 + 一把 Key。
+                {skin.label}赛场：{skin.multiRound ? '每名选手都会在多轮里出场。' : '每位选手 = 一个 provider + 一个模型 + 一把 Key。'}
               </span>
             </header>
             <div className="mt-5">
@@ -674,6 +778,8 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
                 fetchingRow={fetchingRow}
                 busy={busy}
                 greenCount={greenCount}
+                minContestants={skin.minContestants}
+                maxContestants={skin.maxContestants}
                 onUpdateRow={updateRow}
                 onRemoveRow={removeRow}
                 onAddRow={addRow}
@@ -696,13 +802,8 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
               <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
                 <div className="flex items-center justify-between gap-4 border-b border-hairline pb-2 sm:border-0 sm:pb-0">
                   <dt className="text-dust">赛场</dt>
-                  <dd
-                    className={cn(
-                      'rounded-full border px-2.5 py-0.5 text-xs font-semibold',
-                      meta.accentChip,
-                    )}
-                  >
-                    {meta.label}
+                  <dd className={cn('rounded-full border px-2.5 py-0.5 text-xs font-semibold', skin.accentChip)}>
+                    {skin.label}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between gap-4 border-b border-hairline pb-2 sm:border-0 sm:pb-0">
@@ -720,10 +821,10 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
 
               <div className="rounded-lg bg-void px-4 py-3">
                 <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-dust">
-                  题面
+                  {arena === 'debate' ? '辩题' : '题面'}
                 </span>
-                <p className="mt-1.5 text-sm leading-relaxed text-ink/90">
-                  {topicPrompt.slice(0, 140)}
+                <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-ink/90">
+                  {topicPrompt.split('\n').slice(0, 2).join(' · ').slice(0, 140)}
                   {topicPrompt.length > 140 ? '…' : ''}
                 </p>
               </div>
@@ -767,12 +868,7 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
             <span />
           )}
           {step === 3 ? (
-            <button
-              type="button"
-              onClick={handlePing}
-              disabled={busy !== ''}
-              className={BTN_GHOST}
-            >
+            <button type="button" onClick={handlePing} disabled={busy !== ''} className={BTN_GHOST}>
               <Search className="h-4 w-4" />
               {busy === 'ping' ? '预检中…' : '预检全员'}
             </button>

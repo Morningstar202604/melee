@@ -1,5 +1,6 @@
 import type { ArenaId } from '@/lib/arena/types'
-import type { SandboxProgress } from '@/lib/arena/types'
+import { BANTER_AXES, DEBATE_AXES, SOFT_AXES } from '@/lib/arena/axes'
+import type { JudgeAxis, SandboxProgress } from '@/lib/arena/types'
 import type { ContestantView } from '@/lib/client/battle-store'
 
 /**
@@ -15,17 +16,47 @@ export interface ArenaSkin {
   accentText: string
   accentEdge: string
   accentChip: string
+  minContestants: number
+  maxContestants: number
+  multiRound: boolean
 }
 
 export const ARENA_SKINS: Record<ArenaId, ArenaSkin> = {
   soft: {
     id: 'soft',
     label: '软战场',
-    tagline: '辩论 / 创意 / 角色扮演 · 观众投票 + AI 裁判双轨判定',
+    tagline: '同题抢答 · 辩论 / 创意 / 角色扮演 · 观众投票 + AI 裁判双轨判定',
     accent: '#8b8ff5',
     accentText: 'text-soft-arena',
     accentEdge: 'border-soft-arena/45',
     accentChip: 'border-soft-arena/30 bg-soft-arena/10 text-soft-arena',
+    minContestants: 2,
+    maxContestants: 8,
+    multiRound: false,
+  },
+  debate: {
+    id: 'debate',
+    label: '互辩场',
+    tagline: '两名选手三轮制辩论：立论 → 驳斥 → 结辩 · 裁判判交锋',
+    accent: '#67e8f9',
+    accentText: 'text-arena-debate',
+    accentEdge: 'border-arena-debate/45',
+    accentChip: 'border-arena-debate/30 bg-arena-debate/10 text-arena-debate',
+    minContestants: 2,
+    maxContestants: 2,
+    multiRound: true,
+  },
+  banter: {
+    id: 'banter',
+    label: '互怼大会',
+    tagline: '2~4 人三轮互怼 · 接梗反击 · 毒舌不许越线',
+    accent: '#fb7185',
+    accentText: 'text-arena-banter',
+    accentEdge: 'border-arena-banter/45',
+    accentChip: 'border-arena-banter/30 bg-arena-banter/10 text-arena-banter',
+    minContestants: 2,
+    maxContestants: 4,
+    multiRound: true,
   },
   'hard-code': {
     id: 'hard-code',
@@ -35,10 +66,32 @@ export const ARENA_SKINS: Record<ArenaId, ArenaSkin> = {
     accentText: 'text-hard-arena',
     accentEdge: 'border-hard-arena/45',
     accentChip: 'border-hard-arena/30 bg-hard-arena/10 text-hard-arena',
+    minContestants: 2,
+    maxContestants: 8,
+    multiRound: false,
+  },
+  chess: {
+    id: 'chess',
+    label: '残局场',
+    tagline: '国际象棋残局 · 白先 N 步杀 · 着法真校验',
+    accent: '#e0a458',
+    accentText: 'text-arena-chess',
+    accentEdge: 'border-arena-chess/45',
+    accentChip: 'border-arena-chess/30 bg-arena-chess/10 text-arena-chess',
+    minContestants: 2,
+    maxContestants: 8,
+    multiRound: false,
   },
 }
 
-export const ARENA_IDS: ArenaId[] = ['soft', 'hard-code']
+export const ARENA_IDS: ArenaId[] = ['soft', 'debate', 'banter', 'hard-code', 'chess']
+
+/** 战报记分板的评分轴（键与种子/裁判输出一致） */
+export const ARENA_AXES: Partial<Record<ArenaId, JudgeAxis[]>> = {
+  soft: SOFT_AXES,
+  debate: DEBATE_AXES,
+  banter: BANTER_AXES,
+}
 
 /* ── 队色：provider 品牌色（暗底降噪版），承担选手身份识别 ── */
 

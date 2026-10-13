@@ -4,7 +4,8 @@ import { Zap } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { contestantStatusLabels } from '@/lib/battle/events'
 import type { ArenaId } from '@/lib/arena/types'
-import type { ContestantView } from '@/lib/client/battle-store'
+import { applyCandidate, collectMoveCandidates } from '@/lib/arena/chess'
+import { fullText, type ContestantView } from '@/lib/client/battle-store'
 import {
   SANDBOX_LABELS,
   SANDBOX_TONE,
@@ -19,6 +20,8 @@ export interface ContestantCardProps {
   arena: ArenaId
   providerLabel?: string
   maxLatencyMs: number
+  puzzle?: { fen: string; mateIn: 1 | 2 } | null
+  verdict?: { passed: number; total: number; rationale: string } | null
 }
 
 function statusLabel(view: ContestantView): string {
@@ -79,20 +82,35 @@ function LatencyMeter({ view, maxLatencyMs }: { view: ContestantView; maxLatency
   )
 }
 
-export function ContestantCard({ view, arena, providerLabel, maxLatencyMs }: ContestantCardProps) {
+function firstLegalMove(fen: string, raw: string): string | null {
+  for (const candidate of collectMoveCandidates(raw)) {
+    const attempt = applyCandidate(fen, candidate)
+    if (attempt) return attempt.san
+  }
+  return null
+}
+
+export function ContestantCard({
+  view,
+  arena,
+  providerLabel,
+  maxLatencyMs,
+  puzzle,
+  verdict,
+}: ContestantCardProps) {
   const tone = statusTone(view.status)
   const streaming = view.status === 'streaming'
   const failed = isFailedStatus(view.status)
   const accent = providerAccent(view.providerId)
+  const rawText = fullText(view)
+
+  const className = cn(
+    'relative flex min-h-64 flex-col overflow-hidden rounded-xl border bg-panel',
+    streaming ? TONE_CLASSES[tone].edge : failed ? TONE_CLASSES[tone].edge : 'border-hairline',
+  )
 
   return (
-    <article
-      className={cn(
-        'relative flex min-h-64 flex-col overflow-hidden rounded-xl border bg-panel',
-        streaming ? TONE_CLASSES[tone].edge : failed ? TONE_CLASSES[tone].edge : 'border-hairline',
-      )}
-      style={{ borderLeftWidth: 2, borderLeftColor: accent }}
-    >
+    <article className={className} style={{ borderLeftWidth: 2, borderLeftColor: accent }}>
       <header className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 px-4 pb-2 pt-3.5">
         <span
           title={`${view.slot} 号选手`}
@@ -123,7 +141,52 @@ export function ContestantCard({ view, arena, providerLabel, maxLatencyMs }: Con
         </div>
       ) : null}
 
-      {view.text ? (
+      {arena === 'chess' && puzzle ? (
+        <div className="flex flex-1 flex-col gap-2 px-4 py-3">
+          {rawText ? (
+            <>
+              <span className="font-mono text-[11px] uppercase tracking-wider text-dust">着法</span>
+              <span className="font-mono text-xl font-bold text-ink">
+                {firstLegalMove(puzzle.fen, rawText) ?? '未能识别出合法着法'}
+              </span>
+              {verdict ? (
+                <span
+                  className={cn(
+                    'inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold',
+                    verdict.passed > 0 ? TONE_CLASSES.success.chip : TONE_CLASSES.failure.chip,
+                  )}
+                >
+                  {verdict.passed > 0 ? `命中 ${puzzle.mateIn} 步杀` : '未命中杀法'}
+                </span>
+              ) : null}
+              {verdict?.rationale ? (
+                <p className="text-[12px] leading-relaxed text-ash">{verdict.rationale}</p>
+              ) : null}
+              <details className="mt-auto">
+                <summary className="cursor-pointer font-mono text-[11px] text-dust">
+                  原始输出
+                </summary>
+                <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-void p-2.5 font-mono text-[11.5px] leading-relaxed text-ash">
+                  {rawText}
+                </pre>
+              </details>
+            </>
+          ) : (
+            <div className="flex flex-1 items-center justify-center py-8">
+              <p className="text-[13px] text-dust">
+                {streaming ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span aria-hidden className="h-1.5 w-1.5 animate-live rounded-full bg-ok" />
+                    落子中…
+                  </span>
+                ) : (
+                  '本场没有留下输出'
+                )}
+              </p>
+            </div>
+          )}
+        </div>
+      ) : rawText ? (
         <div
           className={cn(
             'max-h-[26rem] flex-1 overflow-y-auto whitespace-pre-wrap break-words px-4 py-3 text-ink/90',
@@ -132,7 +195,7 @@ export function ContestantCard({ view, arena, providerLabel, maxLatencyMs }: Con
               : 'text-[14.5px] leading-[1.75]',
           )}
         >
-          {view.text}
+          {rawText}
           {streaming ? (
             <span
               aria-hidden
@@ -156,7 +219,7 @@ export function ContestantCard({ view, arena, providerLabel, maxLatencyMs }: Con
       )}
 
       <footer className="flex items-center gap-x-3 border-t border-hairline px-4 py-2 font-mono text-[11px] text-dust">
-        <span className="tabular-nums">{view.text.length} 字</span>
+        <span className="tabular-nums">{rawText.length} 字</span>
         {view.sandbox ? (
           <span
             className={cn(

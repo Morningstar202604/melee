@@ -17,6 +17,8 @@ export interface StatusBarProps {
   startedAt: number | null
   contestants: ContestantView[]
   failureReason: string | null
+  currentRound?: number
+  totalRounds?: number
 }
 
 const LIVE_PHASES = new Set<BattlePhase>(['running', 'judging', 'scoring'])
@@ -70,13 +72,28 @@ function ProgressSegment({ view }: { view: ContestantView }) {
   )
 }
 
-export function StatusBar({ phase, arena, startedAt, contestants, failureReason }: StatusBarProps) {
+export function StatusBar({
+  phase,
+  arena,
+  startedAt,
+  contestants,
+  failureReason,
+  currentRound = 1,
+  totalRounds = 1,
+}: StatusBarProps) {
   const elapsed = useElapsedLabel(startedAt)
-  const total = contestants.length
-  const finished = contestants.filter((view) => view.status !== 'streaming').length
+  const totalTurns = contestants.length * totalRounds
+  const finishedTurns = contestants.reduce(
+    (sum, view) => sum + view.turns.filter((turn) => turn.status !== 'streaming').length,
+    0,
+  )
   const live = LIVE_PHASES.has(phase)
   const phaseLabel =
-    arena === 'hard-code' && phase === 'judging' ? '沙箱判定中' : battlePhaseLabels[phase]
+    arena === 'hard-code' && phase === 'judging'
+      ? '沙箱判定中'
+      : arena === 'chess' && phase === 'judging'
+        ? '着法判定中'
+        : battlePhaseLabels[phase]
 
   return (
     <div className="sticky top-0 z-30 border-b border-hairline bg-void/90 backdrop-blur-md">
@@ -89,12 +106,18 @@ export function StatusBar({ phase, arena, startedAt, contestants, failureReason 
           <span className="text-[13px] font-bold tracking-tight">{phaseLabel}</span>
         </span>
 
+        {totalRounds > 1 ? (
+          <span className="rounded-full border border-hairline px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-ash">
+            第 {currentRound}/{totalRounds} 轮
+          </span>
+        ) : null}
+
         <span
           role="progressbar"
-          aria-label={`已完成 ${finished} 名，共 ${total} 名选手`}
-          aria-valuenow={finished}
+          aria-label={`已完成 ${finishedTurns} 个回合，共 ${totalTurns} 个`}
+          aria-valuenow={finishedTurns}
           aria-valuemin={0}
-          aria-valuemax={total}
+          aria-valuemax={totalTurns}
           className="flex min-w-32 flex-1 gap-1"
         >
           {contestants.map((view) => (
@@ -103,8 +126,8 @@ export function StatusBar({ phase, arena, startedAt, contestants, failureReason 
         </span>
 
         <span className="inline-flex items-baseline gap-1 font-mono text-sm font-bold tabular-nums">
-          <span className="text-blaze">{finished}</span>
-          <span className="text-xs font-medium text-dust">/ {total}</span>
+          <span className="text-blaze">{finishedTurns}</span>
+          <span className="text-xs font-medium text-dust">/ {totalTurns}</span>
         </span>
 
         <span className="inline-flex items-baseline gap-1.5">

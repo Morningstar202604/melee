@@ -33,14 +33,14 @@ interface LineupEditorProps {
   fetchingRow: string
   busy: string
   greenCount: number
+  minContestants: number
+  maxContestants: number
   onUpdateRow: (rowId: string, patch: Partial<LineupContestantRow>) => void
   onRemoveRow: (rowId: string) => void
   onAddRow: () => void
   onFetchModels: (rowId: string) => void
   onClearRowCache: (rowId: string) => void
 }
-
-const MIN_CONTESTANTS = 2
 
 const INPUT_CLASS =
   'min-w-0 flex-1 rounded-lg border border-hairline bg-void px-3.5 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-dust focus:border-blaze/60'
@@ -54,6 +54,8 @@ export function LineupEditor({
   fetchingRow,
   busy,
   greenCount,
+  minContestants,
+  maxContestants,
   onUpdateRow,
   onRemoveRow,
   onAddRow,
@@ -121,7 +123,7 @@ export function LineupEditor({
                 <button
                   type="button"
                   onClick={() => onRemoveRow(row.rowId)}
-                  disabled={rows.length <= MIN_CONTESTANTS}
+                  disabled={rows.length <= minContestants}
                   title="移除这名选手"
                   aria-label={`移除 ${index + 1} 号选手`}
                   className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-dust transition-colors hover:bg-bad/10 hover:text-bad disabled:cursor-not-allowed disabled:opacity-30"
@@ -220,13 +222,14 @@ export function LineupEditor({
         <button
           type="button"
           onClick={onAddRow}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-hairline px-4 py-2.5 text-[13px] font-semibold text-ash transition-colors hover:border-blaze/50 hover:text-blaze"
+          disabled={rows.length >= maxContestants}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-hairline px-4 py-2.5 text-[13px] font-semibold text-ash transition-colors hover:border-blaze/50 hover:text-blaze disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-hairline disabled:hover:text-ash"
         >
           <Plus className="h-4 w-4" />
-          加一名选手
+          {rows.length >= maxContestants ? `已达本场上限（${maxContestants} 人）` : '加一名选手'}
         </button>
         <span className="font-mono text-[11px] tabular-nums text-dust">
-          {greenCount}/{rows.length} 就绪
+          {greenCount}/{rows.length} 就绪 · 需 {minContestants}~{maxContestants} 人
         </span>
         <span className="hidden items-center gap-1.5 text-[11px] leading-relaxed text-dust sm:flex">
           <ShieldCheck className="h-3.5 w-3.5" />

@@ -1,12 +1,13 @@
 import type { Metadata } from 'next'
 import { Flame } from 'lucide-react'
 import { ArenaSetup } from '@/components/arena/arena-setup'
-import { CODE_TOPICS, SOFT_TOPICS } from '@/lib/arena/topics'
+import { BANTER_TOPICS, CODE_TOPICS, DEBATE_TOPICS, SOFT_TOPICS } from '@/lib/arena/topics'
+import { CHESS_PUZZLES } from '@/lib/arena/chess'
 import { PROVIDERS } from '@/lib/providers/registry'
 
 export const metadata: Metadata = {
   title: 'melee · AI 大乱斗',
-  description: '选多个大模型 + 一个题目，实时看它们同场竞技',
+  description: '五种玩法：同题抢答、AI 互辩、互怼大会、代码实战、残局杀法 — 多模型同场竞技',
 }
 
 export default function Home() {
@@ -33,14 +34,18 @@ export default function Home() {
             拉几个大模型，丢进同一个擂台。
           </h1>
           <p className="text-sm leading-relaxed text-ash">
-            同一道题，实时并排输出；观众投票与 AI 裁判双轨判定——顺带欣赏各家模型的花式翻车。
+            同题抢答、AI 互辩、互怼大会、代码实战、残局杀法——实时并排输出，观众投票、押注与 AI 裁判双轨判定，
+            顺带欣赏各家模型的花式翻车。
           </p>
         </section>
 
         <ArenaSetup
           providers={PROVIDERS}
           softTopics={SOFT_TOPICS}
+          debateTopics={DEBATE_TOPICS}
+          banterTopics={BANTER_TOPICS}
           codeTopics={CODE_TOPICS}
+          chessPuzzles={CHESS_PUZZLES}
         />
       </main>
 
@@ -48,7 +53,10 @@ export default function Home() {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-1 px-5 py-5 font-mono text-[11px] text-dust">
           <span>melee · AI 大乱斗</span>
           <span>{SOFT_TOPICS.length} 道软战场题</span>
+          <span>{DEBATE_TOPICS.length} 道辩题</span>
+          <span>{BANTER_TOPICS.length} 个吵架场景</span>
           <span>{CODE_TOPICS.length} 道硬战场题</span>
+          <span>{CHESS_PUZZLES.length} 个残局</span>
           <span className="ml-auto">数据仅供即时对战，不做持久化排名</span>
         </div>
       </footer>

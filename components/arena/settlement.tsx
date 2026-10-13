@@ -1,11 +1,15 @@
 'use client'
 
+import { useMemo } from 'react'
 import { CircleCheck, CornerDownRight, ScrollText, Timer, TriangleAlert } from 'lucide-react'
+import { Chess } from 'chess.js'
 import { cn } from '@/lib/cn'
 import type { ArenaId } from '@/lib/arena/types'
 import type { BattleResult, ContestantOutcome, ContestantStatus } from '@/lib/battle/events'
 import type { Snapshot } from '@/lib/db/repo'
-import { ARENA_SKINS, providerAccent } from './theme'
+import { applyCandidate, collectMoveCandidates, puzzleFromTopic } from '@/lib/arena/chess'
+import { ARENA_AXES, ARENA_SKINS, providerAccent } from './theme'
+import { ChessBoard } from './chess-board'
 import { VoteBar } from './vote-bar'
 
 export interface SettlementProps {
@@ -39,30 +43,37 @@ function buildSummary(
   const noCrash = crashes.length === 0
   const timeoutCount = outcomes.filter((o) => o.status === 'timeout').length
   const failCount = outcomes.filter((o) => o.status !== 'ok').length
+  const label = (o: ContestantOutcome) => providerLabelOf(providerLabels, o.providerId, o.providerId)
 
   if (arena === 'hard-code') {
-    const ranked = [...outcomes].sort((a, b) => {
-      const aPassed = verdictPassed(result, a.slot)
-      const bPassed = verdictPassed(result, b.slot)
-      return bPassed - aPassed
-    })
+    const ranked = [...outcomes].sort((a, b) => verdictPassed(result, b.slot) - verdictPassed(result, a.slot))
     if (ranked.length === 0) return '本场无有效选手'
-    const winner = ranked[0]
+    const winner = ranked[0]!
     const topScore = verdictPassed(result, winner.slot)
     const allTie = ranked.every((o) => verdictPassed(result, o.slot) === topScore)
     if (allFailed) return '全员翻车，本场无人生还'
     if (allTie && failCount === 0) return `全员并列通过 ${topScore} 题，势均力敌`
-    const winnerLabel = providerLabelOf(providerLabels, winner.providerId, winner.providerId)
-    return `${winnerLabel} 以 ${topScore} 题通关${noCrash ? '，全场零失误' : `，${failCount} 人翻车`}`
+    return `${label(winner)} 以 ${topScore} 题通关${noCrash ? '，全场零失误' : `，${failCount} 人翻车`}`
+  }
+
+  if (arena === 'chess') {
+    const solved = outcomes.filter((o) => verdictPassed(result, o.slot) > 0 && o.status === 'ok')
+    if (allFailed) return '全员翻车，本场无人生还'
+    if (solved.length === 0) return '无人找到杀法，残局守住了'
+    const fastest = solved.reduce((best, o) => (o.latencyMs < best.latencyMs ? o : best))
+    if (solved.length === outcomes.length) {
+      return `全员找到杀法，${label(fastest)} 最快落子（${(fastest.latencyMs / 1000).toFixed(1)} 秒）`
+    }
+    return `${label(fastest)} 率先破局，${outcomes.length - solved.length} 人未能破防`
   }
 
   if (allFailed) return '全员翻车，本场无人生还'
-  const votedOutcomes = outcomes.filter((o) => o.status === 'ok')
-  if (votedOutcomes.length === 1) {
-    const sole = providerLabelOf(providerLabels, votedOutcomes[0].providerId, votedOutcomes[0].providerId)
-    return `${sole} 技压全场，${timeoutCount} 人超时`
+  const okOutcomes = outcomes.filter((o) => o.status === 'ok')
+  const modeNoun = arena === 'banter' ? '这场骂战' : arena === 'debate' ? '这场辩论' : '这场对决'
+  if (okOutcomes.length === 1) {
+    return `${label(okOutcomes[0]!)} 技压全场，${timeoutCount} 人超时`
   }
-  if (noCrash) return '全员完赛，一场龙争虎斗'
+  if (noCrash) return `${modeNoun}全员完赛，龙争虎斗`
   if (timeoutCount > 0) return `${failCount} 人翻车，${timeoutCount} 人超时，场面惨烈`
   return `${failCount} 人翻车，${outcomes.length - failCount} 人站稳`
 }
@@ -200,10 +211,19 @@ function ScoreRow({
   )
 }
 
+function firstLegalMoveSan(fen: string, text: string): string | null {
+  for (const candidate of collectMoveCandidates(text)) {
+    const attempt = applyCandidate(fen, candidate)
+    if (attempt) return attempt.san
+  }
+  return null
+}
+
 export function Settlement({ arena, topic, result, snapshot, providerLabels }: SettlementProps) {
   const crashes = collectCrashes(result, providerLabels)
   const summary = buildSummary(arena, result, crashes, providerLabels)
-  const hasDegradedJudge = result.judgeAvailable === false && arena === 'soft'
+  const needsLlmJudge = arena === 'soft' || arena === 'debate' || arena === 'banter'
+  const hasDegradedJudge = needsLlmJudge && result.judgeAvailable === false
   const skin = ARENA_SKINS[arena]
   const contestsForVote = result.contestants.map((o) => ({
     slot: o.slot,
@@ -218,6 +238,7 @@ export function Settlement({ arena, topic, result, snapshot, providerLabels }: S
 
   const failed = result.contestants.filter((o) => o.status !== 'ok')
   const extraMoments = crashes.filter((c) => c.kind === 'shortest' || c.kind === 'latest')
+  const axes = ARENA_AXES[arena] ?? []
 
   return (
     <section className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-5 pb-16">
@@ -253,10 +274,21 @@ export function Settlement({ arena, topic, result, snapshot, providerLabels }: S
       ) : null}
 
       {/* ── 记分板 ───────────────────────────────────────────── */}
-      <div className={cn('grid gap-4', arena === 'soft' ? 'lg:grid-cols-2' : 'grid-cols-1')}>
-        {arena === 'soft' ? <JudgePanel result={result} providerLabels={providerLabels} /> : null}
+      <div className={cn('grid gap-4', arena === 'hard-code' ? 'grid-cols-1' : 'lg:grid-cols-2')}>
+        {arena === 'chess' ? (
+          <ChessReviewPanel
+            arena={arena}
+            topic={topic}
+            result={result}
+            snapshot={snapshot}
+            providerLabels={providerLabels}
+          />
+        ) : null}
         {arena === 'hard-code' ? (
           <HardcodePanel result={result} snapshot={snapshot} providerLabels={providerLabels} />
+        ) : null}
+        {axes.length > 0 ? (
+          <JudgePanel arena={arena} result={result} providerLabels={providerLabels} />
         ) : null}
       </div>
 
@@ -317,14 +349,23 @@ export function Settlement({ arena, topic, result, snapshot, providerLabels }: S
 }
 
 function JudgePanel({
+  arena,
   result,
   providerLabels,
 }: {
+  arena: ArenaId
   result: BattleResult
   providerLabels: Record<string, string>
 }) {
+  const axes = ARENA_AXES[arena] ?? []
+  const accentClass = arena === 'banter' ? 'bg-arena-banter/80' : arena === 'debate' ? 'bg-arena-debate/80' : 'bg-soft-arena/80'
+  const hint =
+    arena === 'banter'
+      ? '毒舌有底线：分寸分越低，越接近出局'
+      : '双轮位置对调 · 分数独立展示，不合成总分'
+
   return (
-    <Panel title="AI 裁判" hint="双轮位置对调 · 分数独立展示，不合成总分">
+    <Panel title="AI 裁判" hint={hint}>
       {result.verdicts.length === 0 ? (
         <p className="text-sm text-dust">本场无裁判打分</p>
       ) : (
@@ -349,9 +390,14 @@ function JudgePanel({
                   ) : null}
                 </span>
                 <div className="grid gap-1.5 pl-4 sm:grid-cols-3">
-                  <ScoreRow label="逻辑" value={verdict.scores.logic ?? 0} accentClass="bg-soft-arena/80" />
-                  <ScoreRow label="论据" value={verdict.scores.evidence ?? 0} accentClass="bg-soft-arena/80" />
-                  <ScoreRow label="切题" value={verdict.scores.relevance ?? 0} accentClass="bg-soft-arena/80" />
+                  {axes.map((axis) => (
+                    <ScoreRow
+                      key={axis.key}
+                      label={axis.label}
+                      value={verdict.scores[axis.key] ?? 0}
+                      accentClass={accentClass}
+                    />
+                  ))}
                 </div>
                 {verdict.rationale ? (
                   <p className="pl-4 text-[13px] leading-relaxed text-ash">{verdict.rationale}</p>
@@ -361,9 +407,99 @@ function JudgePanel({
           })}
         </ul>
       )}
-      {result.judgeAvailable ? null : (
-        <p className="mt-3 text-[11px] text-dust">本场仅人类投票</p>
-      )}
+      {result.judgeAvailable ? null : <p className="mt-3 text-[11px] text-dust">本场仅人类投票</p>}
+    </Panel>
+  )
+}
+
+function ChessReviewPanel({
+  topic,
+  result,
+  snapshot,
+  providerLabels,
+}: {
+  arena: ArenaId
+  topic: string
+  result: BattleResult
+  snapshot: Snapshot
+  providerLabels: Record<string, string>
+}) {
+  const puzzle = useMemo(() => puzzleFromTopic(topic), [topic])
+  const solutionMove = useMemo(() => {
+    if (!puzzle || !puzzle.solution) return null
+    const chess = new Chess(puzzle.fen)
+    try {
+      const move = chess.move(puzzle.solution)
+      return move ? { from: move.from, to: move.to } : null
+    } catch {
+      return null
+    }
+  }, [puzzle])
+
+  const played = useMemo(() => {
+    if (!puzzle) return new Map<number, string | null>()
+    const map = new Map<number, string | null>()
+    for (const row of snapshot.contestants) {
+      map.set(row.slot, firstLegalMoveSan(puzzle.fen, row.output_text ?? ''))
+    }
+    return map
+  }, [puzzle, snapshot])
+
+  return (
+    <Panel
+      title="残局复盘"
+      hint={
+        puzzle
+          ? `白先 ${puzzle.mateIn} 步杀 · 参考解 ${puzzle.solution ?? '—'}`
+          : '无法解析题目'
+      }
+    >
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+        {puzzle ? (
+          <div className="w-full max-w-72 shrink-0">
+            <ChessBoard fen={puzzle.fen} lastMove={solutionMove} />
+          </div>
+        ) : null}
+        <ul className="flex min-w-0 flex-1 flex-col divide-y divide-hairline">
+          {result.contestants.map((outcome) => {
+            const passed = verdictPassed(result, outcome.slot)
+            const verdict = result.verdicts.find((v) => v.contestantSlot === outcome.slot)
+            const accent = providerAccent(outcome.providerId)
+            const san = played.get(outcome.slot)
+            return (
+              <li key={outcome.slot} className="flex flex-col gap-1 py-2.5 first:pt-0 last:pb-0">
+                <span className="flex items-center gap-2.5">
+                  <span
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded font-mono text-[10px] font-bold tabular-nums"
+                    style={{ backgroundColor: `${accent}1f`, color: accent }}
+                  >
+                    {outcome.slot}
+                  </span>
+                  <span className="truncate text-sm font-semibold">
+                    {providerLabelOf(providerLabels, outcome.providerId, outcome.providerId)}
+                  </span>
+                  <span className="truncate font-mono text-[11px] text-dust">{outcome.modelId}</span>
+                  <span
+                    className={cn(
+                      'ml-auto shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold',
+                      passed > 0
+                        ? 'border-ok/25 bg-ok/10 text-ok'
+                        : 'border-bad/25 bg-bad/10 text-bad',
+                    )}
+                  >
+                    {passed > 0 ? '命中杀法' : '未命中'}
+                  </span>
+                </span>
+                <span className="pl-8.5 font-mono text-[12px] text-ash">
+                  落子：{san ?? '—'}
+                  {san && puzzle && san === puzzle.solution ? '（正解）' : ''}
+                  {verdict?.rationale ? <span className="ml-2 text-dust">{verdict.rationale}</span> : null}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
     </Panel>
   )
 }

@@ -13,6 +13,9 @@
   /* ── 语义色：赛旗橙只承担动作 / 计时 / 焦点 ────────────────── */
   --color-blaze: #ff6a2b;
   --color-soft-arena: #8b8ff5;
+  --color-arena-debate: #67e8f9;
+  --color-arena-banter: #fb7185;
+  --color-arena-chess: #e0a458;
   --color-hard-arena: #38bdf8;
   --color-ok: #2fd39b;
   --color-warn: #f5b544;
