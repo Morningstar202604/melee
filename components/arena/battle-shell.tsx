@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useShallow } from 'zustand/react/shallow'
+import { ChevronLeft, Radio, X } from 'lucide-react'
+import { cn } from '@/lib/cn'
 import { closesStream } from '@/lib/battle/registry'
 import { parseBattleEvent } from '@/lib/battle/events'
 import type { ArenaId } from '@/lib/arena/types'
@@ -13,13 +15,12 @@ import {
   sortedContestants,
   useBattleStore,
 } from '@/lib/client/battle-store'
+import { ARENA_SKINS } from './theme'
 import { ContestantCard } from './contestant-card'
 import { StatusBar } from './status-bar'
 import { Settlement } from './settlement'
-import { arenaPalette } from './theme'
 
 const MAX_RECONNECT_FAILURES = 3
-const RECONNECT_DELAY_MS = 2000
 
 export interface BattleShellProps {
   battleId: string
@@ -27,10 +28,6 @@ export interface BattleShellProps {
   arena: ArenaId
   initialSnapshot: Snapshot
   providerLabels: Record<string, string>
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 export function BattleShell({
@@ -80,15 +77,10 @@ export function BattleShell({
     if (isTerminalPhase(seed.phase)) return
 
     let disposed = false
-    let source: EventSource | null = null
-    let retryTimer: ReturnType<typeof setTimeout> | null = null
     let failures = 0
+    let source: EventSource | null = null
 
     const teardown = () => {
-      if (retryTimer !== null) {
-        clearTimeout(retryTimer)
-        retryTimer = null
-      }
       if (source) {
         source.close()
         source = null
@@ -128,15 +120,16 @@ export function BattleShell({
         const current = useBattleStore.getState()
         const currentPhase =
           current.hydratedBattleId === battleId ? current.phase : seed.phase
-        failures += 1
-        teardown()
-        if (isTerminalPhase(currentPhase)) return
-        if (failures >= MAX_RECONNECT_FAILURES) {
-          setConnectionLost(true)
-          void recoverFromSnapshot()
+        if (isTerminalPhase(currentPhase)) {
+          teardown()
           return
         }
-        retryTimer = setTimeout(connect, RECONNECT_DELAY_MS)
+        failures += 1
+        if (failures >= MAX_RECONNECT_FAILURES) {
+          teardown()
+          setConnectionLost(true)
+          void recoverFromSnapshot()
+        }
       }
     }
 
@@ -160,87 +153,94 @@ export function BattleShell({
       const payload = (await response.json().catch(() => ({}))) as { error?: string }
       setCancelNotice(payload.error ?? `取消失败：HTTP ${response.status}`)
     } catch (error) {
-      setCancelNotice(`取消失败：${errorText(error)}`)
+      setCancelNotice(`取消失败：${error instanceof Error ? error.message : String(error)}`)
     } finally {
       setCancelling(false)
     }
   }
 
   const activeSnapshot = live ? snapshot : seed.snapshot
+  const skin = ARENA_SKINS[arena]
 
   return (
-    <div className="min-h-full bg-[var(--background)] text-[var(--foreground)]">
-      {/* ── Header ─────────────────────────────────────────── */}
-      <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-4 sm:px-6">
-          <Link
-            href="/"
-            className="text-sm font-bold text-zinc-500 hover:text-orange-500 dark:text-zinc-400 dark:hover:text-orange-400"
-          >
-            ← 回首页
-          </Link>
-        </div>
-      </header>
-
-      {/* ── Status Bar ───────────────────────────────────── */}
+    <div className="flex min-h-full flex-col">
       <StatusBar
         phase={shownPhase}
+        arena={arena}
         startedAt={shownStartedAt}
         contestants={views}
         failureReason={shownFailureReason}
       />
 
-      {/* ── Connection Lost Alert ─────────────────────────── */}
+      <header className="border-b border-hairline">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1 text-sm font-semibold text-ash transition-colors hover:text-ink"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            回擂台
+          </Link>
+          <span
+            className={cn(
+              'rounded-full border px-2.5 py-0.5 text-xs font-semibold',
+              skin.accentChip,
+            )}
+          >
+            {skin.label}
+          </span>
+          <span className="font-mono text-[11px] text-dust">{battleId}</span>
+          {cancelNotice ? <span className="text-xs text-warn">{cancelNotice}</span> : null}
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={cancelling || settled}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-hairline px-3 py-1.5 text-xs font-medium text-ash transition-colors hover:border-bad/50 hover:text-bad disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <X className="h-3.5 w-3.5" />
+            {cancelling ? '取消中…' : '取消对战'}
+          </button>
+        </div>
+      </header>
+
       {connectionLost ? (
         <div
           role="alert"
-          className="mx-auto mt-6 max-w-5xl rounded-xl border-2 border-red-200 bg-red-50 px-4 py-3 text-center text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300"
+          className="border-b border-bad/30 bg-bad/10 px-5 py-2.5 text-center text-[13px] font-medium text-bad"
         >
-          连接已中断 — 请刷新页面恢复实时画面
+          <Radio className="mr-1.5 inline h-3.5 w-3.5" />
+          实时连接已中断 — 刷新页面可恢复画面
         </div>
       ) : null}
 
-      {/* ── Topic & Battle Info ─────────────────────────── */}
-      <div className="mx-auto max-w-5xl px-4 pt-5 sm:px-6">
-        <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-500 dark:text-zinc-400">
-            <span className="font-mono text-xs text-zinc-400">{battleId}</span>
-            <span
-              className="rounded-full px-2.5 py-0.5 text-xs font-bold"
-              style={{ backgroundColor: `${arenaPalette[arena]}18`, color: arenaPalette[arena] }}
-            >
-              {arena === 'soft' ? '🎭 软战场' : '🐍 硬战场'}
-            </span>
-            {cancelNotice ? <span className="text-xs">{cancelNotice}</span> : null}
-            <button
-              type="button"
-              onClick={handleCancel}
-              disabled={cancelling || settled}
-              className="ml-auto rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-red-300 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600 dark:text-zinc-400 dark:hover:border-red-700 dark:hover:text-red-400"
-            >
-              {cancelling ? '取消中…' : '取消对战'}
-            </button>
-          </div>
-          <p className="mt-2 text-xs font-bold tracking-wider text-zinc-400">本场题目</p>
-          <pre className="mt-1 whitespace-pre-wrap break-words border-l-4 pl-3 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300" style={{ borderColor: arenaPalette[arena] }}>
+      <div className="mx-auto w-full max-w-6xl px-5 pt-5">
+        <section className="rounded-xl border border-hairline bg-panel p-4 sm:p-5">
+          <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-dust">
+            本场题面
+          </span>
+          <pre
+            className={cn(
+              'mt-2 whitespace-pre-wrap break-words border-l-2 pl-3.5 font-sans text-sm leading-[1.75] text-ink/90',
+              arena === 'soft' ? 'border-soft-arena/50' : 'border-hard-arena/50',
+            )}
+          >
             {topic}
           </pre>
-        </div>
+        </section>
       </div>
 
-      {/* ── Contestant Cards ─────────────────────────────── */}
-      <main className="mx-auto grid max-w-5xl gap-4 px-4 py-6 sm:grid-cols-2 sm:px-6">
+      <main className="mx-auto grid w-full max-w-6xl gap-4 px-5 py-5 sm:grid-cols-2">
         {views.map((view) => (
           <ContestantCard
             key={view.slot}
             view={view}
+            arena={arena}
             providerLabel={providerLabels[view.providerId]}
             maxLatencyMs={maxLatencyMs}
           />
         ))}
       </main>
 
-      {/* ── Settlement ────────────────────────────────────── */}
       {summary && activeSnapshot ? (
         <Settlement
           arena={arena}

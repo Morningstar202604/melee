@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { ChevronLeft } from 'lucide-react'
 import { BattleShell } from '@/components/arena/battle-shell'
 import { getSnapshot } from '@/lib/db/repo'
 import { PROVIDERS } from '@/lib/providers/registry'
@@ -11,18 +12,17 @@ export const metadata: Metadata = {
 
 function MissingBattle({ id }: { id: string }) {
   return (
-    <div className="mx-auto max-w-lg px-5 py-16">
-      <h1 className="text-3xl font-black text-zinc-900 dark:text-zinc-50">
-        对战不存在
-      </h1>
-      <p className="mt-3 text-sm leading-[1.7] text-zinc-500">
-        id 为 <span className="font-mono">{id}</span>{' '}
-        的对战没有记录，可能从未创建，也可能已被清理。请回擂台首页重新开一场。
+    <div className="mx-auto flex max-w-lg flex-col gap-4 px-5 py-20">
+      <h1 className="text-xl font-bold">对战不存在</h1>
+      <p className="text-sm leading-relaxed text-ash">
+        id 为 <span className="font-mono text-ink">{id}</span> 的对战没有记录，可能从未创建，
+        也可能已被清理。
       </p>
       <Link
         href="/"
-        className="mt-6 inline-block rounded-lg bg-amber-400 px-6 py-2.5 text-sm font-black text-zinc-900 no-underline transition-colors hover:bg-amber-500"
+        className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-blaze px-4 py-2.5 text-sm font-bold text-void transition-colors hover:bg-blaze/90"
       >
+        <ChevronLeft className="h-4 w-4" />
         回擂台首页
       </Link>
     </div>

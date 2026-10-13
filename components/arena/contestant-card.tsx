@@ -1,11 +1,22 @@
 'use client'
 
+import { Zap } from 'lucide-react'
+import { cn } from '@/lib/cn'
 import { contestantStatusLabels } from '@/lib/battle/events'
+import type { ArenaId } from '@/lib/arena/types'
 import type { ContestantView } from '@/lib/client/battle-store'
-import { statusTone, toneClasses } from './theme'
+import {
+  SANDBOX_LABELS,
+  SANDBOX_TONE,
+  TONE_CLASSES,
+  isFailedStatus,
+  providerAccent,
+  statusTone,
+} from './theme'
 
 export interface ContestantCardProps {
   view: ContestantView
+  arena: ArenaId
   providerLabel?: string
   maxLatencyMs: number
 }
@@ -22,14 +33,15 @@ function failureTitle(view: ContestantView): string {
 }
 
 function StatusChip({ view }: { view: ContestantView }) {
-  const tone = toneClasses[statusTone(view.status)]
+  const tone = statusTone(view.status)
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${tone.bg} ${tone.text}`}
+      className={cn(
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold',
+        TONE_CLASSES[tone].chip,
+      )}
     >
-      {view.status === 'streaming' ? (
-        <span className={`inline-block h-1.5 w-1.5 rounded-full animate-glow-pulse ${tone.dot}`} />
-      ) : null}
+      <span aria-hidden className={cn('h-1.5 w-1.5 rounded-full', TONE_CLASSES[tone].dot)} />
       {statusLabel(view)}
     </span>
   )
@@ -38,7 +50,7 @@ function StatusChip({ view }: { view: ContestantView }) {
 function LatencyMeter({ view, maxLatencyMs }: { view: ContestantView; maxLatencyMs: number }) {
   if (view.latencyMs === null) {
     return (
-      <span className="text-xs font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
+      <span className="font-mono text-[11px] tabular-nums text-dust">
         {view.status === 'streaming' ? '计时中…' : '—'}
       </span>
     )
@@ -53,100 +65,87 @@ function LatencyMeter({ view, maxLatencyMs }: { view: ContestantView; maxLatency
         aria-valuenow={percent}
         aria-valuemin={0}
         aria-valuemax={100}
-        className="block h-2 w-20 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
+        className="block h-1 w-16 overflow-hidden rounded-full bg-raise"
       >
         <span
-          className="block h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-400 transition-[width] duration-300"
+          className="block h-full rounded-full bg-blaze transition-[width] duration-300"
           style={{ width: `${percent}%` }}
         />
       </span>
-      <span className="text-xs font-bold tabular-nums text-zinc-900 dark:text-zinc-50">
+      <span className="font-mono text-[11px] font-bold tabular-nums text-ink">
         {(view.latencyMs / 1000).toFixed(1)}s
       </span>
     </span>
   )
 }
 
-const TONE_BAR: Record<string, string> = {
-  live: 'bg-emerald-500',
-  success: 'bg-emerald-500',
-  failure: 'bg-red-500',
-  timeout: 'bg-amber-500',
-}
-
-const TONE_SHADOW: Record<string, string> = {
-  live: 'shadow-[0_0_0_2px_rgba(16,185,129,0.2),0_8px_24px_rgba(16,185,129,0.1)]',
-  success: 'shadow-[0_0_0_2px_rgba(16,185,129,0.1)]',
-  failure: 'shadow-[0_0_0_2px_rgba(239,68,68,0.15)]',
-  timeout: 'shadow-[0_0_0_2px_rgba(245,158,11,0.15)]',
-}
-
-export function ContestantCard({ view, providerLabel, maxLatencyMs }: ContestantCardProps) {
+export function ContestantCard({ view, arena, providerLabel, maxLatencyMs }: ContestantCardProps) {
   const tone = statusTone(view.status)
   const streaming = view.status === 'streaming'
-  const failed = view.status !== 'streaming' && view.status !== 'ok'
+  const failed = isFailedStatus(view.status)
+  const accent = providerAccent(view.providerId)
 
   return (
     <article
-      className={`relative flex min-h-[16rem] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white transition-all dark:border-zinc-800 dark:bg-zinc-900 ${
-        streaming ? TONE_SHADOW[tone] : 'shadow-sm'
-      } ${streaming ? 'animate-fade-in-up' : ''}`}
+      className={cn(
+        'relative flex min-h-64 flex-col overflow-hidden rounded-xl border bg-panel',
+        streaming ? TONE_CLASSES[tone].edge : failed ? TONE_CLASSES[tone].edge : 'border-hairline',
+      )}
+      style={{ borderLeftWidth: 2, borderLeftColor: accent }}
     >
-      {/* Top accent bar */}
-      <div className={`h-1 ${TONE_BAR[tone]}`} />
-
-      {/* Header */}
-      <header className="flex flex-wrap items-center gap-2 px-5 pt-4 pb-2">
+      <header className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 px-4 pb-2 pt-3.5">
         <span
           title={`${view.slot} 号选手`}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-900 text-xs font-black tabular-nums text-amber-400 dark:bg-zinc-800"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md font-mono text-[11px] font-bold tabular-nums"
+          style={{ backgroundColor: `${accent}1f`, color: accent }}
         >
           {view.slot}
         </span>
         {view.isFirstFinisher ? (
-          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-            ⚡ 先手
+          <span className="inline-flex items-center gap-1 rounded-full border border-blaze/30 bg-blaze/10 px-2 py-0.5 text-[10px] font-bold text-blaze">
+            <Zap className="h-3 w-3" />
+            先手
           </span>
         ) : null}
-        <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
-          {providerLabel ?? view.providerId}
-        </span>
-        <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-          {view.modelId}
-        </span>
+        <span className="text-sm font-bold">{providerLabel ?? view.providerId}</span>
+        <span className="truncate font-mono text-[11px] text-dust">{view.modelId}</span>
         <span className="ml-auto">
           <StatusChip view={view} />
         </span>
       </header>
 
-      {/* Failure banner */}
       {failed ? (
-        <div className={`px-5 py-2 ${toneClasses[tone].bg} border-t ${toneClasses[tone].border}`}>
-          <p className={`text-xs font-bold ${toneClasses[tone].text}`}>
-            {failureTitle(view)}
-          </p>
+        <div className={cn('border-y px-4 py-2', TONE_CLASSES[tone].banner)}>
+          <p className="text-xs font-bold">{failureTitle(view)}</p>
           {view.failureMessage ? (
-            <p className={`mt-0.5 text-xs font-medium ${toneClasses[tone].text} opacity-85`}>
-              {view.failureMessage}
-            </p>
+            <p className="mt-0.5 text-xs leading-relaxed opacity-85">{view.failureMessage}</p>
           ) : null}
         </div>
       ) : null}
 
-      {/* Content area */}
       {view.text ? (
-        <div className="whitespace-pre-wrap break-words px-5 py-3 text-[15px] leading-[1.7] text-zinc-800 dark:text-zinc-200 flex-1 overflow-y-auto max-h-96">
+        <div
+          className={cn(
+            'max-h-[26rem] flex-1 overflow-y-auto whitespace-pre-wrap break-words px-4 py-3 text-ink/90',
+            arena === 'hard-code'
+              ? 'font-mono text-[12.5px] leading-[1.7]'
+              : 'text-[14.5px] leading-[1.75]',
+          )}
+        >
           {view.text}
           {streaming ? (
-            <span className="ml-0.5 inline-block h-[1em] w-[3px] translate-y-[2px] rounded-sm bg-orange-500 animate-glow-pulse align-baseline" />
+            <span
+              aria-hidden
+              className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-caret bg-blaze align-baseline"
+            />
           ) : null}
         </div>
       ) : (
-        <div className="flex flex-1 items-center justify-center px-5 py-8">
-          <p className="text-sm text-zinc-400">
+        <div className="flex flex-1 items-center justify-center px-4 py-10">
+          <p className="text-[13px] text-dust">
             {streaming ? (
               <span className="inline-flex items-center gap-2">
-                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-glow-pulse" />
+                <span aria-hidden className="h-1.5 w-1.5 animate-live rounded-full bg-ok" />
                 等待第一行输出…
               </span>
             ) : (
@@ -156,9 +155,27 @@ export function ContestantCard({ view, providerLabel, maxLatencyMs }: Contestant
         </div>
       )}
 
-      {/* Footer */}
-      <footer className="flex items-center gap-2 border-t border-zinc-100 px-5 py-2 text-[11px] text-zinc-400 dark:border-zinc-800">
-        <span>{view.text.length} 字</span>
+      <footer className="flex items-center gap-x-3 border-t border-hairline px-4 py-2 font-mono text-[11px] text-dust">
+        <span className="tabular-nums">{view.text.length} 字</span>
+        {view.sandbox ? (
+          <span
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+              TONE_CLASSES[SANDBOX_TONE[view.sandbox.status]].chip,
+            )}
+          >
+            <span
+              aria-hidden
+              className={cn('h-1.5 w-1.5 rounded-full', TONE_CLASSES[SANDBOX_TONE[view.sandbox.status]].dot)}
+            />
+            {view.sandbox.status === 'unavailable'
+              ? SANDBOX_LABELS.unavailable
+              : `沙箱 ${view.sandbox.passed}/${view.sandbox.total}`}
+            {view.sandbox.timeMs !== null && view.sandbox.status !== 'unavailable'
+              ? ` · ${view.sandbox.timeMs}ms`
+              : ''}
+          </span>
+        ) : null}
         <span className="ml-auto">
           <LatencyMeter view={view} maxLatencyMs={maxLatencyMs} />
         </span>

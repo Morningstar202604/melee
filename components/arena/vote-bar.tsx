@@ -1,6 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Check, Vote } from 'lucide-react'
+import { cn } from '@/lib/cn'
+import { providerAccent } from './theme'
 
 const VOTE_STORAGE_KEY = 'melee.voterKey'
 
@@ -31,11 +34,20 @@ export function VoteBar({ battleId, contestants, tally, disabled }: VoteBarProps
   const voterKeyRef = useRef<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [votedFor, setVotedFor] = useState<string | null>(null)
+  const [voteOverlay, setVoteOverlay] = useState<{ base: Record<string, number>; delta: Record<string, number> }>(
+    () => ({ base: {}, delta: {} }),
+  )
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
     voterKeyRef.current = getVoterKey()
   }, [])
+
+  const localDelta = voteOverlay.base === tally ? voteOverlay.delta : {}
+  const effectiveTally: Record<string, number> = { ...tally }
+  for (const [contestantId, delta] of Object.entries(localDelta)) {
+    effectiveTally[contestantId] = (effectiveTally[contestantId] ?? 0) + delta
+  }
 
   const handleVote = useCallback(
     async (contestantId: string | null) => {
@@ -59,45 +71,51 @@ export function VoteBar({ battleId, contestants, tally, disabled }: VoteBarProps
           return
         }
         setVotedFor(contestantId)
-        setNotice({ kind: 'ok', text: '投票成功！感谢参与 🎉' })
+        setVoteOverlay((current) => {
+          const base = current.base === tally ? current.delta : {}
+          return {
+            base: tally,
+            delta: { ...base, [contestantId]: (base[contestantId] ?? 0) + 1 },
+          }
+        })
+        setNotice({ kind: 'ok', text: '投票成功' })
       } catch (error) {
         setNotice({ kind: 'error', text: error instanceof Error ? error.message : '投票失败' })
       } finally {
         setBusy(null)
       }
     },
-    [battleId, busy, disabled, votedFor],
+    [battleId, busy, disabled, votedFor, tally],
   )
 
-  const total = totalVotes(tally)
+  const total = totalVotes(effectiveTally)
   if (contestants.length === 0) return null
 
   return (
-    <section className="border-t-2 border-zinc-200 pt-8 mt-8 dark:border-zinc-800">
-      {/* Header */}
-      <div className="flex items-baseline gap-3 mb-5">
-        <span className="text-xs font-bold tracking-wider text-zinc-400 uppercase">
-          观众投票
-        </span>
-        <span className="font-mono text-3xl font-black leading-none text-zinc-900 dark:text-zinc-50">
-          {total}
-        </span>
-        <span className="text-sm text-zinc-500">票已投</span>
-        {votedFor ? (
-          <span className="ml-auto rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-            ✓ 已投票
+    <section className="flex flex-col gap-4">
+      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <Vote className="h-4 w-4 self-center text-dust" />
+        <h3 className="text-sm font-bold">观众投票</h3>
+        <span className="font-mono text-2xl font-bold tabular-nums text-ink">{total}</span>
+        <span className="text-xs text-dust">票已投</span>
+        {disabled ? (
+          <span className="text-xs text-dust">· 本场不开放投票</span>
+        ) : votedFor ? (
+          <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-ok/25 bg-ok/10 px-2.5 py-0.5 text-[11px] font-semibold text-ok">
+            <Check className="h-3 w-3" />
+            已投票
           </span>
         ) : null}
-      </div>
+      </header>
 
-      {/* Contestant vote rows */}
       <div className="flex flex-col gap-2">
         {contestants.map((contestant) => {
-          const count = tally[contestant.contestantId ?? ''] ?? 0
+          const count = effectiveTally[contestant.contestantId ?? ''] ?? 0
           const percent = total > 0 ? Math.round((count / total) * 100) : 0
           const isVotingThis = busy === contestant.contestantId
           const isVotedForThis = votedFor === contestant.contestantId
           const canVote = !disabled && !votedFor && !busy
+          const accent = providerAccent(contestant.providerId)
 
           return (
             <button
@@ -105,71 +123,58 @@ export function VoteBar({ battleId, contestants, tally, disabled }: VoteBarProps
               type="button"
               onClick={() => handleVote(contestant.contestantId)}
               disabled={!canVote || !contestant.contestantId}
-              className={`flex items-center gap-4 rounded-xl border-2 px-5 py-4 text-left transition-all ${
+              className={cn(
+                'group flex items-center gap-4 rounded-xl border px-4 py-3 text-left transition-colors',
                 isVotedForThis
-                  ? 'border-orange-500 bg-orange-50 dark:border-orange-400 dark:bg-orange-950/20'
-                  : 'border-zinc-200 bg-white hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700'
-              } ${!canVote && !isVotedForThis ? 'opacity-60' : ''}`}
+                  ? 'border-blaze/50 bg-blaze/5'
+                  : canVote
+                    ? 'border-hairline bg-panel hover:border-dust/60 hover:bg-raise/60'
+                    : 'border-hairline bg-panel opacity-60',
+              )}
             >
-              {/* Slot badge */}
               <span
-                className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-black tabular-nums ${
-                  isVotedForThis
-                    ? 'bg-orange-500 text-white'
-                    : 'bg-zinc-900 text-amber-400 dark:bg-zinc-800'
-                }`}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md font-mono text-[11px] font-bold tabular-nums"
+                style={{ backgroundColor: `${accent}1f`, color: accent }}
               >
                 {contestant.slot}
               </span>
 
-              {/* Model info */}
-              <span className="flex flex-col gap-0.5 min-w-0 flex-1">
-                <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
-                  {contestant.providerId}
-                </span>
-                <span className="truncate font-mono text-[11px] text-zinc-400">
-                  {contestant.modelId}
-                </span>
+              <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                <span className="truncate text-sm font-semibold">{contestant.providerId}</span>
+                <span className="truncate font-mono text-[11px] text-dust">{contestant.modelId}</span>
               </span>
 
-              {/* Progress bar */}
-              <span className="relative block h-3 w-20 shrink-0 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+              <span className="relative block h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-raise">
                 <span
-                  className={`absolute inset-0 h-full rounded-full transition-[width] duration-500 ease-out ${
-                    isVotedForThis ? 'bg-orange-500' : 'bg-amber-400'
-                  }`}
+                  className={cn(
+                    'absolute inset-0 h-full rounded-full transition-[width] duration-500 ease-out',
+                    isVotedForThis ? 'bg-blaze' : 'bg-dust/80 group-hover:bg-dust',
+                  )}
                   style={{ width: `${percent}%` }}
                 />
               </span>
 
-              {/* Vote count */}
-              <span className="w-9 shrink-0 text-right font-mono text-xs font-bold tabular-nums text-zinc-900 dark:text-zinc-50">
+              <span className="w-10 shrink-0 text-right font-mono text-xs font-bold tabular-nums text-ink">
                 {count}
               </span>
 
-              {/* Vote state */}
-              <span className="w-16 shrink-0 text-center text-[11px] font-bold">
-                {isVotingThis ? (
-                  <span className="text-zinc-500">投票中…</span>
-                ) : isVotedForThis ? (
-                  <span className="text-orange-500 dark:text-orange-400">你的选择</span>
-                ) : canVote ? (
-                  <span className="text-zinc-400">点击投票</span>
-                ) : null}
+              <span className="w-14 shrink-0 text-right font-mono text-[11px] text-dust">
+                {isVotingThis ? '投票中…' : isVotedForThis ? '你的选择' : total > 0 ? `${percent}%` : ''}
               </span>
             </button>
           )
         })}
       </div>
 
-      {/* Notice */}
       {notice ? (
         <p
-          className={`mt-3 rounded-lg px-4 py-2.5 text-xs font-medium ${
+          role="status"
+          className={cn(
+            'rounded-lg border px-3.5 py-2 text-xs font-medium',
             notice.kind === 'ok'
-              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
-              : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400'
-          }`}
+              ? 'border-ok/25 bg-ok/10 text-ok'
+              : 'border-bad/25 bg-bad/10 text-bad',
+          )}
         >
           {notice.text}
         </p>

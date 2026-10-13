@@ -1,119 +1,135 @@
 @import "tailwindcss";
 
+@theme {
+  /* ── 转播台色板：机箱 / 面板 / 发丝线 / 字阶 ───────────────── */
+  --color-void: #08080a;
+  --color-panel: #0f0f13;
+  --color-raise: #16161b;
+  --color-hairline: #232329;
+  --color-ink: #f2f2f4;
+  --color-ash: #9c9ca7;
+  --color-dust: #63636d;
+
+  /* ── 语义色：赛旗橙只承担动作 / 计时 / 焦点 ────────────────── */
+  --color-blaze: #ff6a2b;
+  --color-soft-arena: #8b8ff5;
+  --color-hard-arena: #38bdf8;
+  --color-ok: #2fd39b;
+  --color-warn: #f5b544;
+  --color-bad: #f4676a;
+
+  --font-sans: var(--font-geist-sans), "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo,
+    Consolas, "Liberation Mono", monospace;
+}
+
 :root {
-  --background: #FAF8F5;
-  --foreground: #1C1917;
+  color-scheme: dark;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0C0A09;
-    --foreground: #FAFAF9;
+@layer base {
+  * {
+    border-color: var(--color-hairline);
   }
-}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans, system-ui, -apple-system, sans-serif);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+  body {
+    background: var(--color-void);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
-/* 滚动条美化 */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(120, 113, 108, 0.3);
-  border-radius: 999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(120, 113, 108, 0.5);
-}
+  ::selection {
+    background: color-mix(in srgb, var(--color-blaze) 32%, transparent);
+  }
 
-@media (prefers-color-scheme: dark) {
+  :focus-visible {
+    outline: 2px solid var(--color-blaze);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
   ::-webkit-scrollbar-thumb {
-    background: rgba(168, 162, 158, 0.25);
+    background: color-mix(in srgb, var(--color-dust) 45%, transparent);
+    border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(168, 162, 158, 0.4);
+    background: color-mix(in srgb, var(--color-dust) 70%, transparent);
   }
 }
 
-/* 焦点环 */
-:focus-visible {
-  outline: 2px solid #EA580C;
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :focus-visible {
-    outline-color: #FB923C;
-  }
-}
-
-/* 动画 */
-@keyframes fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
+/* ── 动效纪律：唯一编排时刻 = 冲线闪现；其余只有读数必要反馈 ── */
+@keyframes caret-blink {
+  0%,
   100% {
-    background-position: 200% 0;
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
   }
 }
 
-@keyframes glow-pulse {
-  0%, 100% {
-    opacity: 0.6;
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
   }
   50% {
     opacity: 1;
   }
 }
 
-.animate-fade-in-up {
-  animation: fade-in-up 0.4s ease-out both;
+@keyframes finish-flash {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-ok) 50%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 14px transparent;
+  }
 }
 
-.animate-shimmer {
-  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 50%, transparent 100%);
-  background-size: 200% 100%;
-  animation: shimmer 2s infinite;
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-.animate-glow-pulse {
-  animation: glow-pulse 2s ease-in-out infinite;
+@utility animate-caret {
+  animation: caret-blink 1.1s steps(1, end) infinite;
 }
 
-/* 偏好动态效果的用户启用 transition */
-@media (prefers-reduced-motion: no-preference) {
-  .transition-theme {
-    transition-property: color, background-color, border-color, box-shadow, opacity;
-    transition-duration: 150ms;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+@utility animate-live {
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+
+@utility animate-finish {
+  animation: finish-flash 0.8s ease-out 1;
+}
+
+@utility animate-rise {
+  animation: rise 0.24s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }

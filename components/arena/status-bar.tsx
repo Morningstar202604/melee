@@ -1,15 +1,19 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { cn } from '@/lib/cn'
 import {
   battlePhaseLabels,
   contestantStatusLabels,
   type BattlePhase,
 } from '@/lib/battle/events'
+import type { ArenaId } from '@/lib/arena/types'
 import type { ContestantView } from '@/lib/client/battle-store'
+import { TONE_CLASSES, statusTone } from './theme'
 
 export interface StatusBarProps {
   phase: BattlePhase
+  arena: ArenaId
   startedAt: number | null
   contestants: ContestantView[]
   failureReason: string | null
@@ -49,93 +53,73 @@ function segmentLabel(view: ContestantView): string {
 }
 
 function ProgressSegment({ view }: { view: ContestantView }) {
-  const streaming = view.status === 'streaming'
-  const isOk = view.status === 'ok'
-  const isFailed = view.status !== 'streaming' && view.status !== 'ok'
-
-  let colorClasses = 'bg-zinc-300 dark:bg-zinc-600'
-  if (streaming) colorClasses = 'bg-emerald-500 animate-glow-pulse'
-  else if (isOk) colorClasses = 'bg-emerald-500'
-  else if (isFailed) colorClasses = 'bg-red-500'
-
+  const tone = statusTone(view.status)
   return (
     <span
       title={segmentLabel(view)}
       aria-label={segmentLabel(view)}
-      className={`relative flex flex-1 items-center justify-center overflow-hidden rounded text-xs font-black tabular-nums text-white min-w-0 h-[22px] ${colorClasses}`}
+      className={cn(
+        'flex h-5 min-w-0 flex-1 items-center justify-center rounded font-mono text-[10px] font-bold tabular-nums text-void',
+        TONE_CLASSES[tone].bar,
+        view.status === 'streaming' && 'animate-live',
+        tone === 'failure' && 'text-ink',
+      )}
     >
-      {streaming ? (
-        <span className="animate-shimmer absolute inset-0 bg-white/20" />
-      ) : null}
-      <span className="relative">{view.slot}</span>
+      {view.slot}
     </span>
   )
 }
 
-export function StatusBar({ phase, startedAt, contestants, failureReason }: StatusBarProps) {
+export function StatusBar({ phase, arena, startedAt, contestants, failureReason }: StatusBarProps) {
   const elapsed = useElapsedLabel(startedAt)
   const total = contestants.length
   const finished = contestants.filter((view) => view.status !== 'streaming').length
-  const streaming = contestants.filter((view) => view.status === 'streaming').length
   const live = LIVE_PHASES.has(phase)
+  const phaseLabel =
+    arena === 'hard-code' && phase === 'judging' ? '沙箱判定中' : battlePhaseLabels[phase]
 
   return (
-    <div className="sticky top-0 z-30 border-b border-zinc-200 bg-white/95 backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
-        {/* Phase indicator */}
+    <div className="sticky top-0 z-30 border-b border-hairline bg-void/90 backdrop-blur-md">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-5 py-2.5">
         <span className="inline-flex items-center gap-2">
           <span
-            className={`inline-block h-2.5 w-2.5 rounded-full ${
-              live ? 'bg-emerald-500 animate-glow-pulse' : 'bg-zinc-400'
-            }`}
+            aria-hidden
+            className={cn('h-2 w-2 rounded-full', live ? 'bg-ok animate-live' : 'bg-dust')}
           />
-          <span className="text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-            {battlePhaseLabels[phase]}
-          </span>
+          <span className="text-[13px] font-bold tracking-tight">{phaseLabel}</span>
         </span>
 
-        {/* Progress bar */}
         <span
           role="progressbar"
           aria-label={`已完成 ${finished} 名，共 ${total} 名选手`}
           aria-valuenow={finished}
           aria-valuemin={0}
           aria-valuemax={total}
-          className="flex flex-1 gap-1 py-1"
+          className="flex min-w-32 flex-1 gap-1"
         >
           {contestants.map((view) => (
             <ProgressSegment key={view.slot} view={view} />
           ))}
         </span>
 
-        {/* Counter */}
-        <span className="inline-flex items-baseline gap-1 tabular-nums">
-          <span className="text-lg font-black leading-none text-orange-500">
-            {finished}
-          </span>
-          <span className="text-xs text-zinc-400">/ {total}</span>
-          {streaming > 0 ? (
-            <span className="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-              {streaming} 输出中
-            </span>
-          ) : null}
+        <span className="inline-flex items-baseline gap-1 font-mono text-sm font-bold tabular-nums">
+          <span className="text-blaze">{finished}</span>
+          <span className="text-xs font-medium text-dust">/ {total}</span>
         </span>
 
-        {/* Elapsed timer */}
         <span className="inline-flex items-baseline gap-1.5">
-          <span className="text-[10px] font-medium tracking-wider text-zinc-400">用时</span>
+          <span className="font-mono text-[10px] uppercase tracking-wider text-dust">用时</span>
           <span
             suppressHydrationWarning
-            className="font-mono text-sm font-bold tabular-nums text-orange-500"
+            className="font-mono text-sm font-bold tabular-nums text-ink"
           >
             {elapsed}
           </span>
         </span>
       </div>
 
-      {/* Failure banner */}
       {failureReason ? (
-        <div className="bg-red-500 px-4 py-1.5 text-center text-xs font-bold text-white">
+        <div className="border-t border-bad/30 bg-bad/15 px-5 py-1.5 text-center text-xs font-semibold text-bad">
           {failureReason}
         </div>
       ) : null}

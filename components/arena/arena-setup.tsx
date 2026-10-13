@@ -2,9 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import {
+  Check,
+  ChevronLeft,
+  MessagesSquare,
+  Search,
+  ShieldCheck,
+  Swords,
+  Terminal,
+  type LucideIcon,
+} from 'lucide-react'
+import { cn } from '@/lib/cn'
 import type { ArenaId } from '@/lib/arena/types'
 import type { CodeTopic, SoftTopic } from '@/lib/arena/topics'
 import type { ProviderDef } from '@/lib/providers/registry'
+import { ARENA_IDS, ARENA_SKINS } from './theme'
 import { LineupEditor } from './lineup-editor'
 
 export interface ArenaSetupProps {
@@ -35,39 +47,22 @@ interface ModelNotice {
   text: string
 }
 
-interface ArenaMeta {
-  emoji: string
-  label: string
-  tagline: string
-  accent: string
-  activeClass: string
-  iconBg: string
+const ARENA_ICONS: Record<ArenaId, LucideIcon> = {
+  soft: MessagesSquare,
+  'hard-code': Terminal,
 }
 
-const ARENA_META: Record<ArenaId, ArenaMeta> = {
-  soft: {
-    emoji: '🎭',
-    label: '软战场',
-    tagline: '辩论文 / 创意 / 角色扮演，观众投票 + AI 裁判双轨判定',
-    accent: '#6366f1',
-    activeClass:
-      'border-indigo-500 bg-indigo-50 shadow-indigo-500/10 shadow-lg dark:border-indigo-400 dark:bg-indigo-950/30',
-    iconBg: 'bg-indigo-100 dark:bg-indigo-900/40',
-  },
-  'hard-code': {
-    emoji: '🐍',
-    label: '硬战场',
-    tagline: 'Python 代码实战，沙箱真跑测试用例，按通过率判定',
-    accent: '#f59e0b',
-    activeClass:
-      'border-amber-500 bg-amber-50 shadow-amber-500/10 shadow-lg dark:border-amber-400 dark:bg-amber-950/30',
-    iconBg: 'bg-amber-100 dark:bg-amber-900/40',
-  },
-}
+const STEPS = [
+  { id: 1, label: '选赛道', hint: '决定比赛方式' },
+  { id: 2, label: '定题目', hint: '同一道题，所有选手' },
+  { id: 3, label: '点大将', hint: '模型 + API Key' },
+  { id: 4, label: '开打', hint: '确认阵容，发起对战' },
+]
 
-const ARENA_IDS: ArenaId[] = ['soft', 'hard-code']
-
-const STEP_LABELS = ['选赛道', '定题目', '点大将', '开打']
+const BTN_PRIMARY =
+  'inline-flex items-center gap-2 rounded-lg bg-blaze px-5 py-2.5 text-sm font-bold text-void transition-colors hover:bg-blaze/90 disabled:cursor-not-allowed disabled:bg-hairline disabled:text-dust'
+const BTN_GHOST =
+  'inline-flex items-center gap-2 rounded-lg border border-hairline px-4 py-2.5 text-sm font-semibold text-ash transition-colors hover:border-dust hover:text-ink disabled:cursor-not-allowed disabled:opacity-40'
 
 let ROW_SEQ = 0
 
@@ -192,7 +187,6 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
           label: `${topic.title}（${topic.tests.length} 个用例）`,
         }))
 
-  // Step validation
   const step1Valid = !!arena
   const step2Valid = !!topicPrompt
   const greenCount = rows.filter((row) => ping[row.rowId]?.ok === true).length
@@ -480,9 +474,6 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
     }
   }, [arena, persist, providerById, pingContestants, router, rows, topicPrompt])
 
-  const meta = ARENA_META[arena]
-
-  // ── Helper: go to next step with validation ─────────────────
   const goNext = useCallback(() => {
     if (step === 1 && !step1Valid) return
     if (step === 2 && !step2Valid) return
@@ -491,83 +482,73 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
     setStep(step + 1)
   }, [step, step1Valid, step2Valid, step3Valid])
 
-  // ── Render ────────────────────────────────────────────────────
+  const meta = ARENA_SKINS[arena]
+
   return (
-    <div className="flex flex-col gap-6">
-      {/* ── Progress Indicator ──────────────────────────────── */}
-      <nav aria-label="对战准备进度" className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="flex items-center gap-0">
-          {STEP_LABELS.map((label, i) => {
-            const s = i + 1
-            const isActive = step === s
-            const isDone = step > s
-            const isLast = s === STEP_LABELS.length
+    <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+      {/* ── Step rail ─────────────────────────────────────────── */}
+      <nav aria-label="对战准备进度" className="lg:sticky lg:top-6 lg:self-start">
+        <ol className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-1 lg:overflow-visible lg:pb-0">
+          {STEPS.map((item) => {
+            const active = step === item.id
+            const done = step > item.id
             return (
-              <div key={label} className="flex flex-1 items-center">
+              <li key={item.id}>
                 <button
                   type="button"
                   onClick={() => {
-                    if (s <= step) setStep(s)
+                    if (item.id <= step) setStep(item.id)
                   }}
-                  disabled={s > step}
-                  className="flex flex-col items-center gap-1.5 group disabled:cursor-default"
+                  disabled={item.id > step}
+                  aria-current={active ? 'step' : undefined}
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors',
+                    active
+                      ? 'bg-raise'
+                      : done
+                        ? 'text-ash hover:bg-raise/50 hover:text-ink'
+                        : 'cursor-not-allowed text-dust',
+                  )}
                 >
                   <span
-                    className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-black transition-all ${
-                      isActive
-                        ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30 scale-110'
-                        : isDone
-                          ? 'bg-emerald-500 text-white'
-                          : 'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400'
-                    }`}
+                    className={cn(
+                      'flex h-6 w-6 shrink-0 items-center justify-center rounded-md border font-mono text-[11px] font-bold tabular-nums',
+                      active
+                        ? 'border-blaze/50 bg-blaze/15 text-blaze'
+                        : done
+                          ? 'border-ok/30 bg-ok/10 text-ok'
+                          : 'border-hairline text-dust',
+                    )}
                   >
-                    {isDone ? '✓' : s}
+                    {done ? <Check className="h-3.5 w-3.5" /> : String(item.id).padStart(2, '0')}
                   </span>
-                  <span
-                    className={`text-xs font-semibold ${
-                      isActive
-                        ? 'text-orange-600 dark:text-orange-400'
-                        : isDone
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-zinc-400'
-                    }`}
-                  >
-                    {label}
+                  <span className="flex min-w-0 flex-col">
+                    <span className="whitespace-nowrap text-sm font-semibold">{item.label}</span>
+                    <span className="hidden whitespace-nowrap text-[11px] text-dust lg:block">
+                      {item.hint}
+                    </span>
                   </span>
                 </button>
-                {!isLast ? (
-                  <span
-                    className={`mx-2 h-0.5 flex-1 rounded-full transition-colors ${
-                      step > s ? 'bg-emerald-400 dark:bg-emerald-600' : 'bg-zinc-200 dark:bg-zinc-700'
-                    }`}
-                  />
-                ) : null}
-              </div>
+              </li>
             )
           })}
-        </div>
-        {/* Progress bar fill */}
-        <div className="mt-3 h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-500 transition-all duration-500"
-            style={{ width: `${((step - 1) / (STEP_LABELS.length - 1)) * 100}%` }}
-          />
-        </div>
+        </ol>
       </nav>
 
-      {/* ── Step 1: Arena ─────────────────────────────────────── */}
-      {step === 1 && (
-        <section className="animate-fade-in-up">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
-              选赛道
-            </h2>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              决定比赛方式：是靠嘴皮子（软战场）还是拼真功夫（硬战场代码）。
-            </p>
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+      {/* ── Step content ──────────────────────────────────────── */}
+      <div className="flex min-w-0 flex-col gap-4">
+        {step === 1 && (
+          <section className="animate-rise rounded-xl border border-hairline bg-panel p-5 sm:p-6">
+            <header className="flex flex-col gap-1">
+              <h2 className="text-lg font-bold">选赛道</h2>
+              <p className="text-[13px] leading-relaxed text-ash">
+                靠嘴皮子还是拼真功夫 — 两条赛道的判定方式完全不同。
+              </p>
+            </header>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
               {ARENA_IDS.map((id) => {
-                const item = ARENA_META[id]
+                const skin = ARENA_SKINS[id]
+                const Icon = ARENA_ICONS[id]
                 const active = arena === id
                 return (
                   <button
@@ -575,134 +556,114 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
                     type="button"
                     onClick={() => setArena(id)}
                     aria-pressed={active}
-                    className={`group relative flex items-start gap-4 rounded-2xl border-2 p-5 text-left transition-all ${
+                    className={cn(
+                      'relative flex items-start gap-4 rounded-xl border p-5 text-left transition-colors',
                       active
-                        ? `${item.activeClass}`
-                        : 'border-zinc-200 bg-white hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700'
-                    }`}
+                        ? cn('bg-raise', skin.accentEdge)
+                        : 'border-hairline bg-void hover:border-dust/60',
+                    )}
                   >
                     <span
-                      className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-2xl ${item.iconBg}`}
+                      className={cn(
+                        'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border',
+                        active ? skin.accentChip : 'border-hairline bg-raise text-ash',
+                      )}
                     >
-                      {item.emoji}
+                      <Icon className="h-5 w-5" />
                     </span>
-                    <span className="flex flex-col gap-1">
-                      <span className="text-base font-bold text-zinc-900 dark:text-zinc-50">
-                        {item.label}
-                      </span>
-                      <span className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
-                        {item.tagline}
-                      </span>
+                    <span className="flex min-w-0 flex-col gap-1">
+                      <span className="text-base font-bold">{skin.label}</span>
+                      <span className="text-[13px] leading-relaxed text-ash">{skin.tagline}</span>
                     </span>
-                    {active ? (
-                      <span className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-white text-sm font-bold text-orange-500 shadow-sm dark:bg-zinc-800">
-                        ✓
-                      </span>
-                    ) : null}
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'absolute right-4 top-4 h-2 w-2 rounded-full transition-colors',
+                        active ? 'bg-blaze' : 'bg-hairline',
+                      )}
+                    />
                   </button>
                 )
               })}
             </div>
-          </div>
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={goNext}
-              disabled={!step1Valid}
-              className="mt-4 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-6 py-3 text-sm font-black text-white shadow-md shadow-orange-500/20 transition-all hover:shadow-orange-500/30 hover:brightness-110 disabled:cursor-not-allowed disabled:from-zinc-400 disabled:to-zinc-500 disabled:shadow-none"
-            >
-              下一步：定题目 →
-            </button>
-          </div>
-        </section>
-      )}
+          </section>
+        )}
 
-      {/* ── Step 2: Topic ─────────────────────────────────────── */}
-      {step === 2 && (
-        <section className="animate-fade-in-up">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-            <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
-              定题目
-            </h2>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              {arena === 'soft' ? '选一个辩题、创意任务或角色扮演场景。' : '选一道 Python 编程题，选手作答后由沙箱跑测试。'}
-            </p>
-            <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
-              <select
-                id="topic-select"
-                aria-label="选择本场题目"
-                value={topicId}
-                onChange={(event) =>
-                  arena === 'soft'
-                    ? setSoftTopicId(event.target.value)
-                    : setCodeTopicId(event.target.value)
-                }
-                className="w-full rounded-xl border-2 border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none transition-colors focus:border-orange-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 sm:w-80"
+        {step === 2 && (
+          <section className="animate-rise rounded-xl border border-hairline bg-panel p-5 sm:p-6">
+            <header className="flex flex-col gap-1">
+              <h2 className="text-lg font-bold">定题目</h2>
+              <p className="text-[13px] leading-relaxed text-ash">
+                {arena === 'soft'
+                  ? '选一个辩题、创意任务或角色扮演场景，全场选手作答同一道题。'
+                  : '选一道 Python 编程题，选手作答后由沙箱跑测试用例。'}
+              </p>
+            </header>
+            <div className="mt-5 flex flex-col gap-4">
+              <label className="flex flex-col gap-2">
+                <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-dust">
+                  题目
+                </span>
+                <select
+                  value={topicId}
+                  onChange={(event) =>
+                    arena === 'soft'
+                      ? setSoftTopicId(event.target.value)
+                      : setCodeTopicId(event.target.value)
+                  }
+                  className="w-full rounded-lg border border-hairline bg-void px-3.5 py-2.5 text-sm text-ink outline-none transition-colors focus:border-blaze/60 sm:max-w-md"
+                >
+                  {topicOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div
+                className={cn(
+                  'rounded-lg border-l-2 bg-void px-4 py-3.5',
+                  arena === 'soft' ? 'border-soft-arena/60' : 'border-hard-arena/60',
+                )}
               >
-                {topicOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <div className="flex-1 rounded-xl border-2 border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-800/50">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">{meta.emoji}</span>
-                  <span className="text-xs font-bold tracking-wider text-zinc-400">
-                    {arena === 'soft' ? '软战场题面' : '硬战场题面'}
-                  </span>
-                </div>
-                <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
-                  {topicPrompt || '（请先在左侧选择一道题）'}
+                <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-dust">
+                  题面
+                </span>
+                <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-sm leading-[1.75] text-ink/90">
+                  {topicPrompt || '（请先选择一道题）'}
                 </pre>
-                {arena === 'hard-code' && topicPrompt ? (
-                  <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
-                    代码在 Pyodide WASM 沙箱中执行，无需 Docker
-                  </p>
-                ) : null}
               </div>
-            </div>
-          </div>
-          <div className="flex justify-between">
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="mt-4 rounded-xl border-2 border-zinc-200 px-5 py-3 text-sm font-bold text-zinc-600 transition-all hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              ← 上一步
-            </button>
-            <button
-              type="button"
-              onClick={goNext}
-              disabled={!step2Valid}
-              className="mt-4 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-6 py-3 text-sm font-black text-white shadow-md shadow-orange-500/20 transition-all hover:shadow-orange-500/30 hover:brightness-110 disabled:cursor-not-allowed disabled:from-zinc-400 disabled:to-zinc-500 disabled:shadow-none"
-            >
-              下一步：点大将 →
-            </button>
-          </div>
-        </section>
-      )}
 
-      {/* ── Step 3: Lineup ────────────────────────────────────── */}
-      {step === 3 && (
-        <div className="animate-fade-in-up">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="flex items-center gap-3">
-              <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">点大将</h2>
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-bold ${
-                  step3Valid
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                }`}
-              >
-                {step3Valid ? `${greenCount} 人就绪 ✓` : `需至少 ${MIN_CONTESTANTS} 人通过预检`}
-              </span>
+              {arena === 'hard-code' && topicPrompt ? (
+                <p className="flex items-center gap-2 font-mono text-[11px] text-dust">
+                  <Terminal className="h-3.5 w-3.5 text-hard-arena" />
+                  代码在 Pyodide WASM 沙箱中真实执行，无需 Docker
+                </p>
+              ) : null}
             </div>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              选择模型提供方和具体型号，填写 API Key。点「预检全员」确认都能连通后再开打。
-            </p>
+          </section>
+        )}
+
+        {step === 3 && (
+          <section className="animate-rise rounded-xl border border-hairline bg-panel p-5 sm:p-6">
+            <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h2 className="text-lg font-bold">点大将</h2>
+              <span
+                className={cn(
+                  'rounded-full border px-2.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums',
+                  step3Valid
+                    ? 'border-ok/25 bg-ok/10 text-ok'
+                    : 'border-warn/25 bg-warn/10 text-warn',
+                )}
+              >
+                {greenCount}/{rows.length} 就绪
+                {step3Valid ? '' : ` · 至少 ${MIN_CONTESTANTS} 名`}
+              </span>
+              <span className="w-full text-[13px] leading-relaxed text-ash sm:w-auto">
+                每位选手 = 一个 provider + 一个模型 + 一把 Key。
+              </span>
+            </header>
             <div className="mt-5">
               <LineupEditor
                 rows={rows}
@@ -720,108 +681,114 @@ export function ArenaSetup({ providers, softTopics, codeTopics }: ArenaSetupProp
                 onClearRowCache={clearRowCache}
               />
             </div>
-          </div>
-          <div className="flex justify-between">
-            <button
-              type="button"
-              onClick={() => setStep(2)}
-              className="mt-4 rounded-xl border-2 border-zinc-200 px-5 py-3 text-sm font-bold text-zinc-600 transition-all hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              ← 上一步
-            </button>
-            <button
-              type="button"
-              onClick={handlePing}
-              disabled={busy !== ''}
-              className="mt-4 rounded-xl border-2 border-zinc-300 px-5 py-3 text-sm font-bold text-zinc-700 transition-all hover:border-orange-400 hover:text-orange-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:text-orange-400"
-            >
-              {busy === 'ping' ? '预检中…' : '🔍 预检全员'}
-            </button>
-          </div>
-        </div>
-      )}
+          </section>
+        )}
 
-      {/* ── Step 4: Launch ────────────────────────────────────── */}
-      {step === 4 && (
-        <section className="animate-fade-in-up">
-          <div className="overflow-hidden rounded-2xl border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-amber-50 dark:border-orange-800 dark:from-zinc-900 dark:to-zinc-900">
-            <div className="p-6 sm:p-8">
+        {step === 4 && (
+          <section className="animate-rise overflow-hidden rounded-xl border border-hairline bg-panel">
+            <div className="border-b border-hairline bg-raise/60 px-5 py-4 sm:px-6">
               <div className="flex items-center gap-3">
-                <span className="text-3xl">⚔️</span>
-                <h2 className="text-2xl font-black text-zinc-900 dark:text-zinc-50">准备开打！</h2>
+                <Swords className="h-5 w-5 text-blaze" />
+                <h2 className="text-lg font-bold">确认阵容，准备开打</h2>
               </div>
-              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-                确认以下配置后将发起对战。预检未通过的选手将不参与本场。
-              </p>
-
-              {/* Summary card */}
-              <div className="mt-5 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-                  <span className="flex items-center gap-1.5">
-                    <span className="text-lg">{meta.emoji}</span>
-                    <strong>{meta.label}</strong>
-                  </span>
-                  <span className="flex items-center gap-1.5 text-zinc-500">
-                    👥 {greenCount} 名选手就绪
-                  </span>
-                  {rows.length > greenCount ? (
-                    <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-                      ⚠ {rows.length - greenCount} 人未预检
-                    </span>
-                  ) : null}
+            </div>
+            <div className="flex flex-col gap-4 p-5 sm:p-6">
+              <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+                <div className="flex items-center justify-between gap-4 border-b border-hairline pb-2 sm:border-0 sm:pb-0">
+                  <dt className="text-dust">赛场</dt>
+                  <dd
+                    className={cn(
+                      'rounded-full border px-2.5 py-0.5 text-xs font-semibold',
+                      meta.accentChip,
+                    )}
+                  >
+                    {meta.label}
+                  </dd>
                 </div>
-                <p className="mt-3 border-t border-zinc-100 pt-3 text-xs leading-relaxed text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                  题目：{topicPrompt.slice(0, 120)}{topicPrompt.length > 120 ? '…' : ''}
+                <div className="flex items-center justify-between gap-4 border-b border-hairline pb-2 sm:border-0 sm:pb-0">
+                  <dt className="text-dust">选手</dt>
+                  <dd className="font-mono text-sm font-bold tabular-nums">
+                    {greenCount} 名就绪
+                    {rows.length > greenCount ? (
+                      <span className="ml-2 text-xs font-medium text-warn">
+                        {rows.length - greenCount} 人未通过预检
+                      </span>
+                    ) : null}
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="rounded-lg bg-void px-4 py-3">
+                <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-dust">
+                  题面
+                </span>
+                <p className="mt-1.5 text-sm leading-relaxed text-ink/90">
+                  {topicPrompt.slice(0, 140)}
+                  {topicPrompt.length > 140 ? '…' : ''}
                 </p>
               </div>
 
-              {/* Error / Skipped */}
               {pageError ? (
-                <p className="mt-4 rounded-xl border-2 border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                <p
+                  role="alert"
+                  className="rounded-lg border border-bad/30 bg-bad/10 px-4 py-2.5 text-sm text-bad"
+                >
                   {pageError}
                 </p>
               ) : null}
               {skippedNotice ? (
-                <p className="mt-4 rounded-xl border-2 border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                <p className="rounded-lg border border-warn/30 bg-warn/10 px-4 py-2.5 text-[13px] leading-relaxed text-warn">
                   {skippedNotice}
                 </p>
               ) : null}
 
-              {/* Launch button */}
-              <div className="mt-6 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={handleFight}
-                  disabled={busy !== ''}
-                  className="rounded-xl bg-gradient-to-r from-orange-500 via-red-500 to-amber-500 px-8 py-3.5 text-base font-black tracking-wide text-white shadow-lg shadow-orange-500/30 transition-all hover:shadow-orange-500/50 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {busy === 'fight' ? '开打中…' : busy === 'ping' ? '预检中…' : '⚔️  开战！'}
+              <div className="flex flex-wrap items-center gap-3">
+                <button type="button" onClick={handleFight} disabled={busy !== ''} className={BTN_PRIMARY}>
+                  <Swords className="h-4 w-4" />
+                  {busy === 'fight' ? '开打中…' : busy === 'ping' ? '预检中…' : '开战'}
                 </button>
-                {skippedNotice ? (
-                  <button
-                    type="button"
-                    onClick={handleFight}
-                    disabled={busy !== ''}
-                    className="rounded-xl border-2 border-orange-300 px-5 py-3 text-sm font-bold text-orange-600 transition-all hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-orange-700 dark:text-orange-400 dark:hover:bg-orange-950/30"
-                  >
-                    依然开战
-                  </button>
-                ) : null}
+                <span className="flex items-center gap-1.5 text-[11px] text-dust">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Key 只存在于本次对战的服务端内存，不写库、不进日志
+                </span>
               </div>
             </div>
-          </div>
+          </section>
+        )}
 
-          <div className="mt-4">
+        {/* ── Footer nav ──────────────────────────────────────── */}
+        <div className="flex items-center justify-between gap-3">
+          {step > 1 ? (
+            <button type="button" onClick={() => setStep(step - 1)} className={BTN_GHOST}>
+              <ChevronLeft className="h-4 w-4" />
+              上一步
+            </button>
+          ) : (
+            <span />
+          )}
+          {step === 3 ? (
             <button
               type="button"
-              onClick={() => setStep(3)}
-              className="rounded-xl border-2 border-zinc-200 px-5 py-3 text-sm font-bold text-zinc-600 transition-all hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              onClick={handlePing}
+              disabled={busy !== ''}
+              className={BTN_GHOST}
             >
-              ← 返回修改选手
+              <Search className="h-4 w-4" />
+              {busy === 'ping' ? '预检中…' : '预检全员'}
             </button>
-          </div>
-        </section>
-      )}
+          ) : null}
+          {step < 4 ? (
+            <button
+              type="button"
+              onClick={goNext}
+              disabled={step === 1 ? !step1Valid : step === 2 ? !step2Valid : !step3Valid}
+              className={BTN_PRIMARY}
+            >
+              下一步
+            </button>
+          ) : null}
+        </div>
+      </div>
     </div>
   )
 }

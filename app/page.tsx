@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { Flame } from 'lucide-react'
 import { ArenaSetup } from '@/components/arena/arena-setup'
 import { CODE_TOPICS, SOFT_TOPICS } from '@/lib/arena/topics'
 import { PROVIDERS } from '@/lib/providers/registry'
@@ -11,55 +12,31 @@ export const metadata: Metadata = {
 export default function Home() {
   return (
     <div className="min-h-full">
-      {/* ── Hero ──────────────────────────────────────────────── */}
-      <header className="relative overflow-hidden border-b border-zinc-200 bg-gradient-to-br from-orange-50 via-amber-50 to-white dark:border-zinc-800 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(234,88,12,0.08),transparent_50%)] dark:bg-[radial-gradient(circle_at_30%_20%,rgba(251,146,60,0.12),transparent_50%)]" />
-        <div className="relative mx-auto max-w-5xl px-5 py-12 sm:py-16">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl sm:text-4xl">⚔️</span>
-                <h1 className="text-3xl font-black tracking-tight text-zinc-900 sm:text-4xl dark:text-zinc-50">
-                  melee · AI 大乱斗
-                </h1>
-              </div>
-              <p className="max-w-lg text-base leading-relaxed text-zinc-600 dark:text-zinc-400">
-                把多个大模型拉进同一个擂台，给它们同一个题目，看谁回答得更好 —
-                实时流式输出、AI 裁判打分、观众投票定胜负。
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-xs font-medium text-zinc-500 shadow-sm backdrop-blur dark:bg-zinc-800/80 dark:text-zinc-400">
-              <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-glow-pulse" />
-              无需注册 · 立即可用
-            </div>
-          </div>
-
-          {/* 三步引导 */}
-          <div className="mt-10 grid gap-4 sm:grid-cols-3">
-            {[
-              { icon: '🎯', title: '选赛道', desc: '软战场辩论创意 OR 硬战场代码实战' },
-              { icon: '👥', title: '点大将', desc: 'pick 模型 + provider，配 API Key' },
-              { icon: '⚔️', title: '开打观战', desc: '实时流式输出，裁判 + 观众双轨判定' },
-            ].map((step) => (
-              <div
-                key={step.title}
-                className="rounded-xl border border-zinc-200 bg-white/70 p-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-800/50"
-              >
-                <div className="flex items-center gap-2 text-base font-bold text-zinc-900 dark:text-zinc-50">
-                  <span>{step.icon}</span>
-                  {step.title}
-                </div>
-                <p className="mt-1 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
-                  {step.desc}
-                </p>
-              </div>
-            ))}
-          </div>
+      <header className="border-b border-hairline">
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-5 py-4">
+          <span className="flex items-center gap-2">
+            <Flame className="h-4 w-4 text-blaze" />
+            <span className="font-mono text-sm font-bold tracking-tight">melee</span>
+          </span>
+          <span className="h-4 w-px bg-hairline" aria-hidden />
+          <span className="text-sm font-semibold text-ash">AI 大乱斗</span>
+          <span className="ml-auto hidden items-center gap-1.5 font-mono text-[11px] text-dust sm:flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden />
+            免登录 · 用户自带 Key · {PROVIDERS.length} 个 provider
+          </span>
         </div>
       </header>
 
-      {/* ── Arena Setup ─────────────────────────────────────────── */}
-      <main className="mx-auto max-w-5xl px-5 py-8">
+      <main className="mx-auto flex max-w-6xl flex-col gap-8 px-5 py-8 sm:py-10">
+        <section className="flex max-w-2xl flex-col gap-2.5">
+          <h1 className="text-2xl font-bold leading-snug tracking-tight sm:text-[28px]">
+            拉几个大模型，丢进同一个擂台。
+          </h1>
+          <p className="text-sm leading-relaxed text-ash">
+            同一道题，实时并排输出；观众投票与 AI 裁判双轨判定——顺带欣赏各家模型的花式翻车。
+          </p>
+        </section>
+
         <ArenaSetup
           providers={PROVIDERS}
           softTopics={SOFT_TOPICS}
@@ -67,11 +44,12 @@ export default function Home() {
         />
       </main>
 
-      {/* ── Footer ─────────────────────────────────────────────────── */}
-      <footer className="mt-auto border-t border-zinc-200 dark:border-zinc-800">
-        <div className="mx-auto max-w-5xl px-5 py-6 text-center text-xs text-zinc-400 dark:text-zinc-600">
-          <p>melee · 开源 AI 模型对战平台 · 数据仅供即时对战，不做持久化排名</p>
-          <p className="mt-1">支持 {PROVIDERS.length} 个模型 Provider · {SOFT_TOPICS.length} 道软战场题 · {CODE_TOPICS.length} 道硬战场题</p>
+      <footer className="mt-auto border-t border-hairline">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-1 px-5 py-5 font-mono text-[11px] text-dust">
+          <span>melee · AI 大乱斗</span>
+          <span>{SOFT_TOPICS.length} 道软战场题</span>
+          <span>{CODE_TOPICS.length} 道硬战场题</span>
+          <span className="ml-auto">数据仅供即时对战，不做持久化排名</span>
         </div>
       </footer>
     </div>

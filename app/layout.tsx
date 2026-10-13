@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'melee · AI 大乱斗',
-  description: '多个大模型同场竞技的 AI 擂台 — 实时对比、公平裁判、观众投票决定胜负',
+  description: '多个大模型同场竞技的 AI 擂台 — 实时并排输出、观众投票、AI 裁判双轨判定',
   keywords: ['AI', 'LLM', '大模型', '对战', '评测', 'Arena', 'Chatbot'],
 }
 
