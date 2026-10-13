@@ -37,6 +37,16 @@ CREATE TABLE IF NOT EXISTS votes (
   UNIQUE(battle_id, voter_key)
 );
 
+CREATE TABLE IF NOT EXISTS predictions (
+  id TEXT PRIMARY KEY,
+  battle_id TEXT,
+  contestant_id TEXT,
+  voter_key TEXT,
+  position_index INTEGER,
+  created_at INTEGER,
+  UNIQUE(battle_id, voter_key)
+);
+
 CREATE TABLE IF NOT EXISTS judgements (
   id TEXT PRIMARY KEY,
   battle_id TEXT,
@@ -67,5 +77,6 @@ CREATE TABLE IF NOT EXISTS sandbox_results (
 
 CREATE INDEX IF NOT EXISTS idx_contestants_battle_id ON contestants(battle_id);
 CREATE INDEX IF NOT EXISTS idx_votes_battle_id ON votes(battle_id);
+CREATE INDEX IF NOT EXISTS idx_predictions_battle_id ON predictions(battle_id);
 CREATE INDEX IF NOT EXISTS idx_judgements_battle_id ON judgements(battle_id);
 CREATE INDEX IF NOT EXISTS idx_sandbox_results_contestant_id ON sandbox_results(contestant_id);

@@ -14,6 +14,7 @@ import type {
   ContestantStatus,
   JudgeContext,
   Submission,
+  TurnPlan,
 } from '../arena/types.ts'
 import type { BattleEvent, BattlePhase } from './events.ts'
 import { getBattleHandle, type BattleHandle } from './registry.ts'
@@ -590,4 +591,91 @@ test('软战场裁判分写入 judgements 表（带 position_index 与裁判模�
   assert.ok(snapshot.judgements.every((row) => row.judge_model === JUDGE_CONTEXT.judgeModelId))
   const scores = JSON.parse(snapshot.judgements[0]!.scores_json) as Record<string, number>
   assert.deepEqual(scores, { logic: 8, evidence: 7, relevance: 9 })
+})
+
+test('多轮编排：两轮顺序推进、回合事件齐全、第二轮可见对手首轮发言', async () => {
+  const recorder: FakeRecorder = { signals: [], abortedStreams: 0 }
+  const promptCalls: Array<{ round: number; slot: number; others: string }> = []
+  const plan: TurnPlan = {
+    totalRounds: 2,
+    roundLabel: (round) => (round === 1 ? '第一轮' : '第二轮'),
+    buildTurnPrompt: (topic, round, slot, _own, others) => {
+      promptCalls.push({ round, slot, others: JSON.stringify(others) })
+      return { user: `R${round}/S${slot} 题目：${topic}` }
+    },
+  }
+  const multiArena: Arena = { ...makeArena(), id: 'banter', plan, maxContestants: 2 }
+  const deps: BattleDeps = {
+    arena: multiArena,
+    createModel: createModelFor(
+      new Map([
+        [1, { chunks: ['甲1', '甲2'] }],
+        [2, { chunks: ['乙1'] }],
+      ]),
+      recorder,
+    ),
+    judgeContext: JUDGE_CONTEXT,
+  }
+  const played = await playBattle(
+    { arena: 'banter', topic: '互怼题目', contestants: twoContestants() },
+    deps,
+  )
+
+  const roundEvents = played.events.filter(
+    (event): event is Extract<BattleEvent, { type: 'round.changed' }> => event.type === 'round.changed',
+  )
+  assert.deepEqual(roundEvents.map((event) => event.round), [1, 2])
+  assert.ok(roundEvents.every((event) => event.totalRounds === 2))
+
+  const startedEvents = played.events.filter(
+    (event): event is Extract<BattleEvent, { type: 'contestant.started' }> =>
+      event.type === 'contestant.started',
+  )
+  assert.deepEqual(startedEvents.map((event) => event.round).sort(), [1, 1, 2, 2])
+
+  const doneEvents = played.events.filter(
+    (event): event is Extract<BattleEvent, { type: 'contestant.done' }> => event.type === 'contestant.done',
+  )
+  assert.deepEqual(doneEvents.map((event) => event.round).sort(), [1, 1, 2, 2])
+
+  const round2Slot1 = promptCalls.find((call) => call.round === 2 && call.slot === 1)
+  const round2Slot2 = promptCalls.find((call) => call.round === 2 && call.slot === 2)
+  assert.ok(round2Slot1 && round2Slot2, '第二轮两名选手都应各拿到一次提示词')
+  assert.ok(round2Slot1.others.includes('乙1'), '1 号在第二轮必须能看到 2 号首轮发言')
+  assert.ok(!round2Slot1.others.includes('甲1'), '1 号不应把自己的发言当作对手内容')
+  assert.ok(round2Slot2.others.includes('甲1 甲2') || round2Slot2.others.includes('甲1甲2'))
+  assert.ok(!round2Slot2.others.includes('乙1'))
+
+  const snapshot = getSnapshot(played.battleId)
+  assert.ok(snapshot)
+  const row = snapshot.contestants.find((contestant) => contestant.slot === 1)
+  const turns = JSON.parse(row!.output_text ?? '[]') as Array<{ round: number; text: string }>
+  assert.equal(turns.length, 2)
+  assert.equal(turns[0]?.text, '甲1甲2')
+  assert.equal(turns[1]?.round, 2)
+  assert.equal(snapshot.judgements.length, 2, '多轮赛场的裁判分同样要落库')
+})
+
+test('对战级超时：挂在半路的整场会被中止并走失败收口', async () => {
+  const recorder: FakeRecorder = { signals: [], abortedStreams: 0 }
+  const deps: BattleDeps = {
+    arena: { ...makeArena(), battleTimeoutMs: 80, turnTimeoutMs: 60000 },
+    createModel: createModelFor(
+      new Map([
+        [1, { chunks: ['不会', '到达'], hang: true }],
+        [2, { chunks: ['也不会到达'], hang: true }],
+      ]),
+      recorder,
+    ),
+    judgeContext: JUDGE_CONTEXT,
+  }
+  const played = await playBattle(
+    { arena: 'soft', topic: '超时题', contestants: twoContestants() },
+    deps,
+  )
+  assert.equal(played.events.at(-1)?.type, 'battle.failed')
+  assert.ok(played.phases.includes('failed'))
+  const failed = played.events.filter((event) => event.type === 'contestant.failed')
+  assert.equal(failed.length, 2)
+  assert.ok(failed.every((event) => event.type === 'contestant.failed' && event.status === 'timeout'))
 })

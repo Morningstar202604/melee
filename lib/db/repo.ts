@@ -99,6 +99,24 @@ export interface VoteRow {
   created_at: number
 }
 
+export interface NewPrediction {
+  id?: string
+  battleId: string
+  contestantId: string
+  voterKey: string
+  positionIndex: number
+  createdAt?: number
+}
+
+export interface PredictionRow {
+  id: string
+  battle_id: string
+  contestant_id: string
+  voter_key: string
+  position_index: number
+  created_at: number
+}
+
 export interface NewJudgement {
   id?: string
   battleId: string
@@ -159,6 +177,7 @@ export interface Snapshot {
   battle: BattleRow
   contestants: ContestantRow[]
   votes: VoteRow[]
+  predictions: PredictionRow[]
   judgements: JudgementRow[]
   sandboxResults: SandboxResultRow[]
 }
@@ -206,6 +225,17 @@ function contestantFromRow(row: Record<string, unknown>): ContestantRow {
 }
 
 function voteFromRow(row: Record<string, unknown>): VoteRow {
+  return {
+    id: String(row.id),
+    battle_id: String(row.battle_id),
+    contestant_id: String(row.contestant_id),
+    voter_key: String(row.voter_key),
+    position_index: Number(row.position_index),
+    created_at: Number(row.created_at),
+  }
+}
+
+function predictionFromRow(row: Record<string, unknown>): PredictionRow {
   return {
     id: String(row.id),
     battle_id: String(row.battle_id),
@@ -416,6 +446,18 @@ export async function recordVote(v: NewVote): Promise<void> {
   })
 }
 
+export async function recordPrediction(p: NewPrediction): Promise<void> {
+  const id = p.id ?? randomUUID()
+  const createdAt = p.createdAt ?? now()
+  await enqueueWrite(() => {
+    getDb()
+      .prepare(
+        'INSERT INTO predictions (id, battle_id, contestant_id, voter_key, position_index, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(id, p.battleId, p.contestantId, p.voterKey, p.positionIndex, createdAt)
+  })
+}
+
 export async function recordJudgement(j: NewJudgement): Promise<void> {
   const id = j.id ?? randomUUID()
   const createdAt = j.createdAt ?? now()
@@ -483,6 +525,11 @@ export function getSnapshot(id: string): Snapshot | undefined {
       unknown
     >[]
   ).map(voteFromRow)
+  const predictions = (
+    db
+      .prepare('SELECT * FROM predictions WHERE battle_id = ? ORDER BY created_at')
+      .all(id) as Record<string, unknown>[]
+  ).map(predictionFromRow)
   const judgements = (
     db
       .prepare('SELECT * FROM judgements WHERE battle_id = ? ORDER BY round, position_index')
@@ -495,5 +542,5 @@ export function getSnapshot(id: string): Snapshot | undefined {
       )
       .all(id) as Record<string, unknown>[]
   ).map(sandboxResultFromRow)
-  return { battle, contestants, votes, judgements, sandboxResults }
+  return { battle, contestants, votes, predictions, judgements, sandboxResults }
 }

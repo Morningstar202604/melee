@@ -17,6 +17,7 @@
     "@ai-sdk/google": "^4.0.93",
     "@ai-sdk/openai": "^4.0.91",
     "ai": "^7.0.136",
+    "chess.js": "^1.4.0",
     "clsx": "^2.1.1",
     "lucide-react": "^1.56.0",
     "next": "16.4.0",

@@ -156,6 +156,7 @@ export function getHardCodeTopic(topicId: string) {
 export function createHardCodeArena(backend?: SandboxBackend): Arena {
   return {
     id: 'hard-code',
+    judgeNeedsLlm: false,
     buildPrompt: (topic: string) => ({
       system:
         '你是「AI 大乱斗」硬战场的参赛选手。请只输出一个 Python 代码块（用 ```python ... ``` 包裹），' +

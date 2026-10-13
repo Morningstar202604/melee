@@ -27,9 +27,7 @@ test('纯 JSON 字符串能解析', () => {
   assert.equal(parsed?.verdicts.length, 2)
   assert.deepEqual(parsed?.verdicts[0], {
     label: 'A',
-    logic: 8,
-    evidence: 7,
-    relevance: 9,
+    scores: { logic: 8, evidence: 7, relevance: 9 },
     rationale: '立论扎实，有梗',
   })
 })
@@ -57,8 +55,8 @@ test('缺 rationale 字段时用默认理由，不抛错', () => {
 test('缺失的分数补 0，不抛错', () => {
   const parsed = parseJudgeOutput(judgeJson('{"label":"A","evidence":7,"relevance":9}'))
   assert.ok(parsed)
-  assert.equal(parsed?.verdicts[0]?.logic, 0)
-  assert.equal(parsed?.verdicts[0]?.evidence, 7)
+  assert.equal(parsed?.verdicts[0]?.scores.logic ?? 0, 0)
+  assert.equal(parsed?.verdicts[0]?.scores.evidence, 7)
 })
 
 test('完全不可解析时返回 null', () => {
@@ -72,7 +70,12 @@ function mapped(
   label: string,
   total: number,
 ): MappedVerdict {
-  return { slot, label, logic: total, evidence: total, relevance: total, rationale: '点评' }
+  return {
+    slot,
+    label,
+    scores: { logic: total, evidence: total, relevance: total, clash: total },
+    rationale: '点评',
+  }
 }
 
 test('两轮名次一致 → roundsAgreed 为 true', () => {

@@ -1,4 +1,4 @@
-import { getArena } from '../../../../lib/arena/index.ts'
+import { arenaLimits, getArena } from '../../../../lib/arena/index.ts'
 import type { ArenaId, ContestantInput } from '../../../../lib/arena/types.ts'
 import { allow } from '../../../../lib/battle/ratelimit.ts'
 import {
@@ -89,10 +89,14 @@ export async function POST(request: Request) {
     return secureResponse(JSON.stringify({ error: 'arena 必填（soft / hard-code）' }), { status: 400 })
   }
   const arenaId = arena as ArenaId
+  let arenaDef
   try {
-    getArena(arenaId)
+    arenaDef = getArena(arenaId)
   } catch {
-    return secureResponse(JSON.stringify({ error: 'arena 仅支持 soft 或 hard-code' }), { status: 400 })
+    return secureResponse(
+      JSON.stringify({ error: 'arena 仅支持 soft / debate / banter / hard-code / chess' }),
+      { status: 400 },
+    )
   }
 
   const topic = asString(payload.topic)
@@ -108,8 +112,16 @@ export async function POST(request: Request) {
     return secureResponse(JSON.stringify({ error: parsed.error ?? 'contestants 不合法' }), { status: 400 })
   }
 
+  const limits = arenaLimits(arenaDef)
+  if (parsed.contestants.length < limits.min || parsed.contestants.length > limits.max) {
+    return secureResponse(
+      JSON.stringify({ error: `本赛场需要 ${limits.min}~${limits.max} 名选手` }),
+      { status: 400 },
+    )
+  }
+
   const deps: BattleDeps = {
-    arena: getArena(arenaId),
+    arena: arenaDef,
     createModel: (contestant: ContestantInput) => {
       const provider = getProvider(contestant.providerId)
       if (!provider) {

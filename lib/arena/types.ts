@@ -2,7 +2,7 @@ import type { ContestantStatus } from '../providers/stream.ts'
 
 export type { ContestantStatus }
 
-export type ArenaId = 'soft' | 'hard-code'
+export type ArenaId = 'soft' | 'debate' | 'banter' | 'hard-code' | 'chess'
 
 export interface ContestantInput {
   slot: number
@@ -30,6 +30,12 @@ export interface Verdict {
   rationale: string
 }
 
+export interface JudgeAxis {
+  key: string
+  label: string
+  description: string
+}
+
 export type SandboxProgressStatus = 'ok' | 'timeout' | 'error' | 'unavailable'
 
 export interface SandboxProgress {
@@ -48,9 +54,67 @@ export interface JudgeContext {
   onSandboxResult?: (progress: SandboxProgress) => void
 }
 
+export interface TurnRecord {
+  round: number
+  text: string
+}
+
+export interface TurnPlan {
+  totalRounds: number
+  roundLabel: (round: number) => string
+  buildTurnPrompt: (
+    topic: string,
+    round: number,
+    slot: number,
+    own: TurnRecord[],
+    others: Array<{ slot: number; turns: TurnRecord[] }>,
+  ) => { system?: string; user: string }
+}
+
 export interface Arena {
   id: ArenaId
   buildPrompt(topic: string): { system?: string; user: string }
   extractCode(text: string): string | null
   judge(subs: Submission[], ctx: JudgeContext): Promise<Verdict[]>
+  plan?: TurnPlan
+  axes?: JudgeAxis[]
+  /** false = 判定不依赖 LLM 裁判（沙箱 / 残局校验），没有裁判配置也要执行 */
+  judgeNeedsLlm?: boolean
+  minContestants?: number
+  maxContestants?: number
+  turnTimeoutMs?: number
+  battleTimeoutMs?: number
+  maxOutputTokens?: number
+}
+
+export const DEFAULT_MIN_CONTESTANTS = 2
+export const DEFAULT_MAX_CONTESTANTS = 8
+export const DEFAULT_TURN_TIMEOUT_MS = 120000
+export const DEFAULT_BATTLE_TIMEOUT_MS = 300000
+
+/** 多轮模式把整份发言序列化进 output_text；单轮模式保持纯文本。 */
+export function serializeTurns(turns: TurnRecord[]): string {
+  return JSON.stringify(turns)
+}
+
+export function parseTurns(text: string | null, multiRound: boolean): TurnRecord[] {
+  if (!text) return []
+  if (!multiRound) return [{ round: 1, text }]
+  try {
+    const parsed = JSON.parse(text) as unknown
+    if (Array.isArray(parsed)) {
+      const turns = parsed
+        .map((entry) => {
+          const item = (entry ?? {}) as Record<string, unknown>
+          const round = typeof item.round === 'number' ? item.round : 1
+          const value = typeof item.text === 'string' ? item.text : ''
+          return { round, text: value }
+        })
+        .filter((turn) => turn.text.length > 0)
+      if (turns.length > 0) return turns
+    }
+  } catch {
+    // 不是 JSON：视为纯文本（旧数据或降级）
+  }
+  return [{ round: 1, text }]
 }

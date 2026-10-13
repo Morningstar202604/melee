@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   createBattleStore,
+  fullText,
   isTerminalPhase,
   type FrameScheduler,
 } from './battle-store.ts'
@@ -122,6 +123,7 @@ function makeSnapshot(): Snapshot {
         created_at: 1700000005000,
       },
     ],
+    predictions: [],
     judgements: [],
     sandboxResults: [],
   }
@@ -147,7 +149,7 @@ test('delta 在帧边界合并为一次提交，文本按顺序累积', () => {
   scheduler.runFrame()
   assert.equal(commits, 1)
   const view = store.getState().contestants[1]
-  assert.equal(view.text, '你好，世界')
+  assert.equal(fullText(view), '你好，世界')
   assert.equal(view.status, 'streaming')
   assert.equal(view.providerId, 'ollama')
   assert.equal(view.modelId, 'qwen3')
@@ -159,11 +161,11 @@ test('开始事件后重放同一批 delta 不会重复追加', () => {
 
   applyAll(store, [started(1, 'ollama', 'qwen3'), delta(1, 'AB')])
   scheduler.runFrame()
-  assert.equal(store.getState().contestants[1].text, 'AB')
+  assert.equal(fullText(store.getState().contestants[1]), 'AB')
 
   applyAll(store, [started(1, 'ollama', 'qwen3'), delta(1, 'AB')])
   scheduler.runFrame()
-  assert.equal(store.getState().contestants[1].text, 'AB')
+  assert.equal(fullText(store.getState().contestants[1]), 'AB')
 })
 
 test('断线后补发的 delta 接在已有文本后面，第一手不会重复', () => {
@@ -235,7 +237,7 @@ test('hydrate 用服务端快照整体覆盖（phase、起算时间、票数、�
   assert.equal(state.phase, 'running')
   assert.equal(state.startedAt, 1700000000000)
   assert.deepEqual(state.voteTally, { c1: 1 })
-  assert.equal(state.contestants[1].text, '会被撤回的旧文本')
+  assert.equal(fullText(state.contestants[1]), '会被撤回的旧文本')
   assert.equal(state.contestants[1].contestantId, 'c1')
   assert.equal(state.contestants[1].status, 'ok')
   assert.equal(state.contestants[2].status, 'streaming')
@@ -249,7 +251,7 @@ test('hydrate 取消尚未提交的帧，快照之后的内容不被草稿冲掉
   store.getState().hydrate(makeSnapshot())
   scheduler.runFrame()
 
-  assert.equal(store.getState().contestants[1].text, '会被撤回的旧文本')
+  assert.equal(fullText(store.getState().contestants[1]), '会被撤回的旧文本')
 })
 
 test('终态事件立即提交并取消帧调度', () => {
@@ -286,7 +288,7 @@ test('终态事件立即提交并取消帧调度', () => {
   assert.equal(scheduler.pending, false)
   assert.equal(scheduler.cancels, 1)
   assert.equal(store.getState().phase, 'completed')
-  assert.equal(store.getState().contestants[1].text, '第一段')
+  assert.equal(fullText(store.getState().contestants[1]), '第一段')
   assert.notEqual(store.getState().summary, null)
   scheduler.runFrame()
   assert.equal(store.getState().phase, 'completed')
@@ -344,7 +346,7 @@ test('每帧最多一次 set，多帧连续推进各提交一次', () => {
 
   assert.equal(commits, 3)
   assert.equal(scheduler.schedules, 3)
-  assert.equal(store.getState().contestants[1].text, '甲乙丙丁')
+  assert.equal(fullText(store.getState().contestants[1]), '甲乙丙丁')
 })
 
 test('hydrate 记录 hydratedBattleId，别的对战快照不会误判为已 hydration', () => {
@@ -475,4 +477,142 @@ test('运行中的快照不重建战报', () => {
   const store = createBattleStore(scheduler)
   store.getState().hydrate(makeSnapshot())
   assert.equal(store.getState().summary, null)
+})
+
+test('多轮对战：按回合切分 turns，非终回合完成不结束选手', () => {
+  const scheduler = makeScheduler()
+  const store = createBattleStore(scheduler)
+  applyAll(store, [
+    { type: 'round.changed', round: 1, totalRounds: 2 },
+    { type: 'contestant.started', slot: 1, providerId: 'ollama', modelId: 'm', round: 1 },
+    delta(1, '甲'),
+    { type: 'contestant.done', slot: 1, usage: null, latencyMs: 100, round: 1 },
+  ])
+  scheduler.runFrame()
+
+  let view = store.getState().contestants[1]!
+  assert.equal(view.turns.length, 1)
+  assert.equal(fullText(view), '甲')
+  assert.equal(view.status, 'streaming')
+  assert.equal(store.getState().currentRound, 1)
+  assert.equal(store.getState().totalRounds, 2)
+
+  applyAll(store, [
+    { type: 'round.changed', round: 2, totalRounds: 2 },
+    { type: 'contestant.started', slot: 1, providerId: 'ollama', modelId: 'm', round: 2 },
+    delta(1, '乙'),
+    { type: 'contestant.done', slot: 1, usage: null, latencyMs: 250, round: 2 },
+  ])
+  scheduler.runFrame()
+
+  view = store.getState().contestants[1]!
+  assert.equal(view.turns.length, 2)
+  assert.deepEqual(
+    view.turns.map((turn) => turn.text),
+    ['甲', '乙'],
+  )
+  assert.equal(store.getState().currentRound, 2)
+  assert.equal(view.status, 'ok')
+  assert.equal(view.latencyMs, 250)
+  assert.notEqual(view.finishedAt, null)
+})
+
+test('多轮对战：中途失败终结该选手，剩余回合不再发 started', () => {
+  const scheduler = makeScheduler()
+  const store = createBattleStore(scheduler)
+  applyAll(store, [
+    { type: 'round.changed', round: 1, totalRounds: 3 },
+    { type: 'contestant.started', slot: 1, providerId: 'ollama', modelId: 'm', round: 1 },
+    delta(1, '半句'),
+    { type: 'contestant.failed', slot: 1, status: 'timeout', message: '第 1 回合超时', round: 1 },
+  ])
+  scheduler.runFrame()
+
+  const view = store.getState().contestants[1]!
+  assert.equal(view.status, 'timeout')
+  assert.equal(view.turns.length, 1)
+  assert.equal(view.turns[0]!.status, 'timeout')
+  assert.equal(view.turns[0]!.failureMessage, '第 1 回合超时')
+  assert.equal(fullText(view), '半句')
+})
+
+test('prediction.tally 进入 store，并可从快照重建', () => {
+  const scheduler = makeScheduler()
+  const store = createBattleStore(scheduler)
+  applyAll(store, [{ type: 'prediction.tally', tally: { c1: 3, c2: 1 } }])
+  scheduler.runFrame()
+  assert.deepEqual(store.getState().predictionTally, { c1: 3, c2: 1 })
+
+  const snapshot = makeSnapshot()
+  snapshot.predictions = [
+    {
+      id: 'p1',
+      battle_id: 'b1',
+      contestant_id: 'c1',
+      voter_key: 'v1',
+      position_index: 1,
+      created_at: 1700000005000,
+    },
+  ]
+  store.getState().hydrate(snapshot)
+  assert.deepEqual(store.getState().predictionTally, { c1: 1 })
+})
+
+test('快照重建：多轮 transcript 解析为 turns，回合数按赛场默认', () => {
+  const scheduler = makeScheduler()
+  const store = createBattleStore(scheduler)
+  const snapshot = makeSnapshot()
+  snapshot.battle.arena = 'banter'
+  snapshot.battle.phase = 'completed'
+  snapshot.battle.status = 'completed'
+  snapshot.contestants[0]!.output_text = JSON.stringify([
+    { round: 1, text: '开局炸场' },
+    { round: 2, text: '接招反击' },
+  ])
+  snapshot.contestants[1]!.output_text = null
+  store.getState().hydrate(snapshot)
+
+  const view = store.getState().contestants[1]!
+  assert.equal(view.turns.length, 2)
+  assert.equal(view.turns[0]!.text, '开局炸场')
+  assert.equal(view.turns[1]!.round, 2)
+  assert.equal(store.getState().totalRounds, 3)
+
+  const summary = store.getState().summary
+  assert.ok(summary)
+  const rebuilt = summary.contestants.find((item) => item.slot === 1)
+  assert.equal(rebuilt?.outputLength, '开局炸场接招反击'.length)
+})
+
+test('快照重建：残局用 judgements 的 solved 分重建命中战报', () => {
+  const scheduler = makeScheduler()
+  const store = createBattleStore(scheduler)
+  const snapshot = makeSnapshot()
+  snapshot.battle.arena = 'chess'
+  snapshot.battle.phase = 'completed'
+  snapshot.battle.status = 'completed'
+  snapshot.contestants[0]!.output_text = 'Qe8#'
+  snapshot.contestants[0]!.status = 'ok'
+  snapshot.contestants[1]!.status = 'ok'
+  snapshot.judgements = [
+    {
+      id: 'j1',
+      battle_id: 'b1',
+      contestant_id: 'c1',
+      round: 0,
+      judge_model: 'chess-rules',
+      position_index: 1,
+      scores_json: JSON.stringify({ solved: 1 }),
+      rationale: '找到 1 步杀法（Qe8#）',
+      created_at: 1700000006000,
+    },
+  ]
+  store.getState().hydrate(snapshot)
+
+  const summary = store.getState().summary
+  assert.ok(summary)
+  assert.equal(summary.judgeAvailable, true)
+  assert.equal(summary.verdicts[0]?.passed, 1)
+  assert.equal(summary.verdicts[0]?.total, 1)
+  assert.equal(summary.verdicts[0]?.scores.solved, 1)
 })

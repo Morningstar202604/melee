@@ -14,7 +14,7 @@ const contestantStatusValues = [
 
 export const contestantStatusSchema = z.enum(contestantStatusValues)
 
-const arenaIds = ['soft', 'hard-code'] as const satisfies readonly ArenaId[]
+const arenaIds = ['soft', 'debate', 'banter', 'hard-code', 'chess'] as const satisfies readonly ArenaId[]
 
 export const arenaIdSchema = z.enum(arenaIds)
 
@@ -88,11 +88,18 @@ export const phaseChangedSchema = z.object({
   phase: battlePhaseSchema,
 })
 
+export const roundChangedSchema = z.object({
+  type: z.literal('round.changed'),
+  round: z.number(),
+  totalRounds: z.number(),
+})
+
 export const contestantStartedSchema = z.object({
   type: z.literal('contestant.started'),
   slot: z.number(),
   providerId: z.string(),
   modelId: z.string(),
+  round: z.number().optional(),
 })
 
 export const contestantDeltaSchema = z.object({
@@ -106,6 +113,7 @@ export const contestantDoneSchema = z.object({
   slot: z.number(),
   usage: usageSchema.nullable(),
   latencyMs: z.number(),
+  round: z.number().optional(),
 })
 
 export const contestantFailedSchema = z.object({
@@ -113,6 +121,7 @@ export const contestantFailedSchema = z.object({
   slot: z.number(),
   status: contestantStatusSchema,
   message: z.string(),
+  round: z.number().optional(),
 })
 
 export const judgeDeltaSchema = z.object({
@@ -143,6 +152,11 @@ export const voteTallySchema = z.object({
   tally: z.record(z.string(), z.number()),
 })
 
+export const predictionTallySchema = z.object({
+  type: z.literal('prediction.tally'),
+  tally: z.record(z.string(), z.number()),
+})
+
 export const battleCompletedSchema = z.object({
   type: z.literal('battle.completed'),
   result: battleResultSchema,
@@ -155,6 +169,7 @@ export const battleFailedSchema = z.object({
 
 export const battleEventSchema = z.discriminatedUnion('type', [
   phaseChangedSchema,
+  roundChangedSchema,
   contestantStartedSchema,
   contestantDeltaSchema,
   contestantDoneSchema,
@@ -163,6 +178,7 @@ export const battleEventSchema = z.discriminatedUnion('type', [
   judgeDoneSchema,
   sandboxResultSchema,
   voteTallySchema,
+  predictionTallySchema,
   battleCompletedSchema,
   battleFailedSchema,
 ])

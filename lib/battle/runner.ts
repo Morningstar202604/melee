@@ -6,7 +6,13 @@ import type {
   ContestantStatus,
   JudgeContext,
   Submission,
+  TurnRecord,
   Verdict,
+} from '../arena/types.ts'
+import {
+  DEFAULT_BATTLE_TIMEOUT_MS,
+  DEFAULT_TURN_TIMEOUT_MS,
+  serializeTurns,
 } from '../arena/types.ts'
 import {
   createBattleWithContestants,
@@ -31,7 +37,6 @@ import {
   type BattleHandle,
 } from './registry.ts'
 
-const DEFAULT_TIMEOUT_MS = 120000
 const RECYCLE_GRACE_MS = 60000
 
 export interface StartBattleInput {
@@ -45,24 +50,33 @@ export interface BattleDeps {
   createModel: (c: ContestantInput) => LanguageModel
   judgeContext?: JudgeContext
   timeoutMs?: number
+  battleTimeoutMs?: number
   now?: () => number
 }
 
 interface ContestantRun {
   contestant: ContestantInput
   contestantId: string
-  submission: Submission | null
+  turns: TurnRecord[]
   status: ContestantStatus
   errorMessage: string | null
+  failed: boolean
+  usage: { prompt: number; completion: number } | null
+  startedAt: number
+  submission: Submission | null
 }
 
 interface RunContext {
   deps: BattleDeps
   handle: BattleHandle
   battleId: string
+  arena: Arena
+  topic: string
   prompt: { system?: string; user: string }
   contestantIds: Map<number, string>
-  timeoutMs: number
+  turnTimeoutMs: number
+  battleSignal: AbortSignal
+  transcripts: Map<number, TurnRecord[]>
 }
 
 export async function startBattle(input: StartBattleInput, deps: BattleDeps): Promise<string> {
@@ -114,16 +128,45 @@ async function runBattle(
   handle: BattleHandle,
   contestantIds: Map<number, string>,
 ): Promise<void> {
-  const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const now = deps.now ?? Date.now
+  const battleTimeoutMs = deps.battleTimeoutMs ?? deps.arena.battleTimeoutMs ?? DEFAULT_BATTLE_TIMEOUT_MS
+  const battleController = new AbortController()
+  const battleTimer = setTimeout(() => battleController.abort(), battleTimeoutMs)
+  battleTimer.unref()
+
   try {
     const prompt = deps.arena.buildPrompt(input.topic)
-    const context: RunContext = { deps, handle, battleId, prompt, contestantIds, timeoutMs }
+    const context: RunContext = {
+      deps,
+      handle,
+      battleId,
+      arena: deps.arena,
+      topic: input.topic,
+      prompt,
+      contestantIds,
+      turnTimeoutMs: deps.timeoutMs ?? deps.arena.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS,
+      battleSignal: battleController.signal,
+      transcripts: new Map(input.contestants.map((c) => [c.slot, []])),
+    }
 
     await emitPhase(handle, battleId, 'running')
-    const runs = await Promise.all(
-      input.contestants.map((contestant) => runContestant(contestant, context)),
-    )
+
+    const runs = input.contestants.map((contestant) => createRun(contestant, context))
+    const totalRounds = deps.arena.plan?.totalRounds ?? 1
+
+    for (let round = 1; round <= totalRounds; round += 1) {
+      if (handle.cancelled) break
+      if (totalRounds > 1) {
+        handle.emit({ type: 'round.changed', round, totalRounds })
+      }
+      const active = runs.filter((run) => !run.failed)
+      if (active.length === 0) break
+      await Promise.all(active.map((run) => runTurn(run, round, context)))
+    }
+
+    for (const run of runs) {
+      await finalizeRun(run, context)
+    }
 
     if (handle.cancelled) {
       await emitPhase(handle, battleId, 'cancelled', { error: '对战已取消' })
@@ -140,8 +183,9 @@ async function runBattle(
 
     let verdicts: Verdict[] = []
     let judgeAvailable = false
-    if (deps.judgeContext) {
-      const judged = await runJudgePhase(succeeded, deps, handle, battleId, input.arena)
+    const judgeCtx = resolveJudgeContext(deps, input.topic)
+    if (judgeCtx) {
+      const judged = await runJudgePhase(succeeded, deps, handle, battleId, input.arena, judgeCtx)
       if (!judged) {
         await emitPhase(handle, battleId, 'cancelled', { error: '对战在裁判阶段取消' })
         return
@@ -162,7 +206,7 @@ async function runBattle(
         providerId: run.contestant.providerId,
         modelId: run.contestant.modelId,
         status: run.status,
-        usage: run.submission?.usage ?? null,
+        usage: run.submission?.usage ?? run.usage,
         latencyMs: run.submission?.latencyMs ?? 0,
         outputLength: run.submission?.text.length ?? 0,
         code: run.submission?.code ?? null,
@@ -182,24 +226,62 @@ async function runBattle(
     handle.emit({ type: 'phase.changed', phase: 'failed' })
     await persist(() => updateBattlePhase(battleId, 'failed', { error: reason, completedAt: now() }))
     handle.emit({ type: 'battle.failed', reason })
+  } finally {
+    clearTimeout(battleTimer)
   }
 }
 
-async function runContestant(contestant: ContestantInput, context: RunContext): Promise<ContestantRun> {
-  const { deps, handle, prompt, contestantIds, timeoutMs } = context
-  const contestantId = contestantIds.get(contestant.slot) ?? ''
+function createRun(contestant: ContestantInput, context: RunContext): ContestantRun {
+  return {
+    contestant,
+    contestantId: context.contestantIds.get(contestant.slot) ?? '',
+    turns: [],
+    status: 'ok',
+    errorMessage: null,
+    failed: false,
+    usage: null,
+    startedAt: Date.now(),
+    submission: null,
+  }
+}
+
+function otherTranscripts(
+  context: RunContext,
+  slot: number,
+  round: number,
+): Array<{ slot: number; turns: TurnRecord[] }> {
+  const others: Array<{ slot: number; turns: TurnRecord[] }> = []
+  for (const [otherSlot, turns] of context.transcripts) {
+    if (otherSlot === slot) continue
+    const visible = turns.filter((turn) => turn.round < round)
+    others.push({ slot: otherSlot, turns: visible })
+  }
+  others.sort((a, b) => a.slot - b.slot)
+  return others
+}
+
+async function runTurn(run: ContestantRun, round: number, context: RunContext): Promise<void> {
+  const { deps, handle, arena, topic, prompt, turnTimeoutMs, battleSignal } = context
+  const contestant = run.contestant
+  const plan = arena.plan
+  const ownTurns = run.turns.filter((turn) => turn.round < round)
+  const turnPrompt = plan
+    ? plan.buildTurnPrompt(topic, round, contestant.slot, ownTurns, otherTranscripts(context, contestant.slot, round))
+    : prompt
+
   handle.emit({
     type: 'contestant.started',
     slot: contestant.slot,
     providerId: contestant.providerId,
     modelId: contestant.modelId,
+    ...(plan ? { round } : {}),
   })
 
-  const messages: ModelMessage[] = [{ role: 'user', content: prompt.user }]
+  const messages: ModelMessage[] = [{ role: 'user', content: turnPrompt.user }]
+  const turnController = new AbortController()
+  const signal = AbortSignal.any([handle.signal, battleSignal, turnController.signal])
+  const turnTimer = setTimeout(() => turnController.abort(), turnTimeoutMs)
 
-  const timeoutController = new AbortController()
-  const signal = AbortSignal.any([handle.signal, timeoutController.signal])
-  const timeoutTimer = setTimeout(() => timeoutController.abort(), timeoutMs)
   let text = ''
   let usage: { prompt: number; completion: number } | null = null
   let latencyMs = 0
@@ -212,7 +294,8 @@ async function runContestant(contestant: ContestantInput, context: RunContext): 
       signal,
       apiKey: contestant.apiKey,
       providerLabel: contestant.providerId,
-      system: prompt.system,
+      system: turnPrompt.system,
+      maxOutputTokens: arena.maxOutputTokens,
     })) {
       if (event.type === 'delta') {
         text += event.text
@@ -235,50 +318,108 @@ async function runContestant(contestant: ContestantInput, context: RunContext): 
       contestant.apiKey,
     ])
     failed = true
+  } finally {
+    clearTimeout(turnTimer)
+  }
+
+  if (!failed && text.length === 0 && signal.aborted) {
+    failed = true
+    status = 'timeout'
+    errorMessage = '对战已中断，本回合未完成'
   }
 
   if (failed) {
     const message = errorMessage ?? '未知原因'
-    handle.emit({ type: 'contestant.failed', slot: contestant.slot, status, message })
-    clearTimeout(timeoutTimer)
-    await persist(() =>
-      updateContestantResult(contestantId, {
-        status,
-        errorMessage: message,
-        outputText: text.length > 0 ? text : null,
-        code: null,
-        latencyMs,
-        promptTokens: usage?.prompt ?? null,
-        completionTokens: usage?.completion ?? null,
-      }),
-    )
-    return { contestant, contestantId, submission: null, status, errorMessage: message }
+    handle.emit({
+      type: 'contestant.failed',
+      slot: contestant.slot,
+      status,
+      message,
+      ...(plan ? { round } : {}),
+    })
+    run.failed = true
+    run.status = status
+    run.errorMessage = message
+    if (text.length > 0) {
+      run.turns.push({ round, text })
+      context.transcripts.get(contestant.slot)?.push({ round, text })
+    }
+    return
   }
 
-  clearTimeout(timeoutTimer)
-  const code = deps.arena.extractCode(text)
+  run.turns.push({ round, text })
+  context.transcripts.get(contestant.slot)?.push({ round, text })
+  if (usage) {
+    run.usage = {
+      prompt: (run.usage?.prompt ?? 0) + usage.prompt,
+      completion: (run.usage?.completion ?? 0) + usage.completion,
+    }
+  }
+  const isFinalTurn = !plan || round >= plan.totalRounds
+  const totalLatencyMs = isFinalTurn && plan ? Date.now() - run.startedAt : latencyMs
+  handle.emit({
+    type: 'contestant.done',
+    slot: contestant.slot,
+    usage: isFinalTurn && plan ? run.usage : usage,
+    latencyMs: totalLatencyMs,
+    ...(plan ? { round } : {}),
+  })
+}
+
+async function finalizeRun(run: ContestantRun, context: RunContext): Promise<void> {
+  const { arena } = context
+  const contestant = run.contestant
+  const plan = arena.plan
+
+  if (run.failed) {
+    const outputText = plan && run.turns.length > 0 ? serializeTurns(run.turns) : run.turns[0]?.text ?? null
+    await persist(() =>
+      updateContestantResult(run.contestantId, {
+        status: run.status,
+        errorMessage: run.errorMessage,
+        outputText: outputText && outputText.length > 0 ? outputText : null,
+        code: null,
+        latencyMs: 0,
+        promptTokens: run.usage?.prompt ?? null,
+        completionTokens: run.usage?.completion ?? null,
+      }),
+    )
+    return
+  }
+
+  const text = plan ? serializeTurns(run.turns) : run.turns[0]?.text ?? ''
+  const code = arena.extractCode(text)
   const submission: Submission = {
     contestant,
     text,
     code,
-    usage,
-    latencyMs,
+    usage: run.usage,
+    latencyMs: Date.now() - run.startedAt,
     status: 'ok',
-    dbContestantId: contestantId,
+    dbContestantId: run.contestantId,
   }
-  handle.emit({ type: 'contestant.done', slot: contestant.slot, usage, latencyMs })
+  run.submission = submission
+  run.status = 'ok'
   await persist(() =>
-    updateContestantResult(contestantId, {
+    updateContestantResult(run.contestantId, {
       status: 'ok',
       outputText: text,
       code,
-      latencyMs,
-      promptTokens: usage?.prompt ?? null,
-      completionTokens: usage?.completion ?? null,
+      latencyMs: submission.latencyMs,
+      promptTokens: run.usage?.prompt ?? null,
+      completionTokens: run.usage?.completion ?? null,
       errorMessage: null,
     }),
   )
-  return { contestant, contestantId, submission, status: 'ok', errorMessage: null }
+}
+
+/** 判定上下文：LLM 裁判轨需要配置；沙箱 / 残局这类确定性判定不需要。 */
+function resolveJudgeContext(deps: BattleDeps, topic: string): JudgeContext | undefined {
+  if (deps.judgeContext) return deps.judgeContext
+  if (deps.arena.judgeNeedsLlm === false) {
+    return { topic, judgeModelId: '', judgeApiKey: '' }
+  }
+  return undefined
 }
 
 async function runJudgePhase(
@@ -287,8 +428,8 @@ async function runJudgePhase(
   handle: BattleHandle,
   battleId: string,
   arena: ArenaId,
+  ctx: JudgeContext,
 ): Promise<{ verdicts: Verdict[]; judgeAvailable: boolean } | undefined> {
-  const ctx = deps.judgeContext
   if (!ctx) return undefined
   await emitPhase(handle, battleId, 'judging')
   if (handle.cancelled) {
@@ -316,7 +457,7 @@ async function runJudgePhase(
       },
     })
     judgeAvailable = verdicts.length > 0
-    if (arena === 'soft' && verdicts.length > 0) {
+    if (arena !== 'hard-code' && verdicts.length > 0) {
       await persistJudgements(succeeded, verdicts, ctx.judgeModelId, battleId)
     }
   } catch {

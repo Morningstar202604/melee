@@ -1,17 +1,25 @@
 import { create, type StoreApi, type UseBoundStore } from 'zustand'
 import { isTerminalEvent } from '../battle/registry.ts'
 import type { BattleEvent, BattlePhase, BattleResult } from '../battle/events.ts'
-import type { ArenaId, ContestantStatus, SandboxProgress } from '../arena/types.ts'
+import { parseTurns, type ArenaId, type ContestantStatus, type SandboxProgress } from '../arena/types.ts'
 import type { Snapshot } from '../db/repo.ts'
 
 export type ContestantStreamStatus = 'streaming'
+
+export interface ContestantTurn {
+  round: number
+  text: string
+  status: ContestantStreamStatus | ContestantStatus
+  failureMessage: string | null
+  latencyMs: number | null
+}
 
 export interface ContestantView {
   slot: number
   contestantId: string | null
   providerId: string
   modelId: string
-  text: string
+  turns: ContestantTurn[]
   status: ContestantStreamStatus | ContestantStatus
   failureMessage: string | null
   latencyMs: number | null
@@ -23,8 +31,11 @@ export interface ContestantView {
 export interface BattleData {
   phase: BattlePhase
   startedAt: number | null
+  currentRound: number
+  totalRounds: number
   contestants: Record<number, ContestantView>
   voteTally: Record<string, number>
+  predictionTally: Record<string, number>
   summary: BattleResult | null
   failureReason: string | null
   hydratedBattleId: string | null
@@ -44,15 +55,28 @@ export type BattleStore = UseBoundStore<StoreApi<BattleStoreState>>
 
 const TERMINAL_PHASES: readonly BattlePhase[] = ['completed', 'cancelled', 'failed']
 
+const MULTI_ROUND_ARENAS: readonly ArenaId[] = ['debate', 'banter']
+
 export function isTerminalPhase(phase: BattlePhase): boolean {
   return TERMINAL_PHASES.includes(phase)
+}
+
+export function isMultiRoundArena(arena: string): boolean {
+  return (MULTI_ROUND_ARENAS as readonly string[]).includes(arena)
+}
+
+export function fullText(view: ContestantView): string {
+  return view.turns.map((turn) => turn.text).join('')
 }
 
 const EMPTY_DATA: BattleData = Object.freeze({
   phase: 'pending',
   startedAt: null,
+  currentRound: 1,
+  totalRounds: 1,
   contestants: Object.freeze({}),
   voteTally: Object.freeze({}),
+  predictionTally: Object.freeze({}),
   summary: null,
   failureReason: null,
   hydratedBattleId: null,
@@ -81,7 +105,7 @@ function blankContestant(
     contestantId,
     providerId,
     modelId,
-    text: '',
+    turns: [],
     status: 'streaming',
     failureMessage: null,
     latencyMs: null,
@@ -97,19 +121,61 @@ function hasOtherFinisher(contestants: Record<number, ContestantView>, slot: num
   )
 }
 
+function startTurn(view: ContestantView, round: number): ContestantView {
+  const turns = view.turns.filter((turn) => turn.round !== round)
+  turns.push({ round, text: '', status: 'streaming', failureMessage: null, latencyMs: null })
+  turns.sort((a, b) => a.round - b.round)
+  return { ...view, turns, status: 'streaming', failureMessage: null }
+}
+
+function appendDelta(view: ContestantView, text: string): ContestantView {
+  const last = view.turns[view.turns.length - 1]
+  if (!last) return view
+  const turns = [
+    ...view.turns.slice(0, -1),
+    { ...last, text: last.text + text },
+  ]
+  return { ...view, turns }
+}
+
+function closeTurn(
+  view: ContestantView,
+  patch: Partial<ContestantTurn>,
+  viewPatch: Partial<ContestantView>,
+): ContestantView {
+  const last = view.turns[view.turns.length - 1]
+  const turns = last
+    ? [...view.turns.slice(0, -1), { ...last, ...patch }]
+    : view.turns
+  return { ...view, turns, ...viewPatch }
+}
+
 export function reduceEvent(data: BattleData, event: BattleEvent): BattleData {
   switch (event.type) {
     case 'phase.changed':
       return { ...data, phase: event.phase }
 
+    case 'round.changed':
+      return { ...data, currentRound: event.round, totalRounds: event.totalRounds }
+
     case 'contestant.started': {
-      const existing = data.contestants[event.slot]
+      const existing = data.contestants[event.slot] ?? blankContestant(
+        event.slot,
+        event.providerId,
+        event.modelId,
+        null,
+      )
+      const base: ContestantView = {
+        ...existing,
+        providerId: event.providerId,
+        modelId: event.modelId,
+      }
       return {
         ...data,
         startedAt: data.startedAt ?? Date.now(),
         contestants: {
           ...data.contestants,
-          [event.slot]: blankContestant(event.slot, event.providerId, event.modelId, existing?.contestantId ?? null),
+          [event.slot]: startTurn(base, event.round ?? 1),
         },
       }
     }
@@ -121,7 +187,7 @@ export function reduceEvent(data: BattleData, event: BattleEvent): BattleData {
         ...data,
         contestants: {
           ...data.contestants,
-          [event.slot]: { ...current, text: current.text + event.text },
+          [event.slot]: appendDelta(current, event.text),
         },
       }
     }
@@ -129,18 +195,36 @@ export function reduceEvent(data: BattleData, event: BattleEvent): BattleData {
     case 'contestant.done': {
       const current = data.contestants[event.slot]
       if (!current) return data
+      const round = event.round ?? 1
+      const isFinalTurn = round >= data.totalRounds
+      if (!isFinalTurn) {
+        return {
+          ...data,
+          contestants: {
+            ...data.contestants,
+            [event.slot]: closeTurn(
+              current,
+              { status: 'ok', latencyMs: event.latencyMs },
+              {},
+            ),
+          },
+        }
+      }
       const first = !hasOtherFinisher(data.contestants, event.slot)
       return {
         ...data,
         contestants: {
           ...data.contestants,
-          [event.slot]: {
-            ...current,
-            status: 'ok',
-            latencyMs: event.latencyMs,
-            finishedAt: Date.now(),
-            isFirstFinisher: current.isFirstFinisher || first,
-          },
+          [event.slot]: closeTurn(
+            current,
+            { status: 'ok', latencyMs: event.latencyMs },
+            {
+              status: 'ok',
+              latencyMs: event.latencyMs,
+              finishedAt: Date.now(),
+              isFirstFinisher: current.isFirstFinisher || first,
+            },
+          ),
         },
       }
     }
@@ -153,13 +237,16 @@ export function reduceEvent(data: BattleData, event: BattleEvent): BattleData {
         ...data,
         contestants: {
           ...data.contestants,
-          [event.slot]: {
-            ...current,
-            status: event.status,
-            failureMessage: event.message,
-            finishedAt: Date.now(),
-            isFirstFinisher: current.isFirstFinisher || first,
-          },
+          [event.slot]: closeTurn(
+            current,
+            { status: event.status, failureMessage: event.message },
+            {
+              status: event.status,
+              failureMessage: event.message,
+              finishedAt: Date.now(),
+              isFirstFinisher: current.isFirstFinisher || first,
+            },
+          ),
         },
       }
     }
@@ -188,6 +275,9 @@ export function reduceEvent(data: BattleData, event: BattleEvent): BattleData {
 
     case 'vote.tally':
       return { ...data, voteTally: { ...event.tally } }
+
+    case 'prediction.tally':
+      return { ...data, predictionTally: { ...event.tally } }
 
     case 'battle.completed':
       return { ...data, phase: 'completed', summary: event.result }
@@ -251,20 +341,25 @@ function averageScores(rows: Array<{ scores_json: string }>): Record<string, num
 export function summaryFromSnapshot(snapshot: Snapshot): BattleResult | null {
   if (snapshot.battle.phase !== 'completed') return null
 
-  const contestants = snapshot.contestants.map((row) => ({
-    slot: row.slot,
-    providerId: row.provider_id,
-    modelId: row.model_id,
-    status: (row.status === 'running' ? 'provider_error' : row.status) as ContestantStatus,
-    usage:
-      row.prompt_tokens === null && row.completion_tokens === null
-        ? null
-        : { prompt: row.prompt_tokens ?? 0, completion: row.completion_tokens ?? 0 },
-    latencyMs: row.latency_ms ?? 0,
-    outputLength: row.output_text?.length ?? 0,
-    code: row.code,
-    errorMessage: row.error_message,
-  }))
+  const multiRound = isMultiRoundArena(snapshot.battle.arena)
+  const contestants = snapshot.contestants.map((row) => {
+    const turns = parseTurns(row.output_text, multiRound)
+    const outputLength = turns.reduce((sum, turn) => sum + turn.text.length, 0)
+    return {
+      slot: row.slot,
+      providerId: row.provider_id,
+      modelId: row.model_id,
+      status: (row.status === 'running' ? 'provider_error' : row.status) as ContestantStatus,
+      usage:
+        row.prompt_tokens === null && row.completion_tokens === null
+          ? null
+          : { prompt: row.prompt_tokens ?? 0, completion: row.completion_tokens ?? 0 },
+      latencyMs: row.latency_ms ?? 0,
+      outputLength,
+      code: row.code,
+      errorMessage: row.error_message,
+    }
+  })
 
   const contestantById = new Map(snapshot.contestants.map((row) => [row.id, row]))
   const judgementsById = new Map<string, Array<{ scores_json: string; rationale: string }>>()
@@ -278,15 +373,17 @@ export function summaryFromSnapshot(snapshot: Snapshot): BattleResult | null {
   for (const [contestantId, rows] of judgementsById) {
     const contestant = contestantById.get(contestantId)
     if (!contestant) continue
+    const scores = averageScores(rows)
     const rationale = rows
       .map((row) => row.rationale)
       .filter((text) => text.length > 0)
       .join(' ｜ ')
+    const solved = snapshot.battle.arena === 'chess' ? (scores.solved ?? 0) >= 0.5 ? 1 : 0 : 0
     verdicts.push({
       contestantSlot: contestant.slot,
-      scores: averageScores(rows),
-      passed: 0,
-      total: 0,
+      scores,
+      passed: solved,
+      total: snapshot.battle.arena === 'chess' ? 1 : 0,
       rationale: rationale || '未提供理由',
     })
   }
@@ -320,7 +417,12 @@ export function summaryFromSnapshot(snapshot: Snapshot): BattleResult | null {
 }
 
 export function dataFromSnapshot(snapshot: Snapshot): BattleData {
-  const sandboxByContestant = new Map<string, { status: string; passed: number; total: number; timeMs: number | null; memoryKb: number | null }>()
+  const multiRound = isMultiRoundArena(snapshot.battle.arena)
+
+  const sandboxByContestant = new Map<
+    string,
+    { status: string; passed: number; total: number; timeMs: number | null; memoryKb: number | null }
+  >()
   for (const row of snapshot.sandboxResults) {
     sandboxByContestant.set(row.contestant_id, {
       status: row.status,
@@ -335,12 +437,24 @@ export function dataFromSnapshot(snapshot: Snapshot): BattleData {
   for (const row of snapshot.contestants) {
     const running = row.status === 'running'
     const sandbox = sandboxByContestant.get(row.id)
+    const parsed = parseTurns(row.output_text, multiRound)
+    const turns: ContestantTurn[] = parsed.map((turn, index) => ({
+      round: turn.round,
+      text: turn.text,
+      status: running
+        ? 'streaming'
+        : index === parsed.length - 1
+          ? (row.status as ContestantStatus)
+          : 'ok',
+      failureMessage: index === parsed.length - 1 ? row.error_message : null,
+      latencyMs: index === parsed.length - 1 ? row.latency_ms : null,
+    }))
     contestants[row.slot] = {
       slot: row.slot,
       contestantId: row.id,
       providerId: row.provider_id,
       modelId: row.model_id,
-      text: row.output_text ?? '',
+      turns,
       status: running ? 'streaming' : (row.status as ContestantStatus),
       failureMessage: row.error_message,
       latencyMs: row.latency_ms,
@@ -364,12 +478,25 @@ export function dataFromSnapshot(snapshot: Snapshot): BattleData {
   for (const vote of snapshot.votes) {
     voteTally[vote.contestant_id] = (voteTally[vote.contestant_id] ?? 0) + 1
   }
+  const predictionTally: Record<string, number> = {}
+  for (const prediction of snapshot.predictions) {
+    predictionTally[prediction.contestant_id] = (predictionTally[prediction.contestant_id] ?? 0) + 1
+  }
+
+  const baseTurns = multiRound ? 3 : 1
+  const terminal =
+    snapshot.battle.phase === 'completed' ||
+    snapshot.battle.phase === 'failed' ||
+    snapshot.battle.phase === 'cancelled'
 
   return {
     phase: snapshot.battle.phase,
     startedAt: snapshot.battle.created_at,
+    currentRound: terminal ? baseTurns : 1,
+    totalRounds: baseTurns,
     contestants,
     voteTally,
+    predictionTally,
     summary: summaryFromSnapshot(snapshot),
     failureReason: snapshot.battle.error,
     hydratedBattleId: null,
@@ -392,8 +519,11 @@ export function createBattleStore(scheduler: FrameScheduler = rafScheduler): Bat
     return {
       phase: state.phase,
       startedAt: state.startedAt,
+      currentRound: state.currentRound,
+      totalRounds: state.totalRounds,
       contestants: state.contestants,
       voteTally: state.voteTally,
+      predictionTally: state.predictionTally,
       summary: state.summary,
       failureReason: state.failureReason,
       hydratedBattleId: state.hydratedBattleId,

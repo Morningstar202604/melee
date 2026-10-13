@@ -168,3 +168,53 @@ export function getSoftTopic(id: string): SoftTopic | undefined {
 export function codeTimeLimitMs(topic: CodeTopic): number {
   return topic.timeLimitMs ?? DEFAULT_CODE_TIME_LIMIT_MS
 }
+
+/* ── 互辩场：只给中立辩题，立场由 1/2 号位自动分配（正方/反方） ── */
+
+export interface DebateTopic {
+  id: string
+  title: string
+  motion: string
+}
+
+export const DEBATE_TOPICS: DebateTopic[] = [
+  { id: 'motion-lieflat', title: '年轻人该不该躺平', motion: '年轻人该不该躺平' },
+  { id: 'motion-ai-label', title: 'AI 生成内容该不该强制标注', motion: 'AI 生成内容应该被强制标注' },
+  { id: 'motion-remote', title: '远程办公该不该成为默认选项', motion: '远程办公应该成为默认选项' },
+  { id: 'motion-shortvideo', title: '短视频对年轻人利大于弊', motion: '短视频对年轻人利大于弊' },
+]
+
+/* ── 互怼大会：场景 + 通用角色卡（角色由座位号决定，风格天然分化） ── */
+
+export interface BanterTopic {
+  id: string
+  title: string
+  scene: string
+}
+
+export const BANTER_TOPICS: BanterTopic[] = [
+  {
+    id: 'banter-blame',
+    title: '项目延期谁背锅',
+    scene: '一个上线延了两周的紧急项目刚刚复盘完。现在该有人为延期负责了——但谁都不想背。',
+  },
+  {
+    id: 'banter-zongzi',
+    title: '甜粽咸粽世纪之争',
+    scene: '端午聚餐前夜，甜党和咸党在群里又一次吵了起来，这次谁都不打算让谁。',
+  },
+  {
+    id: 'banter-ai-job',
+    title: 'AI 到底抢不抢我饭碗',
+    scene: '公司刚宣布要用 AI 工具替代一批重复性工作，几个同事在群里炸开了锅。',
+  },
+  {
+    id: 'banter-last-cake',
+    title: '最后一块蛋糕',
+    scene: '下午茶最后一块蛋糕摆在桌上，办公室里的几个人都盯着它，谁先伸手谁理直气壮。',
+  },
+]
+
+export function banterTopic(topic: BanterTopic): string {
+  return `互怼大会：${topic.title}\n场景：${topic.scene}`
+}
