@@ -10,6 +10,7 @@ import type { Snapshot } from '@/lib/db/repo'
 import { applyCandidate, collectMoveCandidates, puzzleFromTopic } from '@/lib/arena/chess'
 import { ARENA_AXES, ARENA_SKINS, providerAccent } from './theme'
 import { ChessBoard } from './chess-board'
+import { ScoreRadar } from './score-radar'
 import { VoteBar } from './vote-bar'
 
 export interface SettlementProps {
@@ -366,6 +367,23 @@ function JudgePanel({
 
   return (
     <Panel title="AI 裁判" hint={hint}>
+      {axes.length >= 3 && result.verdicts.length > 0 ? (
+        <ScoreRadar
+          className="mb-4"
+          axes={axes.map((axis) => axis.label)}
+          series={result.verdicts.map((verdict) => {
+            const outcome = result.contestants.find((c) => c.slot === verdict.contestantSlot)
+            const label = outcome
+              ? providerLabelOf(providerLabels, outcome.providerId, outcome.providerId)
+              : `${verdict.contestantSlot} 号`
+            return {
+              label,
+              color: outcome ? providerAccent(outcome.providerId) : '#8b8b94',
+              values: axes.map((axis) => verdict.scores[axis.key] ?? 0),
+            }
+          })}
+        />
+      ) : null}
       {result.verdicts.length === 0 ? (
         <p className="text-sm text-dust">本场无裁判打分</p>
       ) : (

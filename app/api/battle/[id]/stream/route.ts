@@ -1,3 +1,4 @@
+import { createUIMessageStream } from 'ai'
 import {
   closesStream,
   getBattleHandle,
@@ -5,6 +6,7 @@ import {
   type BattleEventListener,
 } from '../../../../../lib/battle/registry.ts'
 import type { BattleEvent } from '../../../../../lib/battle/events.ts'
+import { BATTLE_DATA_PART, type BattleUIMessage } from '../../../../../lib/battle/ui-stream.ts'
 
 export const runtime = 'nodejs'
 
@@ -12,10 +14,6 @@ const HEARTBEAT_MS = 15000
 const SETTLE_GRACE_MS = 60000
 
 const HEARTBEAT_COMMENT = ':ping\n'
-
-function formatEvent(id: number, data: string): string {
-  return `id: ${id}\ndata: ${data}\n\n`
-}
 
 function unref(timer: NodeJS.Timeout): void {
   timer.unref()
@@ -34,91 +32,103 @@ export async function GET(
     )
   }
 
-  const encoder = new TextEncoder()
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      let closed = false
-      let unsubscribe: () => void = () => {}
-      let heartbeat: ReturnType<typeof setInterval> | null = null
+  const lastIdHeader = request.headers.get('last-event-id')
+  const parsedLastId = lastIdHeader === null ? -1 : Number(lastIdHeader)
+  const lastId = Number.isFinite(parsedLastId) ? Math.trunc(parsedLastId) : -1
 
-      const close = () => {
+  // 事件生产走官方 createUIMessageStream（数据部件协议）；验证过 N 个并发生产者保序写入。
+  // 首个 SSE id 与事件日志对齐：handle.nextId() - 将重放的历史条数。
+  let seq = 0
+  const uiStream = createUIMessageStream<BattleUIMessage>({
+    execute: ({ writer }) =>
+      new Promise<void>((resolve) => {
+        let closed = false
+        let unsubscribe: () => void = () => {}
+
+        const close = () => {
+          if (closed) return
+          closed = true
+          unsubscribe()
+          unsubscribe = () => {}
+          resolve()
+        }
+
+        const writeEvent = (event: BattleEvent) => {
+          if (closed) return
+          writer.write({ type: BATTLE_DATA_PART, data: event })
+          if (closesStream(event)) {
+            unref(setTimeout(() => unregisterBattle(id), SETTLE_GRACE_MS))
+            close()
+          }
+        }
+
+        const backlog = handle.eventsSince(lastId)
+        seq = handle.nextId() - backlog.length
+
+        let replayDone = false
+        const pending: BattleEvent[] = []
+        const listener: BattleEventListener = (event) => {
+          if (!replayDone) {
+            pending.push(event)
+            return
+          }
+          writeEvent(event)
+        }
+        unsubscribe = handle.subscribe(listener)
+
+        for (const event of backlog) {
+          if (closed) break
+          writeEvent(event)
+        }
+        replayDone = true
+        for (const event of pending) {
+          if (closed) break
+          writeEvent(event)
+        }
+
+        request.signal?.addEventListener('abort', close)
+      }),
+  })
+
+  const encoder = new TextEncoder()
+  const responseStream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let closed = false
+      const finish = () => {
         if (closed) return
         closed = true
         if (heartbeat) clearInterval(heartbeat)
-        heartbeat = null
-        unsubscribe()
-        unsubscribe = () => {}
         try {
           controller.close()
         } catch {}
       }
-
-      const write = (text: string) => {
+      const heartbeat = setInterval(() => {
         if (closed) return
         try {
-          controller.enqueue(encoder.encode(text))
+          controller.enqueue(encoder.encode(HEARTBEAT_COMMENT))
         } catch {
-          close()
+          finish()
         }
-      }
-
-      const writeEnvelope = (event: unknown, eventId: number) => {
-        if (closed) return
-        write(formatEvent(eventId, JSON.stringify(event)))
-        if (closesStream(event as Parameters<typeof closesStream>[0])) {
-          unref(setTimeout(() => unregisterBattle(id), SETTLE_GRACE_MS))
-          close()
-        }
-      }
-
-      const lastIdHeader = request.headers.get('last-event-id')
-      const parsedLastId = lastIdHeader === null ? -1 : Number(lastIdHeader)
-      const lastId = Number.isFinite(parsedLastId) ? Math.trunc(parsedLastId) : -1
-
-      let replayDone = false
-      let closedDuringReplay = false
-      const pendingEvents: Array<[BattleEvent, number]> = []
-
-      const listener: BattleEventListener = (event, eventId) => {
-        if (!replayDone) {
-          pendingEvents.push([event, eventId])
-          return
-        }
-        if (eventId <= lastId) return
-        writeEnvelope(event, eventId)
-      }
-      unsubscribe = handle.subscribe(listener)
-
-      const backlog = handle.eventsSince(lastId)
-      let nextId = handle.nextId() - backlog.length
-      for (const event of backlog) {
-        if (closed) {
-          closedDuringReplay = true
-          break
-        }
-        writeEnvelope(event, nextId)
-        nextId += 1
-      }
-      replayDone = true
-
-      for (const [event, eventId] of pendingEvents) {
-        if (closedDuringReplay) break
-        if (eventId <= lastId) continue
-        writeEnvelope(event, eventId)
-      }
-
-      if (closed) return
-
-      heartbeat = setInterval(() => {
-        if (closed) return
-        write(HEARTBEAT_COMMENT)
       }, HEARTBEAT_MS)
+      request.signal?.addEventListener('abort', finish)
 
-      request.signal?.addEventListener('abort', close)
+      const reader = uiStream.getReader()
+      try {
+        for (;;) {
+          const { value, done } = await reader.read()
+          if (done || closed) break
+          if (value.type !== BATTLE_DATA_PART) continue
+          controller.enqueue(encoder.encode(`id: ${seq}\ndata: ${JSON.stringify(value)}\n\n`))
+          seq += 1
+        }
+      } catch {
+        // 连接侧异常：按关闭处理
+      }
+      finish()
     },
   })
 
-  return new Response(stream, {
+  return new Response(responseStream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',

@@ -8,17 +8,9 @@ import {
 } from '../db/repo.ts'
 import { logger } from '../log/logger.ts'
 
-const CODE_BLOCK_RE = /```(?:python|py)?\s*\n([\s\S]*?)```/m
-const UNTERMINATED_CODE_BLOCK_RE = /```(?:python|py)?\s*\n([\s\S]*)$/m
+import { extractCode } from './extract-code.ts'
 
-export function extractCode(text: string): string | null {
-  if (typeof text !== 'string' || text.trim().length === 0) return null
-  const matched = text.match(CODE_BLOCK_RE)
-  if (matched && matched[1]) return matched[1].trim()
-  const fallback = text.match(UNTERMINATED_CODE_BLOCK_RE)
-  if (fallback && fallback[1]) return fallback[1].trim()
-  return null
-}
+export { extractCode }
 
 interface HardJudgeOptions {
   tests: CodeTestCaseOutput[]

@@ -6,7 +6,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { ChevronLeft, Radio, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { closesStream } from '@/lib/battle/registry'
-import { parseBattleEvent } from '@/lib/battle/events'
+import { unwrapBattleChunk } from '@/lib/battle/ui-stream'
 import type { ArenaId } from '@/lib/arena/types'
 import { puzzleFromTopic } from '@/lib/arena/chess'
 import type { Snapshot } from '@/lib/db/repo'
@@ -132,12 +132,14 @@ export function BattleShell({
         failures = 0
       }
       source.onmessage = (message) => {
-        let event
+        let raw: unknown
         try {
-          event = parseBattleEvent(JSON.parse(message.data))
+          raw = JSON.parse(message.data)
         } catch {
           return
         }
+        const event = unwrapBattleChunk(raw)
+        if (!event) return
         apply(event)
         if (closesStream(event)) teardown()
       }

@@ -5,6 +5,8 @@ import { cn } from '@/lib/cn'
 import { contestantStatusLabels } from '@/lib/battle/events'
 import type { ArenaId } from '@/lib/arena/types'
 import { applyCandidate, collectMoveCandidates } from '@/lib/arena/chess'
+import { extractCode } from '@/lib/arena/extract-code'
+import { CodeBlock } from './code-block'
 import { fullText, type ContestantView } from '@/lib/client/battle-store'
 import {
   SANDBOX_LABELS,
@@ -221,6 +223,16 @@ export function ContestantCard({
               </p>
             </div>
           )}
+        </div>
+      ) : rawText && arena === 'hard-code' && !streaming && extractCode(rawText) ? (
+        <div className="flex flex-1 flex-col gap-2 px-4 py-3">
+          <CodeBlock code={extractCode(rawText)!} />
+          <details className="mt-auto">
+            <summary className="cursor-pointer font-mono text-[11px] text-dust">原始输出</summary>
+            <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-void p-2.5 font-mono text-[11.5px] leading-relaxed text-ash">
+              {rawText}
+            </pre>
+          </details>
         </div>
       ) : rawText ? (
         <div
