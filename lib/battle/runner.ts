@@ -33,6 +33,7 @@ import {
 } from './registry.ts'
 
 const RECYCLE_GRACE_MS = 60000
+const SMOOTH_STREAM_MS = 12
 
 export interface StartBattleInput {
   arena: ArenaId
@@ -297,6 +298,7 @@ async function runTurn(run: ContestantRun, round: number, context: RunContext): 
       system: turnInput.system,
       maxOutputTokens: arena.maxOutputTokens,
       timeoutMs: turnTimeoutMs,
+      smoothStreamMs: SMOOTH_STREAM_MS,
     })) {
       if (event.type === 'delta') {
         text += event.text

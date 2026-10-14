@@ -1,5 +1,6 @@
 import { APICallError } from 'ai'
 import { MockLanguageModelV4 } from 'ai/test'
+import { simulateReadableStream } from 'ai'
 import assert from 'node:assert/strict'
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -57,6 +58,19 @@ function sleep(ms: number): Promise<void> {
 }
 
 function scriptedStream(chunks: string[], close: boolean): ReadableStream<LanguageModelV4StreamPart> {
+  if (close) {
+    return simulateReadableStream<LanguageModelV4StreamPart>({
+      initialDelayInMs: 0,
+      chunkDelayInMs: 0,
+      chunks: [
+        { type: 'stream-start', warnings: [] },
+        { type: 'text-start', id: '0' },
+        ...chunks.map((chunk): LanguageModelV4StreamPart => ({ type: 'text-delta', id: '0', delta: chunk })),
+        { type: 'text-end', id: '0' },
+        { type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage: USAGE },
+      ],
+    })
+  }
   return new ReadableStream({
     start(controller) {
       controller.enqueue({ type: 'stream-start', warnings: [] })
@@ -65,10 +79,6 @@ function scriptedStream(chunks: string[], close: boolean): ReadableStream<Langua
         controller.enqueue({ type: 'text-delta', id: '0', delta: chunk })
       }
       controller.enqueue({ type: 'text-end', id: '0' })
-      if (close) {
-        controller.enqueue({ type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage: USAGE })
-        controller.close()
-      }
     },
   })
 }

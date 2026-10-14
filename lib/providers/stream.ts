@@ -1,4 +1,4 @@
-import { APICallError, streamText, type LanguageModel, type ModelMessage } from 'ai'
+import { APICallError, smoothStream, streamText, type LanguageModel, type ModelMessage } from 'ai'
 import { redact } from '../log/redact.ts'
 import { logger } from '../log/logger.ts'
 
@@ -24,8 +24,12 @@ export interface StreamOptions {
   maxRetries?: number
   /** 官方 timeout 选项：到点由 SDK 内部中止（与 signal 任一触发都生效） */
   timeoutMs?: number
+  /** 官方 smoothStream 平滑（毫秒/片；中文按词切分），观感用 */
+  smoothStreamMs?: number
   system?: string
 }
+
+const ZH_WORD_SEGMENTER = new Intl.Segmenter('zh', { granularity: 'word' })
 
 const DETAIL_LIMIT = 300
 
@@ -103,6 +107,10 @@ export async function* streamModel(
       system: opts.system,
       abortSignal: opts.signal,
       timeout: opts.timeoutMs,
+      experimental_transform:
+        opts.smoothStreamMs != null
+          ? smoothStream({ delayInMs: opts.smoothStreamMs, chunking: ZH_WORD_SEGMENTER })
+          : undefined,
       maxOutputTokens: opts.maxOutputTokens,
       maxRetries: opts.maxRetries ?? 2,
       onError: ({ error }) => {
