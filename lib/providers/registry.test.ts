@@ -60,13 +60,9 @@ test('PROVIDERS 覆盖国内可直连与需代理两组', () => {
   assert.equal(gateway.needsProxy, false)
 })
 
-test('PROVIDERS 的 id 唯一，且不预填任何 model id', () => {
+test('PROVIDERS 的 id 唯一', () => {
   const ids = PROVIDERS.map((p) => p.id)
   assert.equal(new Set(ids).size, ids.length)
-  assert.ok(
-    PROVIDERS.every((p) => p.defaultModelId === undefined),
-    'defaultModelId 必须留空，由 UI 手填或 listModels 选',
-  )
 })
 
 test('除无端点型 provider 外都必须带 http baseUrl（列表用）', () => {

@@ -169,7 +169,7 @@ export function SoloChat({ providers }: SoloChatProps) {
       </div>
 
       <p className="font-mono text-[11px] text-dust">
-        官方件：useChat + DefaultChatTransport + toUIMessageStreamResponse（含 reasoning 部件）· Key 只随请求内存
+        官方件：useChat + DefaultChatTransport + toUIMessageStream / createUIMessageStreamResponse（含 reasoning 部件）· Key 只随请求内存
       </p>
     </section>
   )

@@ -747,3 +747,56 @@ test('schedule 缝：注入自定义调度器时用它启动对战（Next after(
   }
   assert.equal(handle.eventsSince(-1).at(-1)?.type, 'battle.completed')
 })
+
+test('单轮失败但已输出部分正文+思考：正文与思考都要落库（翻车也要留住真实发生的事）', async () => {
+  const recorder: FakeRecorder = { signals: [], abortedStreams: 0 }
+  const partialThenFail = new MockLanguageModelV4({
+    doStream: async () => ({
+      stream: simulateReadableStream<LanguageModelV4StreamPart>({
+        initialDelayInMs: 0,
+        chunkDelayInMs: 0,
+        chunks: [
+          { type: 'stream-start', warnings: [] },
+          { type: 'reasoning-start', id: 'r0' },
+          { type: 'reasoning-delta', id: 'r0', delta: '让我想想这题……' },
+          { type: 'reasoning-end', id: 'r0' },
+          { type: 'text-start', id: '0' },
+          { type: 'text-delta', id: '0', delta: '我方立场是' },
+          { type: 'text-end', id: '0' },
+          {
+            type: 'error',
+            error: new APICallError({
+              message: '上游 500',
+              url: 'http://upstream.test/v1/chat',
+              requestBodyValues: {},
+              statusCode: 500,
+              isRetryable: false,
+            }),
+          },
+        ],
+      }),
+    }),
+  })
+  const deps: BattleDeps = {
+    arena: makeArena(),
+    createModel: (c) => (c.slot === 1 ? partialThenFail : makeFakeModel({ chunks: ['正常'] }, recorder)),
+    judgeContext: JUDGE_CONTEXT,
+  }
+  const played = await playBattle(
+    { arena: 'soft', topic: '半路翻车', contestants: twoContestants() },
+    deps,
+  )
+
+  const snapshot = getSnapshot(played.battleId)
+  assert.ok(snapshot)
+  const failedRow = snapshot.contestants.find((row) => row.slot === 1)
+  assert.ok(failedRow, '1 号选手应存在')
+  assert.notEqual(failedRow?.status, 'ok')
+  assert.equal(failedRow?.output_text, '我方立场是', '部分正文必须落库')
+  assert.equal(failedRow?.reasoning_text, '让我想想这题……', '思考过程必须独立落库')
+
+  const failedEvent = played.events.find(
+    (event) => event.type === 'contestant.failed' && event.slot === 1,
+  )
+  assert.ok(failedEvent, '应向观众播报 1 号失败')
+})

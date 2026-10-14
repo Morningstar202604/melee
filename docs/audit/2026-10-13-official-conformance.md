@@ -81,7 +81,19 @@
 | **smoothStream（官方流平滑）** | **已定位、暂未启用**：会让既有"事件粒度"行为锁过时，观感收益排队到下一轮（候选：`experimental_transform: smoothStream({ delayInMs, chunking: new Intl.Segmenter('zh', …) })`） |
 | pruneMessages（官方上下文修剪） | 轮次从 3 提到 6+ 时启用（挂载点） |
 
-## 六、未关闭项与二期候选（2026-10-14 更新）
+## 五之二、踩到的 SDK 内部陷阱（供后人避坑）
+
+**AI SDK v7.0.136 `isOutputChunk` 对 `reasoning-delta` 读 `chunk.delta`，但 `TextStreamPart` 类型声明的是 `text`。**
+
+- 现象：消费含 reasoning + error 部件的流时抛 `Cannot read properties of undefined (reading 'length')`，错误被包装成 provider 错误，**部分产出的正文与思考全部丢失**
+- 位置：`node_modules/ai/dist/index.js:8655`（`isOutputChunk`）
+- 两层字段名不同（这是关键）：
+  - **provider 层**（`LanguageModelV4StreamPart`，即 `MockLanguageModelV4` 与各家 provider 的产出）：`{ type: 'reasoning-delta', id, delta }`
+  - **`streamText` 输出层**（`TextStreamPart`，我们消费的那层）：`{ type: 'reasoning-delta', id, text }`
+- 我们的处置：`lib/providers/stream.ts` 对该字段做双名兼容读取（`text ?? delta`，零成本防御）；测试夹具按所在层使用正确字段
+- 附带收获：新增行为锁"单轮失败但已输出部分正文+思考 → 正文与思考都必须落库"（翻车也要留住真实发生的事）
+
+### 原第六节
 
 已消化：`after()`（run 路由官方生命周期钩子 + runner schedule 缝）、`zustand/persist`（阵容 store，Key 与阵容分流）、`useChat` 单挑台（`/solo`，官方拆分式流 helpers）、`pruneMessages`（按官方签名核实后关闭）、provider baseUrl 环境变量覆盖。
 

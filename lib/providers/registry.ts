@@ -28,7 +28,6 @@ export interface ProviderDef {
   kind: ProviderKind
   /** 仅用于模型列表拉取（生成/调用走官方包各自的默认端点） */
   baseUrl?: string
-  defaultModelId?: string
   region: ProviderRegion
   needsProxy: boolean
 }

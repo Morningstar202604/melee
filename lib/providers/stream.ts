@@ -128,8 +128,11 @@ export async function* streamModel(
         continue
       }
       if (part.type === 'reasoning-delta') {
-        if (!part.text) continue
-        yield { type: 'reasoning', text: part.text }
+        // SDK 类型声明为 text，部分路径（测试/特定 provider）实际给出 delta —— 两者都认
+        const reasoningText =
+          (part as { text?: string }).text ?? (part as { delta?: string }).delta ?? ''
+        if (!reasoningText) continue
+        yield { type: 'reasoning', text: reasoningText }
         continue
       }
       if (part.type === 'error') {
