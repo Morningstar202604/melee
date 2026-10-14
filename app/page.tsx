@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { Flame } from 'lucide-react'
+import Link from 'next/link'
+import { Flame, MessageSquare } from 'lucide-react'
 import { ArenaSetup } from '@/components/arena/arena-setup'
 import { BANTER_TOPICS, CODE_TOPICS, DEBATE_TOPICS, SOFT_TOPICS } from '@/lib/arena/topics'
 import { CHESS_PUZZLES } from '@/lib/arena/chess'
@@ -21,9 +22,18 @@ export default function Home() {
           </span>
           <span className="h-4 w-px bg-hairline" aria-hidden />
           <span className="text-sm font-semibold text-ash">AI 大乱斗</span>
-          <span className="ml-auto hidden items-center gap-1.5 font-mono text-[11px] text-dust sm:flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden />
-            免登录 · 用户自带 Key · {PROVIDERS.length} 个 provider
+          <span className="ml-auto flex items-center gap-4">
+            <Link
+              href="/solo"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-hairline px-3 py-1.5 text-[12px] font-semibold text-ash transition-colors hover:border-dust hover:text-ink"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              单挑台
+            </Link>
+            <span className="hidden items-center gap-1.5 font-mono text-[11px] text-dust sm:flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden />
+              免登录 · 用户自带 Key · {PROVIDERS.length} 个 provider
+            </span>
           </span>
         </div>
       </header>

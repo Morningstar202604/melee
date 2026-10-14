@@ -5,6 +5,8 @@ export type { ContestantStatus }
 
 export type ArenaId = 'soft' | 'debate' | 'banter' | 'hard-code' | 'chess'
 
+export const ARENA_IDS: readonly ArenaId[] = ['soft', 'debate', 'banter', 'hard-code', 'chess']
+
 export interface ContestantInput {
   slot: number
   providerId: string

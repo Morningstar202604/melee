@@ -163,7 +163,16 @@ function loadCustomProviders(): ProviderDef[] {
 
 const customProviders = loadCustomProviders()
 
-export const PROVIDERS: ProviderDef[] = [...BUILT_IN_PROVIDERS, ...customProviders]
+function envBaseUrl(id: string): string | undefined {
+  const raw = process.env[`MELEE_BASE_URL_${id.toUpperCase().replace(/-/g, '_')}`]
+  const value = raw?.trim()
+  return value && value.startsWith('http') ? value : undefined
+}
+
+export const PROVIDERS: ProviderDef[] = [...BUILT_IN_PROVIDERS, ...customProviders].map((def) => {
+  const override = envBaseUrl(def.id)
+  return override ? { ...def, baseUrl: override } : def
+})
 
 export function getProvider(id: string): ProviderDef | undefined {
   return PROVIDERS.find((p) => p.id === id)

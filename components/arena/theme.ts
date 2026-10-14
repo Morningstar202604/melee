@@ -1,4 +1,4 @@
-import type { ArenaId } from '@/lib/arena/types'
+import { ARENA_IDS as ARENA_ID_LIST, type ArenaId } from '@/lib/arena/types'
 import { BANTER_AXES, DEBATE_AXES, SOFT_AXES } from '@/lib/arena/axes'
 import type { JudgeAxis, SandboxProgress } from '@/lib/arena/types'
 import type { ContestantView } from '@/lib/client/battle-store'
@@ -84,7 +84,7 @@ export const ARENA_SKINS: Record<ArenaId, ArenaSkin> = {
   },
 }
 
-export const ARENA_IDS: ArenaId[] = ['soft', 'debate', 'banter', 'hard-code', 'chess']
+export const ARENA_IDS: ArenaId[] = [...ARENA_ID_LIST]
 
 /** 战报记分板的评分轴（键与种子/裁判输出一致） */
 export const ARENA_AXES: Partial<Record<ArenaId, JudgeAxis[]>> = {

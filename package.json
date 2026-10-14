@@ -20,6 +20,7 @@
     "@ai-sdk/moonshotai": "^3.0.68",
     "@ai-sdk/openai": "^4.0.91",
     "@ai-sdk/openai-compatible": "^3.0.68",
+    "@ai-sdk/react": "^4.0.143",
     "ai": "^7.0.136",
     "chess.js": "^1.4.0",
     "clsx": "^2.1.1",

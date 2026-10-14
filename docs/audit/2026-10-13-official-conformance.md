@@ -81,7 +81,11 @@
 | **smoothStream（官方流平滑）** | **已定位、暂未启用**：会让既有"事件粒度"行为锁过时，观感收益排队到下一轮（候选：`experimental_transform: smoothStream({ delayInMs, chunking: new Intl.Segmenter('zh', …) })`） |
 | pruneMessages（官方上下文修剪） | 轮次从 3 提到 6+ 时启用（挂载点） |
 
-## 六、未关闭项与二期候选
+## 六、未关闭项与二期候选（2026-10-14 更新）
+
+已消化：`after()`（run 路由官方生命周期钩子 + runner schedule 缝）、`zustand/persist`（阵容 store，Key 与阵容分流）、`useChat` 单挑台（`/solo`，官方拆分式流 helpers）、`pruneMessages`（按官方签名核实后关闭）、provider baseUrl 环境变量覆盖。
+
+### 原第六节
 
 - **审计门禁**：跨厂商 deep 审计仍不可用（DE 托管工具缺失），`17d9f39/469c463` 与本轮新提交均处于 `needs-cross-llm-rerun`
 - **二期候选（官方方案已定位）**：工具场（`ToolLoopAgent`+`tool()`+`stopWhen`）、单模型聊天页（`useChat`+UIMessage 协议）、`pruneMessages`（轮次增多时）、`LanguageModelV4Middleware`（遥测/缓存统一入口）、常驻选手记忆（memory tool）

@@ -1,3 +1,4 @@
+import { after } from 'next/server.js'
 import { arenaLimits, getArena } from '../../../../lib/arena/index.ts'
 import type { ArenaId, ContestantInput } from '../../../../lib/arena/types.ts'
 import { allow } from '../../../../lib/battle/ratelimit.ts'
@@ -122,6 +123,16 @@ export async function POST(request: Request) {
 
   const deps: BattleDeps = {
     arena: arenaDef,
+    // 官方请求生命周期钩子：响应（202）发出后继续跑完整场对战。
+    // 单元测试（无请求上下文）下 after() 会抛，此时回退 setTimeout，行为等价。
+    schedule: (task) => {
+      try {
+        after(task)
+      } catch {
+        const timer = setTimeout(task, 0)
+        timer.unref()
+      }
+    },
     createModel: (contestant: ContestantInput) => {
       const provider = getProvider(contestant.providerId)
       if (!provider) {

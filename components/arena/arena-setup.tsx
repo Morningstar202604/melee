@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/cn'
+import { blankRow, migrateLegacyLineup, useLineupStore, type ContestantRow } from '@/lib/client/lineup-store'
 import type { ArenaId } from '@/lib/arena/types'
 import type {
   BanterTopic,
@@ -37,16 +38,6 @@ export interface ArenaSetupProps {
   banterTopics: BanterTopic[]
   codeTopics: CodeTopic[]
   chessPuzzles: ChessPuzzle[]
-}
-
-const LINEUP_STORAGE_KEY = 'melee.lineup'
-const KEY_STORAGE_KEY = 'melee.keys'
-
-interface ContestantRow {
-  rowId: string
-  providerId: string
-  modelId: string
-  apiKey: string
 }
 
 interface PingOutcome {
@@ -80,90 +71,6 @@ const BTN_PRIMARY =
 const BTN_GHOST =
   'inline-flex items-center gap-2 rounded-lg border border-hairline px-4 py-2.5 text-sm font-semibold text-ash transition-colors hover:border-dust hover:text-ink disabled:cursor-not-allowed disabled:opacity-40'
 
-let ROW_SEQ = 0
-
-function makeRowId() {
-  ROW_SEQ += 1
-  return `r${ROW_SEQ.toString(36)}`
-}
-
-function blankRow(providerId: string): ContestantRow {
-  return {
-    rowId: makeRowId(),
-    providerId,
-    modelId: '',
-    apiKey: providerId === 'ollama' ? 'ollama-local' : '',
-  }
-}
-
-interface RestoredLineup {
-  arena: ArenaId
-  topicByArena: Record<string, string>
-  rows: ContestantRow[]
-}
-
-function readLineup(providers: ProviderDef[]): RestoredLineup {
-  const fallback: RestoredLineup = {
-    arena: 'soft',
-    topicByArena: {},
-    rows: [blankRow('ollama'), blankRow('deepseek')],
-  }
-  try {
-    const raw = window.localStorage.getItem(LINEUP_STORAGE_KEY)
-    if (!raw) return fallback
-    const parsed = JSON.parse(raw) as Record<string, unknown>
-    const known = new Set(providers.map((p) => p.id))
-    const storedKeys = readKeys()
-    const storedRows = Array.isArray(parsed.rows) ? parsed.rows : []
-    const rows = storedRows
-      .map((entry) => {
-        const item = (entry ?? {}) as Record<string, unknown>
-        const providerId = typeof item.providerId === 'string' ? item.providerId : ''
-        if (!known.has(providerId)) return null
-        const rowId = typeof item.rowId === 'string' && item.rowId ? item.rowId : makeRowId()
-        const modelId = typeof item.modelId === 'string' ? item.modelId : ''
-        return { rowId, providerId, modelId, apiKey: storedKeys[rowId] ?? '' }
-      })
-      .filter((row): row is ContestantRow => row !== null)
-    if (rows.length < 2) return fallback
-
-    const topicByArena: Record<string, string> = {}
-    const storedTopics = parsed.topicByArena
-    if (storedTopics && typeof storedTopics === 'object') {
-      for (const [key, value] of Object.entries(storedTopics as Record<string, unknown>)) {
-        if (typeof value === 'string') topicByArena[key] = value
-      }
-    }
-    if (typeof parsed.softTopicId === 'string' && parsed.softTopicId) {
-      topicByArena.soft = parsed.softTopicId
-    }
-    if (typeof parsed.codeTopicId === 'string' && parsed.codeTopicId) {
-      topicByArena['hard-code'] = parsed.codeTopicId
-    }
-
-    const arena = ARENA_IDS.includes(parsed.arena as ArenaId)
-      ? (parsed.arena as ArenaId)
-      : fallback.arena
-    return { arena, topicByArena, rows }
-  } catch {
-    return fallback
-  }
-}
-
-function readKeys(): Record<string, string> {
-  try {
-    const raw = window.sessionStorage.getItem(KEY_STORAGE_KEY)
-    const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {}
-    const keys: Record<string, string> = {}
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === 'string' && value) keys[key] = value
-    }
-    return keys
-  } catch {
-    return {}
-  }
-}
-
 function errorText(error: unknown): string {
   if (error instanceof Error) {
     const redacted = error.message
@@ -186,9 +93,14 @@ export function ArenaSetup({
   const providerById = useMemo(() => new Map(providers.map((p) => [p.id, p])), [providers])
 
   const [step, setStep] = useState(1)
-  const [arena, setArena] = useState<ArenaId>('soft')
-  const [topicByArena, setTopicByArena] = useState<Record<string, string>>({})
-  const [rows, setRows] = useState<ContestantRow[]>([blankRow('ollama'), blankRow('deepseek')])
+  const arena = useLineupStore((state) => state.arena)
+  const topicByArena = useLineupStore((state) => state.topicByArena)
+  const rows = useLineupStore((state) => state.rows)
+  const storeSetArena = useLineupStore((state) => state.setArena)
+  const storeSetTopic = useLineupStore((state) => state.setTopic)
+  const storeSetRows = useLineupStore((state) => state.setRows)
+  /** 每行的 API Key：只驻留内存 + sessionStorage（不进 localStorage） */
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({})
   const [ping, setPing] = useState<Record<string, PingOutcome>>({})
   const [modelLists, setModelLists] = useState<Record<string, string[]>>({})
   const [modelNotices, setModelNotices] = useState<Record<string, ModelNotice>>({})
@@ -196,7 +108,6 @@ export function ArenaSetup({
   const [busy, setBusy] = useState<'' | 'ping' | 'fight'>('')
   const [pageError, setPageError] = useState('')
   const [skippedNotice, setSkippedNotice] = useState('')
-  const [hydrated, setHydrated] = useState(false)
   const hydratedRef = useRef(false)
 
   const skin = ARENA_SKINS[arena]
@@ -215,12 +126,9 @@ export function ArenaSetup({
   useEffect(() => {
     if (hydratedRef.current) return
     hydratedRef.current = true
-    const restored = readLineup(providers)
-    setArena(restored.arena)
-    setRows(restored.rows)
-    setTopicByArena(restored.topicByArena)
-    setHydrated(true)
-  }, [providers])
+    // 旧 localStorage 格式一次性并入 zustand persist store；Key 从 sessionStorage 回到内存
+    setApiKeys(migrateLegacyLineup())
+  }, [])
 
   const topicId = topicByArena[arena] || defaultTopicId(arena)
 
@@ -273,58 +181,55 @@ export function ArenaSetup({
   const greenCount = rows.filter((row) => ping[row.rowId]?.ok === true).length
   const step3Valid = greenCount >= skin.minContestants && rows.length <= skin.maxContestants
 
-  const persist = useCallback(() => {
-    try {
-      window.localStorage.setItem(
-        LINEUP_STORAGE_KEY,
-        JSON.stringify({
-          arena,
-          topicByArena,
-          rows: rows.map((row) => ({
-            rowId: row.rowId,
-            providerId: row.providerId,
-            modelId: row.modelId,
-          })),
-        }),
-      )
-      const keys: Record<string, string> = {}
-      for (const row of rows) {
-        if (row.apiKey) keys[row.rowId] = row.apiKey
-      }
-      window.sessionStorage.setItem(KEY_STORAGE_KEY, JSON.stringify(keys))
-    } catch {
-      // ignore
-    }
-  }, [arena, rows, topicByArena])
-
-  useEffect(() => {
-    if (hydrated) persist()
-  }, [hydrated, persist])
-
   const selectArena = useCallback(
     (next: ArenaId) => {
-      setArena(next)
+      storeSetArena(next)
       setPageError('')
       const max = ARENA_SKINS[next].maxContestants
-      setRows((current) => (current.length > max ? current.slice(0, max) : current))
+      storeSetRows((current) => (current.length > max ? current.slice(0, max) : current))
     },
-    [],
+    [storeSetArena, storeSetRows],
   )
 
-  const updateRow = useCallback((rowId: string, patch: Partial<ContestantRow>) => {
-    setRows((current) => current.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)))
-  }, [])
+  const updateRow = useCallback(
+    (rowId: string, patch: Partial<ContestantRow> & { apiKey?: string }) => {
+      // Key 与阵容分流：Key 只进内存 + sessionStorage，阵容由 persist 中间件管（不落 Key）
+      const { apiKey, ...lineupPatch } = patch
+      if (Object.keys(lineupPatch).length > 0) {
+        storeSetRows((current) =>
+          current.map((row) => (row.rowId === rowId ? { ...row, ...lineupPatch } : row)),
+        )
+      }
+      if (typeof apiKey === 'string') {
+        setApiKeys((current) => {
+          const next = { ...current, [rowId]: apiKey }
+          try {
+            const payload: Record<string, string> = {}
+            for (const [id, value] of Object.entries(next)) {
+              if (value) payload[id] = value
+            }
+            if (Object.keys(payload).length === 0) window.sessionStorage.removeItem('melee.keys')
+            else window.sessionStorage.setItem('melee.keys', JSON.stringify(payload))
+          } catch {
+            // 忽略隐私模式
+          }
+          return next
+        })
+      }
+    },
+    [storeSetRows],
+  )
 
   const addRow = useCallback(() => {
-    setRows((current) => {
+    storeSetRows((current) => {
       if (current.length >= skin.maxContestants) return current
       return [...current, blankRow(current[current.length - 1]?.providerId ?? 'ollama')]
     })
-  }, [skin.maxContestants])
+  }, [skin.maxContestants, storeSetRows])
 
   const removeRow = useCallback(
     (rowId: string) => {
-      setRows((current) =>
+      storeSetRows((current) =>
         current.length > skin.minContestants ? current.filter((row) => row.rowId !== rowId) : current,
       )
       setPing((current) => {
@@ -343,7 +248,7 @@ export function ArenaSetup({
         return next
       })
     },
-    [skin.minContestants],
+    [skin.minContestants, storeSetRows],
   )
 
   const clearRowCache = useCallback((rowId: string) => {
@@ -374,7 +279,7 @@ export function ArenaSetup({
             slot: index + 1,
             providerId: row.providerId,
             modelId: row.modelId,
-            apiKey: row.apiKey,
+            apiKey: apiKeys[row.rowId] ?? '',
           })),
         }),
       })
@@ -397,7 +302,7 @@ export function ArenaSetup({
       }
       return next
     },
-    [],
+    [apiKeys],
   )
 
   const handlePing = useCallback(async () => {
@@ -425,7 +330,7 @@ export function ArenaSetup({
         const response = await fetch('/api/providers/models', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ providerId: provider.id, apiKey: row.apiKey }),
+          body: JSON.stringify({ providerId: provider.id, apiKey: apiKeys[row.rowId] ?? '' }),
         })
         const payload = (await response.json()) as {
           ok?: boolean
@@ -461,13 +366,12 @@ export function ArenaSetup({
         setFetchingRow('')
       }
     },
-    [providerById, rows],
+    [apiKeys, providerById, rows],
   )
 
   const handleFight = useCallback(async () => {
     setPageError('')
     setSkippedNotice('')
-    persist()
 
     let currentPing: Record<string, PingOutcome> = {}
     try {
@@ -507,7 +411,7 @@ export function ArenaSetup({
             slot: index + 1,
             providerId: row.providerId,
             modelId: row.modelId,
-            apiKey: row.apiKey,
+            apiKey: apiKeys[row.rowId] ?? '',
           })),
         }),
       })
@@ -543,7 +447,7 @@ export function ArenaSetup({
     } finally {
       setBusy('')
     }
-  }, [arena, persist, providerById, pingContestants, router, rows, skin.minContestants, topicPrompt])
+  }, [apiKeys, arena, providerById, pingContestants, router, rows, skin.minContestants, topicPrompt])
 
   const goNext = useCallback(() => {
     if (step === 1 && !step1Valid) return
@@ -682,7 +586,7 @@ export function ArenaSetup({
                 </span>
                 <select
                   value={topicId}
-                  onChange={(event) => setTopicByArena((current) => ({ ...current, [arena]: event.target.value }))}
+                  onChange={(event) => storeSetTopic(arena, event.target.value)}
                   className="w-full rounded-lg border border-hairline bg-void px-3.5 py-2.5 text-sm text-ink outline-none transition-colors focus:border-blaze/60 sm:max-w-md"
                 >
                   {topicOptions.map((option) => (
@@ -770,7 +674,7 @@ export function ArenaSetup({
             </header>
             <div className="mt-5">
               <LineupEditor
-                rows={rows}
+                rows={rows.map((row) => ({ ...row, apiKey: apiKeys[row.rowId] ?? '' }))}
                 providers={providers}
                 ping={ping}
                 modelLists={modelLists}

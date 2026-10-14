@@ -715,3 +715,35 @@ test('单回合超时走官方 timeout 选项：挂死的回合判 timeout，其
   assert.equal(failedEvents[0]?.status, 'timeout')
   assert.equal(played.events.at(-1)?.type, 'battle.completed')
 })
+
+test('schedule 缝：注入自定义调度器时用它启动对战（Next after() 的接入点）', async () => {
+  const recorder: FakeRecorder = { signals: [], abortedStreams: 0 }
+  const scheduled: Array<() => void> = []
+  const deps: BattleDeps = {
+    arena: makeArena(),
+    createModel: createModelFor(
+      new Map([
+        [1, { chunks: ['甲'] }],
+        [2, { chunks: ['乙'] }],
+      ]),
+      recorder,
+    ),
+    judgeContext: JUDGE_CONTEXT,
+    schedule: (task) => scheduled.push(task),
+  }
+  const battleId = await startBattle(
+    { arena: 'soft', topic: '调度缝', contestants: twoContestants() },
+    deps,
+  )
+  const handle = getBattleHandle(battleId)
+  assert.ok(handle)
+  assert.equal(scheduled.length, 1, '对战必须经注入的调度器启动，而不是内部 setTimeout')
+
+  scheduled[0]!()
+  const deadline = Date.now() + 15000
+  while (!isTerminal(handle.eventsSince(-1))) {
+    if (Date.now() > deadline) assert.fail('对战未在 15s 内进入终态')
+    await sleep(5)
+  }
+  assert.equal(handle.eventsSince(-1).at(-1)?.type, 'battle.completed')
+})

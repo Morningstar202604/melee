@@ -48,6 +48,8 @@ export interface BattleDeps {
   timeoutMs?: number
   battleTimeoutMs?: number
   now?: () => number
+  /** 请求生命周期钩子：生产注入 Next `after()`（响应发出后仍保证执行）；测试/无上下文回退 setTimeout */
+  schedule?: (task: () => void) => void
 }
 
 interface ContestantRun {
@@ -94,13 +96,19 @@ export async function startBattle(input: StartBattleInput, deps: BattleDeps): Pr
   const handle = createBattleHandle(battleId)
   registerBattle(battleId, handle)
 
-  const timer = setTimeout(() => {
+  const start = () => {
     void runBattle(battleId, input, deps, handle, contestantIds)
       .finally(() => scheduleRecycle(battleId))
-  }, 0)
-  timer.unref()
+  }
+  const schedule = deps.schedule ?? defaultSchedule
+  schedule(start)
 
   return battleId
+}
+
+function defaultSchedule(task: () => void): void {
+  const timer = setTimeout(task, 0)
+  timer.unref()
 }
 
 function scheduleRecycle(battleId: string): void {
