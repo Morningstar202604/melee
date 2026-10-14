@@ -2,7 +2,7 @@ import { APICallError, NoObjectGeneratedError, Output, generateText, type Langua
 import { z } from 'zod'
 import type { JudgeAxis, JudgeContext, Submission, Verdict } from '../arena/types.ts'
 import { SOFT_AXES } from '../arena/axes.ts'
-import { createModel, getProvider } from '../providers/registry.ts'
+import { resolveModelRef } from '../providers/registry.ts'
 import { redact } from '../log/redact.ts'
 import { logger } from '../log/logger.ts'
 
@@ -86,16 +86,7 @@ export function buildJudgeSystemPrompt(axes: JudgeAxis[]): string {
 
 export function resolveJudgeModel(ctx: JudgeContext): LanguageModel {
   const ref = ctx.judgeModelId.trim() || DEFAULT_JUDGE_MODEL_ID
-  const separator = ref.indexOf(':')
-  if (separator > 0) {
-    const def = getProvider(ref.slice(0, separator))
-    if (def) return createModel(def, ref.slice(separator + 1), ctx.judgeApiKey)
-  }
-  const fallback = getProvider(DEFAULT_JUDGE_PROVIDER_ID)
-  if (!fallback) {
-    throw new Error(`裁判默认 provider「${DEFAULT_JUDGE_PROVIDER_ID}」未在选手池中注册`)
-  }
-  return createModel(fallback, ref, ctx.judgeApiKey)
+  return resolveModelRef(ref, ctx.judgeApiKey)
 }
 
 function extractScores(entry: Record<string, unknown>): Record<string, number> {

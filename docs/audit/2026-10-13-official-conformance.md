@@ -55,7 +55,33 @@
 - 陈旧构建产物 `out/` 清理
 - 旧库迁移补齐（`reasoning_text` 列，`CREATE TABLE IF NOT EXISTS` 不会补列）
 
-## 五、未关闭项与二期候选
+## 五、续篇：厂家接入层换成官方协议 + 全量循环清单（2026-10-13 晚）
+
+### 5.1 厂家接入层（"换官方协议 = 接更多厂家"落地）
+
+| 原实现 | 现实现（全部官方件） |
+|---|---|
+| 9 家全部手写 `createOpenAI({baseURL})` | 按官方包分工：`@ai-sdk/openai-compatible`（任意兼容端点/自定义厂家）、`@ai-sdk/deepseek`（DeepSeek 官方，含 reasoner 推理支持）、`@ai-sdk/moonshotai`（Kimi 官方）、`@ai-sdk/alibaba`（百炼官方）、`@ai-sdk/openai` / `@ai-sdk/anthropic` / `@ai-sdk/google` |
+| 手写 `provider:model` 前缀解析 | **官方 `createProviderRegistry`**（默认 `:` 分隔符；Key 按请求即时构建实例）——裁判引用与后续任何"引用式选模型"统一走它 |
+| 手写请求体差异（strict json schema 等归属错位） | `openai-compatible` 官方开关：`includeUsage`（流式用量）等由官方协议承载 |
+| 厂家=改代码 | **`MELEE_CUSTOM_PROVIDERS` 环境变量注入任意 OpenAI 兼容端点**（id/label/baseUrl/region，非法条目跳过、与内置冲突告警），把"接更多厂家"变成配置而不是提交 |
+| — | 新增 **AI Gateway** provider（`ai` 内置 `gateway` + 官方 `getAvailableModels()`）：一家 Key 通吃数百模型，"获取列表"直接列官方模型目录 |
+
+### 5.2 循环清单（"各种循环能用官方直接用"逐一核查）
+
+| 循环 | 判决 |
+|---|---|
+| 模型调用重试循环 | 已换官方 `maxRetries`（早前） |
+| 回合超时（手写 setTimeout + AbortController） | **本轮换官方 `timeout` 选项**（与 signal 任一触发即中止；runner 删掉手写计时器） |
+| 多轮对话轮次循环 / 裁判三轮循环 | workflow 控制流（确定性赛制），AI SDK 官方对非工具循环的指引即宿主语言控制流；保留并文档化 |
+| 流消费循环（`for await part of stream`） | 就是官方 API 的规范用法本身 |
+| judge0 轮询循环 | Judge0 官方 batch 协议要求轮询；字段与状态机已按官方实现 |
+| SSE 重放循环 | Last-Event-ID 协议层，无官方替代（UIMessage 协议不建模多路复用赛事流） |
+| 沙箱 Worker 池队列 | 资源池；tinypool 类引入成本大于收益（前报告已判） |
+| **smoothStream（官方流平滑）** | **已定位、暂未启用**：会让既有"事件粒度"行为锁过时，观感收益排队到下一轮（候选：`experimental_transform: smoothStream({ delayInMs, chunking: new Intl.Segmenter('zh', …) })`） |
+| pruneMessages（官方上下文修剪） | 轮次从 3 提到 6+ 时启用（挂载点） |
+
+## 六、未关闭项与二期候选
 
 - **审计门禁**：跨厂商 deep 审计仍不可用（DE 托管工具缺失），`17d9f39/469c463` 与本轮新提交均处于 `needs-cross-llm-rerun`
 - **二期候选（官方方案已定位）**：工具场（`ToolLoopAgent`+`tool()`+`stopWhen`）、单模型聊天页（`useChat`+UIMessage 协议）、`pruneMessages`（轮次增多时）、`LanguageModelV4Middleware`（遥测/缓存统一入口）、常驻选手记忆（memory tool）

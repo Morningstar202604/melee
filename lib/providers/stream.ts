@@ -22,6 +22,8 @@ export interface StreamOptions {
   providerLabel?: string
   maxOutputTokens?: number
   maxRetries?: number
+  /** 官方 timeout 选项：到点由 SDK 内部中止（与 signal 任一触发都生效） */
+  timeoutMs?: number
   system?: string
 }
 
@@ -100,6 +102,7 @@ export async function* streamModel(
       messages,
       system: opts.system,
       abortSignal: opts.signal,
+      timeout: opts.timeoutMs,
       maxOutputTokens: opts.maxOutputTokens,
       maxRetries: opts.maxRetries ?? 2,
       onError: ({ error }) => {

@@ -279,9 +279,7 @@ async function runTurn(run: ContestantRun, round: number, context: RunContext): 
   })
 
   const messages: ModelMessage[] = turnInput.messages
-  const turnController = new AbortController()
-  const signal = AbortSignal.any([handle.signal, battleSignal, turnController.signal])
-  const turnTimer = setTimeout(() => turnController.abort(), turnTimeoutMs)
+  const signal = AbortSignal.any([handle.signal, battleSignal])
 
   let text = ''
   let reasoning = ''
@@ -298,6 +296,7 @@ async function runTurn(run: ContestantRun, round: number, context: RunContext): 
       providerLabel: contestant.providerId,
       system: turnInput.system,
       maxOutputTokens: arena.maxOutputTokens,
+      timeoutMs: turnTimeoutMs,
     })) {
       if (event.type === 'delta') {
         text += event.text
@@ -325,8 +324,6 @@ async function runTurn(run: ContestantRun, round: number, context: RunContext): 
       contestant.apiKey,
     ])
     failed = true
-  } finally {
-    clearTimeout(turnTimer)
   }
 
   if (!failed && text.length === 0 && signal.aborted) {

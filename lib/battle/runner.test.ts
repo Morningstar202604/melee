@@ -679,3 +679,29 @@ test('对战级超时：挂在半路的整场会被中止并走失败收口', as
   assert.equal(failed.length, 2)
   assert.ok(failed.every((event) => event.type === 'contestant.failed' && event.status === 'timeout'))
 })
+
+test('单回合超时走官方 timeout 选项：挂死的回合判 timeout，其余回合不受影响', async () => {
+  const recorder: FakeRecorder = { signals: [], abortedStreams: 0 }
+  const deps: BattleDeps = {
+    arena: { ...makeArena(), turnTimeoutMs: 80, battleTimeoutMs: 60000 },
+    createModel: createModelFor(
+      new Map([
+        [1, { chunks: [], hang: true }],
+        [2, { chunks: ['正常作答'] }],
+      ]),
+      recorder,
+    ),
+    judgeContext: JUDGE_CONTEXT,
+  }
+  const played = await playBattle(
+    { arena: 'soft', topic: '回合超时', contestants: twoContestants() },
+    deps,
+  )
+  const failedEvents = played.events.filter(
+    (event): event is Extract<BattleEvent, { type: 'contestant.failed' }> => event.type === 'contestant.failed',
+  )
+  assert.equal(failedEvents.length, 1)
+  assert.equal(failedEvents[0]?.slot, 1)
+  assert.equal(failedEvents[0]?.status, 'timeout')
+  assert.equal(played.events.at(-1)?.type, 'battle.completed')
+})
