@@ -1,4 +1,5 @@
-import type { Arena, JudgeContext, Submission, TurnRecord, TurnPlan, Verdict } from './types.ts'
+import type { ModelMessage } from 'ai'
+import type { Arena, JudgeContext, Submission, TurnPlan, Verdict } from './types.ts'
 import { BANTER_AXES } from './axes.ts'
 import { runJudge, resolveJudgeModel, type JudgeOptions } from '../judge/runner.ts'
 import { logger } from '../log/logger.ts'
@@ -28,55 +29,65 @@ export const BANTER_SYSTEM =
   '底线：严禁人身攻击、地域/性别/职业歧视、脏话、涉政与真实人物；越线直接扣分。' +
   '只输出你要发的那条消息本身，不要解释、不要加引号或前缀。'
 
-function transcriptBlock(turns: TurnRecord[]): string {
-  if (turns.length === 0) return '（暂无发言）'
-  return turns.map((turn) => `【第 ${turn.round} 轮】${turn.text}`).join('\n')
+function othersBlock(
+  others: Array<{ slot: number; turns: Array<{ round: number; text: string }> }>,
+  upToRound: number,
+): string {
+  const parts: string[] = []
+  for (const item of others) {
+    const visible = item.turns.filter((turn) => turn.round <= upToRound && turn.text.length > 0)
+    if (visible.length === 0) continue
+    parts.push(
+      `${item.slot} 号选手的发言：\n` +
+        visible.map((turn) => `（第 ${turn.round} 轮）${turn.text}`).join('\n'),
+    )
+  }
+  return parts.length > 0 ? parts.join('\n\n') : '（暂时无人发言）'
 }
 
 export const BANTER_PLAN: TurnPlan = {
   totalRounds: 3,
   roundLabel: (round) => (round === 1 ? '开局炸场' : round === 2 ? '接招反击' : '收场补刀'),
-  buildTurnPrompt: (topic, round, slot, own, others) => {
+  buildTurnMessages: (topic, round, slot, own, others) => {
     const role = banterRoleForSlot(slot)
-    const othersBlock = others
-      .map((item) => `${item.slot} 号选手的发言：\n${transcriptBlock(item.turns)}`)
-      .join('\n\n')
     const roleLine = `你的角色：${role.name}（${role.quirk}）。`
-
-    if (round === 1) {
-      return {
-        user: [
+    const messages: ModelMessage[] = [
+      {
+        role: 'user',
+        content: [
           topic,
           roleLine,
           '',
           '现在开场：先立住你的角色人设，把火点起来（第 1 轮，≤80 字）。',
         ].join('\n'),
-      }
-    }
+      },
+    ]
 
-    if (round === 2) {
-      return {
-        user: [
-          topic,
-          roleLine,
-          '',
-          othersBlock,
+    if (round >= 2) {
+      messages.push({ role: 'assistant', content: own.find((turn) => turn.round === 1)?.text ?? '' })
+      messages.push({
+        role: 'user',
+        content: [
+          othersBlock(others, 1),
           '',
           '现在接招：引用对方上一轮的原话（可以夸张引用），反击回去（第 2 轮，≤80 字）。',
         ].join('\n'),
-      }
+      })
     }
 
-    return {
-      user: [
-        topic,
-        roleLine,
-        '',
-        othersBlock,
-        '',
-        '现在收场：最后一句要留一个让人记住的梗，顺便把全场总结成一句话（第 3 轮，≤80 字）。',
-      ].join('\n'),
+    if (round >= 3) {
+      messages.push({ role: 'assistant', content: own.find((turn) => turn.round === 2)?.text ?? '' })
+      messages.push({
+        role: 'user',
+        content: [
+          othersBlock(others, 2),
+          '',
+          '现在收场：最后一句要留一个让人记住的梗，顺便把全场总结成一句话（第 3 轮，≤80 字）。',
+        ].join('\n'),
+      })
     }
+
+    return { system: BANTER_SYSTEM, messages }
   },
 }
 
@@ -94,10 +105,14 @@ export function createBanterArena(deps: Partial<MultiTurnDeps> = {}): Arena {
     maxContestants: 4,
     turnTimeoutMs: 90000,
     battleTimeoutMs: 420000,
-    buildPrompt: (topic) => ({
-      system: BANTER_SYSTEM,
-      user: BANTER_PLAN.buildTurnPrompt(topic, 1, 1, [], []).user,
-    }),
+    buildPrompt: (topic) => {
+      const first = BANTER_PLAN.buildTurnMessages(topic, 1, 1, [], [])
+      const firstUser = first.messages.find((message) => message.role === 'user')
+      return {
+        system: BANTER_SYSTEM,
+        user: typeof firstUser?.content === 'string' ? firstUser.content : '',
+      }
+    },
     extractCode: () => null,
     judge: async (subs: Submission[], ctx: JudgeContext): Promise<Verdict[]> => {
       try {

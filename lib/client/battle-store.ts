@@ -9,6 +9,7 @@ export type ContestantStreamStatus = 'streaming'
 export interface ContestantTurn {
   round: number
   text: string
+  reasoning: string
   status: ContestantStreamStatus | ContestantStatus
   failureMessage: string | null
   latencyMs: number | null
@@ -123,7 +124,7 @@ function hasOtherFinisher(contestants: Record<number, ContestantView>, slot: num
 
 function startTurn(view: ContestantView, round: number): ContestantView {
   const turns = view.turns.filter((turn) => turn.round !== round)
-  turns.push({ round, text: '', status: 'streaming', failureMessage: null, latencyMs: null })
+  turns.push({ round, text: '', reasoning: '', status: 'streaming', failureMessage: null, latencyMs: null })
   turns.sort((a, b) => a.round - b.round)
   return { ...view, turns, status: 'streaming', failureMessage: null }
 }
@@ -134,6 +135,16 @@ function appendDelta(view: ContestantView, text: string): ContestantView {
   const turns = [
     ...view.turns.slice(0, -1),
     { ...last, text: last.text + text },
+  ]
+  return { ...view, turns }
+}
+
+function appendReasoning(view: ContestantView, text: string): ContestantView {
+  const last = view.turns[view.turns.length - 1]
+  if (!last) return view
+  const turns = [
+    ...view.turns.slice(0, -1),
+    { ...last, reasoning: last.reasoning + text },
   ]
   return { ...view, turns }
 }
@@ -188,6 +199,18 @@ export function reduceEvent(data: BattleData, event: BattleEvent): BattleData {
         contestants: {
           ...data.contestants,
           [event.slot]: appendDelta(current, event.text),
+        },
+      }
+    }
+
+    case 'contestant.reasoning': {
+      const current = data.contestants[event.slot]
+      if (!current) return data
+      return {
+        ...data,
+        contestants: {
+          ...data.contestants,
+          [event.slot]: appendReasoning(current, event.text),
         },
       }
     }
@@ -438,17 +461,19 @@ export function dataFromSnapshot(snapshot: Snapshot): BattleData {
     const running = row.status === 'running'
     const sandbox = sandboxByContestant.get(row.id)
     const parsed = parseTurns(row.output_text, multiRound)
-    const turns: ContestantTurn[] = parsed.map((turn, index) => ({
-      round: turn.round,
-      text: turn.text,
-      status: running
-        ? 'streaming'
-        : index === parsed.length - 1
-          ? (row.status as ContestantStatus)
-          : 'ok',
-      failureMessage: index === parsed.length - 1 ? row.error_message : null,
-      latencyMs: index === parsed.length - 1 ? row.latency_ms : null,
-    }))
+    const turns: ContestantTurn[] = parsed.map((turn, index) => {
+      const isLast = index === parsed.length - 1
+      const reasoning =
+        turn.reasoning ?? (isLast && !multiRound ? row.reasoning_text ?? '' : '')
+      return {
+        round: turn.round,
+        text: turn.text,
+        reasoning,
+        status: running ? 'streaming' : isLast ? (row.status as ContestantStatus) : 'ok',
+        failureMessage: isLast ? row.error_message : null,
+        latencyMs: isLast ? row.latency_ms : null,
+      }
+    })
     contestants[row.slot] = {
       slot: row.slot,
       contestantId: row.id,

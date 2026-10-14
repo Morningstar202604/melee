@@ -1,3 +1,4 @@
+import type { ModelMessage } from 'ai'
 import type { ContestantStatus } from '../providers/stream.ts'
 
 export type { ContestantStatus }
@@ -57,18 +58,23 @@ export interface JudgeContext {
 export interface TurnRecord {
   round: number
   text: string
+  reasoning?: string
 }
 
 export interface TurnPlan {
   totalRounds: number
   roundLabel: (round: number) => string
-  buildTurnPrompt: (
+  /**
+   * 官方对话模式：把"角色 + 历史发言 + 本轮要求"编成标准 ModelMessage 数组
+   * （user/assistant 交替），让 provider 的会话处理与提示缓存能生效。
+   */
+  buildTurnMessages: (
     topic: string,
     round: number,
     slot: number,
     own: TurnRecord[],
     others: Array<{ slot: number; turns: TurnRecord[] }>,
-  ) => { system?: string; user: string }
+  ) => { system?: string; messages: ModelMessage[] }
 }
 
 export interface Arena {
@@ -108,9 +114,10 @@ export function parseTurns(text: string | null, multiRound: boolean): TurnRecord
           const item = (entry ?? {}) as Record<string, unknown>
           const round = typeof item.round === 'number' ? item.round : 1
           const value = typeof item.text === 'string' ? item.text : ''
-          return { round, text: value }
+          const reasoning = typeof item.reasoning === 'string' ? item.reasoning : undefined
+          return { round, text: value, ...(reasoning ? { reasoning } : {}) }
         })
-        .filter((turn) => turn.text.length > 0)
+        .filter((turn) => turn.text.length > 0 || (turn.reasoning?.length ?? 0) > 0)
       if (turns.length > 0) return turns
     }
   } catch {

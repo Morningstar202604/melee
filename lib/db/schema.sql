@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS contestants (
   completion_tokens INTEGER,
   latency_ms INTEGER,
   output_text TEXT,
+  reasoning_text TEXT,
   code TEXT,
   status TEXT,
   error_message TEXT

@@ -23,12 +23,7 @@ import {
 import { redact } from '../log/redact.ts'
 import { logger } from '../log/logger.ts'
 import { streamModel } from '../providers/stream.ts'
-import {
-  battlePhaseLabels,
-  contestantStatusLabels,
-  type BattlePhase,
-  type BattleResult,
-} from './events.ts'
+import { contestantStatusLabels, type BattlePhase, type BattleResult } from './events.ts'
 import {
   createBattleHandle,
   getBattleHandle,
@@ -265,9 +260,15 @@ async function runTurn(run: ContestantRun, round: number, context: RunContext): 
   const contestant = run.contestant
   const plan = arena.plan
   const ownTurns = run.turns.filter((turn) => turn.round < round)
-  const turnPrompt = plan
-    ? plan.buildTurnPrompt(topic, round, contestant.slot, ownTurns, otherTranscripts(context, contestant.slot, round))
-    : prompt
+  const turnInput = plan
+    ? plan.buildTurnMessages(
+        topic,
+        round,
+        contestant.slot,
+        ownTurns,
+        otherTranscripts(context, contestant.slot, round),
+      )
+    : { system: prompt.system, messages: [{ role: 'user' as const, content: prompt.user }] }
 
   handle.emit({
     type: 'contestant.started',
@@ -277,12 +278,13 @@ async function runTurn(run: ContestantRun, round: number, context: RunContext): 
     ...(plan ? { round } : {}),
   })
 
-  const messages: ModelMessage[] = [{ role: 'user', content: turnPrompt.user }]
+  const messages: ModelMessage[] = turnInput.messages
   const turnController = new AbortController()
   const signal = AbortSignal.any([handle.signal, battleSignal, turnController.signal])
   const turnTimer = setTimeout(() => turnController.abort(), turnTimeoutMs)
 
   let text = ''
+  let reasoning = ''
   let usage: { prompt: number; completion: number } | null = null
   let latencyMs = 0
   let status: ContestantStatus = 'ok'
@@ -294,12 +296,17 @@ async function runTurn(run: ContestantRun, round: number, context: RunContext): 
       signal,
       apiKey: contestant.apiKey,
       providerLabel: contestant.providerId,
-      system: turnPrompt.system,
+      system: turnInput.system,
       maxOutputTokens: arena.maxOutputTokens,
     })) {
       if (event.type === 'delta') {
         text += event.text
         handle.emit({ type: 'contestant.delta', slot: contestant.slot, text: event.text })
+        continue
+      }
+      if (event.type === 'reasoning') {
+        reasoning += event.text
+        handle.emit({ type: 'contestant.reasoning', slot: contestant.slot, text: event.text })
         continue
       }
       if (event.type === 'done') {
@@ -340,15 +347,17 @@ async function runTurn(run: ContestantRun, round: number, context: RunContext): 
     run.failed = true
     run.status = status
     run.errorMessage = message
-    if (text.length > 0) {
-      run.turns.push({ round, text })
-      context.transcripts.get(contestant.slot)?.push({ round, text })
+    if (text.length > 0 || reasoning.length > 0) {
+      const partial: TurnRecord = { round, text, ...(reasoning ? { reasoning } : {}) }
+      run.turns.push(partial)
+      context.transcripts.get(contestant.slot)?.push(partial)
     }
     return
   }
 
-  run.turns.push({ round, text })
-  context.transcripts.get(contestant.slot)?.push({ round, text })
+  const turn: TurnRecord = { round, text, ...(reasoning ? { reasoning } : {}) }
+  run.turns.push(turn)
+  context.transcripts.get(contestant.slot)?.push(turn)
   if (usage) {
     run.usage = {
       prompt: (run.usage?.prompt ?? 0) + usage.prompt,
@@ -371,13 +380,17 @@ async function finalizeRun(run: ContestantRun, context: RunContext): Promise<voi
   const contestant = run.contestant
   const plan = arena.plan
 
+  const singleReasoning = plan ? null : run.turns[0]?.reasoning ?? null
+
   if (run.failed) {
-    const outputText = plan && run.turns.length > 0 ? serializeTurns(run.turns) : run.turns[0]?.text ?? null
+    const fallbackText = run.turns[0]?.text && run.turns[0].text.length > 0 ? run.turns[0].text : null
+    const outputText = plan && run.turns.length > 0 ? serializeTurns(run.turns) : fallbackText
     await persist(() =>
       updateContestantResult(run.contestantId, {
         status: run.status,
         errorMessage: run.errorMessage,
-        outputText: outputText && outputText.length > 0 ? outputText : null,
+        outputText,
+        reasoningText: singleReasoning,
         code: null,
         latencyMs: 0,
         promptTokens: run.usage?.prompt ?? null,
@@ -404,6 +417,7 @@ async function finalizeRun(run: ContestantRun, context: RunContext): Promise<voi
     updateContestantResult(run.contestantId, {
       status: 'ok',
       outputText: text,
+      reasoningText: singleReasoning,
       code,
       latencyMs: submission.latencyMs,
       promptTokens: run.usage?.prompt ?? null,
@@ -529,10 +543,3 @@ function describeAllFailed(runs: ContestantRun[]): string {
   return `全部选手均失败，本场无法继续：${details}`
 }
 
-export function phaseLabel(phase: BattlePhase): string {
-  return battlePhaseLabels[phase]
-}
-
-export function statusLabel(status: ContestantStatus): string {
-  return contestantStatusLabels[status]
-}

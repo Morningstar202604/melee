@@ -108,6 +108,12 @@ export const contestantDeltaSchema = z.object({
   text: z.string(),
 })
 
+export const contestantReasoningSchema = z.object({
+  type: z.literal('contestant.reasoning'),
+  slot: z.number(),
+  text: z.string(),
+})
+
 export const contestantDoneSchema = z.object({
   type: z.literal('contestant.done'),
   slot: z.number(),
@@ -172,6 +178,7 @@ export const battleEventSchema = z.discriminatedUnion('type', [
   roundChangedSchema,
   contestantStartedSchema,
   contestantDeltaSchema,
+  contestantReasoningSchema,
   contestantDoneSchema,
   contestantFailedSchema,
   judgeDeltaSchema,

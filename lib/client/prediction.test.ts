@@ -27,6 +27,7 @@ function snapshotWith(contestants: Array<{ id: string; slot: number }>): Snapsho
       completion_tokens: null,
       latency_ms: 10,
       output_text: '',
+      reasoning_text: null,
       code: null,
       status: 'ok',
       error_message: null,

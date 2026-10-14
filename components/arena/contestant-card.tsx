@@ -1,6 +1,6 @@
 'use client'
 
-import { Zap } from 'lucide-react'
+import { Brain, Zap } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { contestantStatusLabels } from '@/lib/battle/events'
 import type { ArenaId } from '@/lib/arena/types'
@@ -47,6 +47,37 @@ function StatusChip({ view }: { view: ContestantView }) {
       <span aria-hidden className={cn('h-1.5 w-1.5 rounded-full', TONE_CLASSES[tone].dot)} />
       {statusLabel(view)}
     </span>
+  )
+}
+
+function ReasoningPanel({ reasoning, live }: { reasoning: string; live: boolean }) {
+  if (reasoning.length === 0) return null
+  if (live) {
+    return (
+      <div className="border-b border-hairline bg-void/60 px-4 py-2">
+        <p className="flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-dust">
+          <span aria-hidden className="h-1.5 w-1.5 animate-live rounded-full bg-blaze" />
+          思考中 · {reasoning.length} 字
+        </p>
+        <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-[12px] leading-relaxed text-dust">
+          {reasoning}
+        </p>
+      </div>
+    )
+  }
+  return (
+    <details className="group border-b border-hairline bg-void/40">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-dust transition-colors hover:text-ash">
+        <Brain className="h-3 w-3" />
+        思考过程 · {reasoning.length} 字
+        <span aria-hidden className="ml-auto transition-transform group-open:rotate-90">
+          ›
+        </span>
+      </summary>
+      <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words px-4 pb-3 text-[12px] leading-relaxed text-dust">
+        {reasoning}
+      </p>
+    </details>
   )
 }
 
@@ -140,6 +171,11 @@ export function ContestantCard({
           ) : null}
         </div>
       ) : null}
+
+      <ReasoningPanel
+        reasoning={view.turns.map((turn) => turn.reasoning).join('')}
+        live={streaming && rawText.length === 0}
+      />
 
       {arena === 'chess' && puzzle ? (
         <div className="flex flex-1 flex-col gap-2 px-4 py-3">

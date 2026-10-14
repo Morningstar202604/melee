@@ -93,6 +93,7 @@ function makeSnapshot(): Snapshot {
         completion_tokens: null,
         latency_ms: 1200,
         output_text: '会被撤回的旧文本',
+        reasoning_text: null,
         code: null,
         status: 'ok',
         error_message: null,
@@ -108,6 +109,7 @@ function makeSnapshot(): Snapshot {
         completion_tokens: null,
         latency_ms: null,
         output_text: null,
+        reasoning_text: null,
         code: null,
         status: 'running',
         error_message: null,
@@ -381,6 +383,7 @@ test('快照兜底时按已落库耗时把先手标给最快的完成者', () =>
     completion_tokens: null,
     latency_ms: 800,
     output_text: '第三名',
+    reasoning_text: null,
     code: null,
     status: 'ok',
     error_message: null,
@@ -615,4 +618,36 @@ test('快照重建：残局用 judgements 的 solved 分重建命中战报', () 
   assert.equal(summary.verdicts[0]?.passed, 1)
   assert.equal(summary.verdicts[0]?.total, 1)
   assert.equal(summary.verdicts[0]?.scores.solved, 1)
+})
+
+test('reasoning 片段并入当前回合；刷新后从 reasoning_text / turns JSON 还原', () => {
+  const scheduler = makeScheduler()
+  const store = createBattleStore(scheduler)
+  applyAll(store, [
+    started(1, 'ollama', 'qwen3'),
+    { type: 'contestant.reasoning', slot: 1, text: '先想一步。' },
+    { type: 'contestant.reasoning', slot: 1, text: '再想一步。' },
+    delta(1, '结论'),
+  ])
+  scheduler.runFrame()
+  const liveView = store.getState().contestants[1]!
+  assert.equal(liveView.turns[0]!.reasoning, '先想一步。再想一步。')
+  assert.equal(fullText(liveView), '结论')
+
+  const snapshot = makeSnapshot()
+  snapshot.contestants[0]!.reasoning_text = '旧的思考'
+  store.getState().hydrate(snapshot)
+  assert.equal(store.getState().contestants[1]!.turns[0]!.reasoning, '旧的思考')
+
+  const multi = makeSnapshot()
+  multi.battle.arena = 'banter'
+  multi.contestants[0]!.output_text = JSON.stringify([
+    { round: 1, text: '甲', reasoning: '思考甲' },
+    { round: 2, text: '乙' },
+  ])
+  multi.contestants[1]!.output_text = null
+  store.getState().hydrate(multi)
+  const turns = store.getState().contestants[1]!.turns
+  assert.equal(turns[0]!.reasoning, '思考甲')
+  assert.equal(turns[1]!.reasoning, '')
 })

@@ -149,10 +149,6 @@ async function persistResult(slot: number, result: NewSandboxResult): Promise<vo
   }
 }
 
-export function getHardCodeTopic(topicId: string) {
-  return getCodeTopic(topicId)
-}
-
 export function createHardCodeArena(backend?: SandboxBackend): Arena {
   return {
     id: 'hard-code',

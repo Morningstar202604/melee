@@ -1,6 +1,6 @@
 'use client'
 
-import { Zap } from 'lucide-react'
+import { Brain, Zap } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { contestantStatusLabels } from '@/lib/battle/events'
 import type { ArenaId } from '@/lib/arena/types'
@@ -84,6 +84,33 @@ function Bubble({
           </span>
         </span>
       </header>
+
+      {turn && turn.reasoning.length > 0 ? (
+        streaming && turn.text.length === 0 ? (
+          <div className="border-b border-hairline px-3.5 py-1.5">
+            <p className="flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-dust">
+              <span aria-hidden className="h-1.5 w-1.5 animate-live rounded-full bg-blaze" />
+              思考中 · {turn.reasoning.length} 字
+            </p>
+            <p className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap break-words text-[11.5px] leading-relaxed text-dust">
+              {turn.reasoning}
+            </p>
+          </div>
+        ) : (
+          <details className="group border-b border-hairline">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-dust transition-colors hover:text-ash">
+              <Brain className="h-3 w-3" />
+              思考过程 · {turn.reasoning.length} 字
+              <span aria-hidden className="ml-auto transition-transform group-open:rotate-90">
+                ›
+              </span>
+            </summary>
+            <p className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words px-3.5 pb-2 text-[11.5px] leading-relaxed text-dust">
+              {turn.reasoning}
+            </p>
+          </details>
+        )
+      ) : null}
 
       {turn?.text ? (
         <div className="whitespace-pre-wrap break-words px-3.5 pb-3 pt-1 text-[13.5px] leading-[1.72] text-ink/90">

@@ -9,18 +9,27 @@ test('互辩：1 号执正方、2 号执反方', () => {
   assert.equal(debateSideForSlot(2).name, '反方')
 })
 
-test('互辩第二轮提示词包含对方立论、且不含本轮内容', () => {
+test('互辩第二轮是官方消息数组：user/assistant 交替，带对方立论', () => {
   const own = [{ round: 1, text: '我方立论' }]
   const others = [{ slot: 2, turns: [{ round: 1, text: '对方立论要点' }] }]
-  const prompt = DEBATE_PLAN.buildTurnPrompt('该不该躺平', 2, 1, own, others)
-  assert.ok(prompt.user.includes('该不该躺平'))
-  assert.ok(prompt.user.includes('正方'))
-  assert.ok(prompt.user.includes('对方立论要点'))
-  assert.ok(prompt.user.includes('驳斥'))
-  assert.ok(!prompt.user.includes('我方立论'))
+  const { messages } = DEBATE_PLAN.buildTurnMessages('该不该躺平', 2, 1, own, others)
+  assert.equal(messages.length, 3)
+  assert.equal(messages[0]!.role, 'user')
+  assert.equal(messages[1]!.role, 'assistant')
+  assert.equal(messages[1]!.content, '我方立论')
+
+  const first = String(messages[0]!.content)
+  assert.ok(first.includes('该不该躺平'))
+  assert.ok(first.includes('正方'))
+  assert.ok(first.includes('立论'))
+
+  const rebuttal = String(messages[2]!.content)
+  assert.equal(messages[2]!.role, 'user')
+  assert.ok(rebuttal.includes('对方立论要点'))
+  assert.ok(rebuttal.includes('驳斥'))
 })
 
-test('互辩第三轮提示词是结辩并带上对方全部发言', () => {
+test('互辩第三轮：五段对话交替，结辩带上对方全部发言', () => {
   const others = [
     {
       slot: 2,
@@ -30,10 +39,25 @@ test('互辩第三轮提示词是结辩并带上对方全部发言', () => {
       ],
     },
   ]
-  const prompt = DEBATE_PLAN.buildTurnPrompt('该不该躺平', 3, 1, [{ round: 1, text: '立论A' }], others)
-  assert.ok(prompt.user.includes('结辩'))
-  assert.ok(prompt.user.includes('立论B'))
-  assert.ok(prompt.user.includes('驳斥B'))
+  const { messages } = DEBATE_PLAN.buildTurnMessages(
+    '该不该躺平',
+    3,
+    1,
+    [
+      { round: 1, text: '立论A' },
+      { round: 2, text: '驳斥A' },
+    ],
+    others,
+  )
+  assert.deepEqual(
+    messages.map((message) => message.role),
+    ['user', 'assistant', 'user', 'assistant', 'user'],
+  )
+  assert.equal(messages[3]!.content, '驳斥A')
+  const closing = String(messages[4]!.content)
+  assert.ok(closing.includes('结辩'))
+  assert.ok(closing.includes('立论B'))
+  assert.ok(closing.includes('驳斥B'))
 })
 
 test('互辩轮次标签：立论/驳斥/结辩', () => {
@@ -50,12 +74,24 @@ test('互怼：角色按座位轮转且相邻座位风格不同', () => {
   assert.equal(banterRoleForSlot(5).name, BANTER_ROLES[0]!.name)
 })
 
-test('互怼第二轮提示词引用对方上一轮原话并要求接招', () => {
+test('互怼第二轮：消息数组引用对方原话并要求接招', () => {
   const others = [{ slot: 2, turns: [{ round: 1, text: '“你这方案还不如不做”' }] }]
-  const prompt = BANTER_PLAN.buildTurnPrompt('互怼大会：项目延期谁背锅\n场景：复盘现场', 2, 1, [], others)
-  assert.ok(prompt.user.includes('你这方案还不如不做'))
-  assert.ok(prompt.user.includes('接招'))
-  assert.ok(prompt.user.includes('80 字'))
+  const { messages } = BANTER_PLAN.buildTurnMessages(
+    '互怼大会：项目延期谁背锅\n场景：复盘现场',
+    2,
+    1,
+    [{ round: 1, text: '你才不做呢' }],
+    others,
+  )
+  assert.deepEqual(
+    messages.map((message) => message.role),
+    ['user', 'assistant', 'user'],
+  )
+  assert.equal(messages[1]!.content, '你才不做呢')
+  const poke = String(messages[2]!.content)
+  assert.ok(poke.includes('你这方案还不如不做'))
+  assert.ok(poke.includes('接招'))
+  assert.ok(poke.includes('80 字'))
 })
 
 test('吵架题库：场景串包含标题与场景描述', () => {

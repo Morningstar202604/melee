@@ -599,9 +599,9 @@ test('多轮编排：两轮顺序推进、回合事件齐全、第二轮可见�
   const plan: TurnPlan = {
     totalRounds: 2,
     roundLabel: (round) => (round === 1 ? '第一轮' : '第二轮'),
-    buildTurnPrompt: (topic, round, slot, _own, others) => {
+    buildTurnMessages: (topic, round, slot, _own, others) => {
       promptCalls.push({ round, slot, others: JSON.stringify(others) })
-      return { user: `R${round}/S${slot} 题目：${topic}` }
+      return { messages: [{ role: 'user', content: `R${round}/S${slot} 题目：${topic}` }] }
     },
   }
   const multiArena: Arena = { ...makeArena(), id: 'banter', plan, maxContestants: 2 }

@@ -9,11 +9,19 @@ function schemaText(): string {
   return readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'schema.sql'), 'utf8')
 }
 
+function ensureColumn(db: Db, table: string, column: string, ddl: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name?: unknown }>
+  if (columns.some((row) => row.name === column)) return
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`)
+}
+
 export function openDb(file: string): Db {
   mkdirSync(dirname(file), { recursive: true })
   const handle = new DatabaseSync(file)
   handle.exec('PRAGMA journal_mode=WAL;')
   handle.exec(schemaText())
+  // 旧库迁移：CREATE TABLE IF NOT EXISTS 不会补列
+  ensureColumn(handle, 'contestants', 'reasoning_text', 'TEXT')
   return handle
 }
 

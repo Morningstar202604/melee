@@ -46,6 +46,7 @@ export interface NewContestant {
   completionTokens?: number | null
   latencyMs?: number | null
   outputText?: string | null
+  reasoningText?: string | null
   code?: string | null
   errorMessage?: string | null
 }
@@ -66,6 +67,7 @@ export interface ContestantRow {
   completion_tokens: number | null
   latency_ms: number | null
   output_text: string | null
+  reasoning_text: string | null
   code: string | null
   status: string
   error_message: string | null
@@ -76,6 +78,7 @@ export interface ContestantPatch {
   completionTokens?: number | null
   latencyMs?: number | null
   outputText?: string | null
+  reasoningText?: string | null
   code?: string | null
   status?: DbContestantStatus
   errorMessage?: string | null
@@ -218,6 +221,7 @@ function contestantFromRow(row: Record<string, unknown>): ContestantRow {
     completion_tokens: row.completion_tokens == null ? null : Number(row.completion_tokens),
     latency_ms: row.latency_ms == null ? null : Number(row.latency_ms),
     output_text: row.output_text == null ? null : String(row.output_text),
+    reasoning_text: row.reasoning_text == null ? null : String(row.reasoning_text),
     code: row.code == null ? null : String(row.code),
     status: String(row.status),
     error_message: row.error_message == null ? null : String(row.error_message),
@@ -318,7 +322,7 @@ export async function insertContestant(c: NewContestant): Promise<string> {
   await enqueueWrite(() => {
     getDb()
       .prepare(
-        'INSERT INTO contestants (id, battle_id, slot, provider_id, model_id, position_index, prompt_tokens, completion_tokens, latency_ms, output_text, code, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO contestants (id, battle_id, slot, provider_id, model_id, position_index, prompt_tokens, completion_tokens, latency_ms, output_text, reasoning_text, code, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(
         id,
@@ -331,6 +335,7 @@ export async function insertContestant(c: NewContestant): Promise<string> {
         c.completionTokens ?? null,
         c.latencyMs ?? null,
         c.outputText ?? null,
+        c.reasoningText ?? null,
         c.code ?? null,
         c.status,
         c.errorMessage ?? null,
@@ -367,7 +372,7 @@ export async function createBattleWithContestants(
         contestantIds.set(c.slot, cid)
         getDb()
           .prepare(
-            'INSERT INTO contestants (id, battle_id, slot, provider_id, model_id, position_index, prompt_tokens, completion_tokens, latency_ms, output_text, code, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO contestants (id, battle_id, slot, provider_id, model_id, position_index, prompt_tokens, completion_tokens, latency_ms, output_text, reasoning_text, code, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           )
           .run(
             cid,
@@ -380,6 +385,7 @@ export async function createBattleWithContestants(
             c.completionTokens ?? null,
             c.latencyMs ?? null,
             c.outputText ?? null,
+            c.reasoningText ?? null,
             c.code ?? null,
             c.status,
             c.errorMessage ?? null,
@@ -401,6 +407,7 @@ export async function updateContestantResult(id: string, patch: ContestantPatch)
   if ('completionTokens' in patch) push('completion_tokens', patch.completionTokens)
   if ('latencyMs' in patch) push('latency_ms', patch.latencyMs)
   if ('outputText' in patch) push('output_text', patch.outputText)
+  if ('reasoningText' in patch) push('reasoning_text', patch.reasoningText)
   if ('code' in patch) push('code', patch.code)
   if ('status' in patch) push('status', patch.status)
   if ('errorMessage' in patch) push('error_message', patch.errorMessage)

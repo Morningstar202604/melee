@@ -2,6 +2,8 @@ import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createOpenAI } from '@ai-sdk/openai'
 import type { LanguageModel } from 'ai'
+import { MockLanguageModelV4 } from 'ai/test'
+import type { LanguageModelV4StreamPart } from '@ai-sdk/provider'
 import { startFakeServer, type FakeOpenAIServer } from '../../test/fixtures/fake-openai-server.ts'
 import { streamModel, type StreamEvent } from './stream.ts'
 
@@ -158,4 +160,82 @@ test('不可达端点映射为 provider_error 且不 500 / 不抛到调用方', 
   if (last?.type !== 'error') return
   assert.equal(last.status, 'provider_error')
   assert.ok(last.message.includes('Ollama（本地）'))
+})
+
+test('官方 reasoning 流：reasoning-delta 映射为 reasoning 事件，不污染正文与 done', async () => {
+  const usage = {
+    inputTokens: { total: 3, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
+    outputTokens: { total: 2, text: undefined, reasoning: undefined },
+  }
+  const model = new MockLanguageModelV4({
+    doStream: async () => ({
+      stream: new ReadableStream<LanguageModelV4StreamPart>({
+        start(controller) {
+          controller.enqueue({ type: 'stream-start', warnings: [] })
+          controller.enqueue({ type: 'reasoning-start', id: 'r0' })
+          controller.enqueue({ type: 'reasoning-delta', id: 'r0', delta: '让我想想' })
+          controller.enqueue({ type: 'reasoning-delta', id: 'r0', delta: '……' })
+          controller.enqueue({ type: 'reasoning-end', id: 'r0' })
+          controller.enqueue({ type: 'text-start', id: '0' })
+          controller.enqueue({ type: 'text-delta', id: '0', delta: '答案' })
+          controller.enqueue({ type: 'text-end', id: '0' })
+          controller.enqueue({ type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage })
+          controller.close()
+        },
+      }),
+    }),
+  })
+
+  const events: StreamEvent[] = []
+  for await (const event of streamModel(model, [{ role: 'user', content: 'x' }], {
+    signal: AbortSignal.timeout(5000),
+    providerLabel: 'Mock',
+  })) {
+    events.push(event)
+  }
+
+  assert.deepEqual(
+    events.map((event) => event.type),
+    ['reasoning', 'reasoning', 'delta', 'done'],
+  )
+  const reasoning = events
+    .filter((event) => event.type === 'reasoning')
+    .map((event) => (event.type === 'reasoning' ? event.text : ''))
+    .join('')
+  assert.equal(reasoning, '让我想想……')
+  const text = events.map((event) => (event.type === 'delta' ? event.text : '')).join('')
+  assert.equal(text, '答案')
+})
+
+test('只有 reasoning、没有正文时仍判 empty（翻车口径不变）', async () => {
+  const usage = {
+    inputTokens: { total: 3, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
+    outputTokens: { total: 0, text: undefined, reasoning: undefined },
+  }
+  const model = new MockLanguageModelV4({
+    doStream: async () => ({
+      stream: new ReadableStream<LanguageModelV4StreamPart>({
+        start(controller) {
+          controller.enqueue({ type: 'stream-start', warnings: [] })
+          controller.enqueue({ type: 'reasoning-start', id: 'r0' })
+          controller.enqueue({ type: 'reasoning-delta', id: 'r0', delta: '想了半天' })
+          controller.enqueue({ type: 'reasoning-end', id: 'r0' })
+          controller.enqueue({ type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage })
+          controller.close()
+        },
+      }),
+    }),
+  })
+
+  const events: StreamEvent[] = []
+  for await (const event of streamModel(model, [{ role: 'user', content: 'x' }], {
+    signal: AbortSignal.timeout(5000),
+    providerLabel: 'Mock',
+  })) {
+    events.push(event)
+  }
+  const last = events.at(-1)
+  assert.equal(last?.type, 'error')
+  if (last?.type !== 'error') return
+  assert.equal(last.status, 'empty')
 })

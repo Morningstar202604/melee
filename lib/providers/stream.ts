@@ -12,6 +12,7 @@ export type ContestantStatus =
 
 export type StreamEvent =
   | { type: 'delta'; text: string }
+  | { type: 'reasoning'; text: string }
   | { type: 'done'; usage: { prompt: number; completion: number } | null; latencyMs: number }
   | { type: 'error'; status: ContestantStatus; message: string }
 
@@ -113,6 +114,11 @@ export async function* streamModel(
         if (!part.text) continue
         emitted += part.text.length
         yield { type: 'delta', text: part.text }
+        continue
+      }
+      if (part.type === 'reasoning-delta') {
+        if (!part.text) continue
+        yield { type: 'reasoning', text: part.text }
         continue
       }
       if (part.type === 'error') {
