@@ -86,6 +86,7 @@ export function createDebateArena(deps: Partial<MultiTurnDeps> = {}): Arena {
   return {
     id: 'debate',
     plan: DEBATE_PLAN,
+    maxOutputTokens: 2000,
     axes: DEBATE_AXES,
     minContestants: 2,
     maxContestants: 2,

@@ -100,6 +100,7 @@ export function createBanterArena(deps: Partial<MultiTurnDeps> = {}): Arena {
   return {
     id: 'banter',
     plan: BANTER_PLAN,
+    maxOutputTokens: 800,
     axes: BANTER_AXES,
     minContestants: 2,
     maxContestants: 4,

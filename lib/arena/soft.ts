@@ -17,6 +17,7 @@ export function createSoftArena(deps: Partial<SoftArenaDeps> = {}): Arena {
 
   return {
     id: 'soft',
+    maxOutputTokens: 2500,
     buildPrompt: (topic: string) => ({
       system:
         '你是「AI 大乱斗」的一名参赛选手。请严格按题目规定的格式、结构与字数作答：' +
