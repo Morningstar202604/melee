@@ -1,96 +1,102 @@
 # melee · AI 大乱斗
 
-多个大模型同场竞技的擂台。选赛场 → 选题 → 开打 → 实时看流式输出 → 观众投票、押注与 AI 裁判双轨判定 → 出一句话战报。
+**English** | [中文](README.zh-CN.md)
 
-**产品目的是观赏性与情绪价值，不是评测能力。** 翻车本身就是观赏内容。
+An arena where multiple LLMs compete on the same stage: pick an arena, set a topic, let them fight, watch their streams side by side in real time, vote and bet as a spectator, and read the result from human votes plus an AI judge.
 
-## 快速启动
+**The goal is entertainment and emotional value, not model benchmarking.** Watching a model spectacularly trip over itself is part of the show.
+
+## Screenshots
+
+| Arena setup | Contestants & live preflight |
+|---|---|
+| ![Arena setup](docs/screenshots/01-arena-setup.png) | ![Lineup](docs/screenshots/02-lineup-preflight.png) |
+
+| Battle in progress · live streaming | Report · human votes + AI judge |
+|---|---|
+| ![Battle live](docs/screenshots/04-battle-live.png) | ![Report](docs/screenshots/05-battle-report.png) |
+
+| Hard-code · real sandbox test runs | Solo chat · skip the arena, just talk |
+|---|---|
+| ![Hard-code report](docs/screenshots/07-hardcode-report.png) | ![Solo chat](docs/screenshots/06-solo-chat.png) |
+
+## Quick start
 
 ```bash
 npm install && npm run dev
 ```
 
-打开 http://localhost:3000，默认沙箱走 Pyodide WASM，无需 Docker。
+Open http://localhost:3000. The default sandbox is Pyodide (WASM) — no Docker needed.
 
-## 界面预览
+## Arenas
 
-| 擂台首页 · 选赛场 | 点大将 · 全员预检 |
-|---|---|
-| ![擂台首页](docs/screenshots/01-arena-setup.png) | ![点大将](docs/screenshots/02-lineup-preflight.png) |
+- **Soft arena** — same topic, all contestants answer (debate / creative / roleplay). Human votes and an AI judge run as two parallel tracks — no composite score.
+- **Debate** — two contestants, three rounds (opening → rebuttal → closing). Judged on logic / evidence / clash.
+- **Banter battle** — 2–4 contestants, three rounds. Roles are assigned by seat; judged on hooks / sting / staying civil (crossing the line costs points).
+- **Hard-code** — Python problems executed for real in a Pyodide WASM sandbox and scored by test pass rate (no LLM judge required).
+- **Chess endgame** — white-to-move mate-in-N puzzles; moves validated with chess.js plus a forced-mate search.
 
-| 对战中 · 实时流式输出 | 战报 · 人类投票 + AI 裁判 |
-|---|---|
-| ![对战中](docs/screenshots/04-battle-live.png) | ![战报](docs/screenshots/05-battle-report.png) |
+Every arena supports **pre-match betting** — stake on a contestant before the battle ends; results are settled with public rules and your record is kept locally.
 
-| 硬战场 · 沙箱真跑测试用例 | 单挑台 · 免建场直接聊 |
-|---|---|
-| ![硬战场](docs/screenshots/07-hardcode-report.png) | ![单挑台](docs/screenshots/06-solo-chat.png) |
+## Providers (bring your own key)
 
-## 选手池（用户自带 Key）
+Keys are sent in the request body when a battle starts and live only in server memory for that battle — never written to the database, never logged.
 
-前端开打时从请求体带 Key，服务端仅存在于当次对战内存，不写库、不进日志。
+Default pool: Ollama (local), DeepSeek, SiliconFlow, Zhipu GLM, Moonshot Kimi, Alibaba DashScope (directly reachable from mainland China); OpenAI / Anthropic / Google are marked "proxy required".
 
-默认选手池：Ollama（本地）、DeepSeek、硅基流动、智谱 GLM、Moonshot Kimi、阿里云百炼（国内可直连）；OpenAI / Anthropic / Google 标记为「需代理」。
+## Sandbox isolation & production notice
 
-## 赛道
-
-- **软战场**：同题抢答（辩论 / 创意 / 角色扮演），人类投票 + LLM 裁判双轨判定，不合成总分
-- **互辩场**：两名选手三轮制辩论（立论 → 驳斥 → 结辩），裁判按逻辑 / 论据 / 交锋打分
-- **互怼大会**：2~4 人三轮互怼，角色按座位号自动分配；裁判按接梗 / 杀伤 / 分寸打分（越线扣分）
-- **硬战场**：Python 代码题，默认在 Pyodide WASM 沙箱真实执行，按通过率判定（无需 LLM 裁判配置）
-- **残局场**：国际象棋残局（白先 N 步杀），着法用 chess.js 真校验 + 强制将杀搜索判定
-
-所有赛场都支持观众**赛前押注**（对战结束前可押一名选手，按公开口径结算胜负，本地记录战绩）。
-
-## 沙箱隔离级别与上线警示
-
-| 后端 | 隔离级别 | 环境变量 |
+| Backend | Isolation level | Env |
 |---|---|---|
-| Pyodide（默认） | WASM 语言级沙箱 | `SANDBOX_BACKEND=pyodide` |
-| Judge0 CE（可选） | OS 级容器隔离 | `SANDBOX_BACKEND=judge0` |
+| Pyodide (default) | WASM language-level sandbox | `SANDBOX_BACKEND=pyodide` |
+| Judge0 CE (optional) | OS-level container isolation | `SANDBOX_BACKEND=judge0` |
 
-> ⚠️ 默认后端的隔离级别弱于 OS 级隔离。在公网开放给陌生用户之前，**必须先启用 Judge0（或等价的 OS 级隔离后端）**，否则只能用于本地 / 自用 / 小范围可信环境。详见 [设计 spec §6.2](docs/superpowers/specs/2026-10-09-ai-battle-arena-design.md)。
+> ⚠️ The default backend is **not** as strong as OS-level isolation. Before opening this to untrusted users on the public internet, **enable Judge0 (or an equivalent OS-level sandbox)** — otherwise keep it to local / personal / trusted use. See [design spec §6.2](docs/superpowers/specs/2026-10-09-ai-battle-arena-design.md) (Chinese).
 
-## 技术栈
+## Tech stack
 
-Next.js 16（App Router / Turbopack）· Node 24 · Vercel AI SDK 7 · node:sqlite · Pyodide · Zustand · Zod · node:test
+Next.js 16 (App Router / Turbopack) · Node 24 · Vercel AI SDK 7 · node:sqlite · Pyodide · Zustand · Zod · node:test
 
-## 目录结构
+## Project structure
 
 ```
 app/
-  page.tsx                        擂台首页
-  battle/[id]/page.tsx            观战页
-  api/battle/run                  建对战
-  api/battle/[id]/stream          SSE 事件流
-  api/battle/[id]/vote            投票
-  api/battle/[id]/cancel          取消
-  api/battle/[id]/snapshot        断线重连快照
-  api/providers/ping + models     预检 + 模型列表
+  page.tsx                        Arena setup (home)
+  battle/[id]/page.tsx            Spectator view
+  api/battle/run                  Create a battle
+  api/battle/[id]/stream          SSE event stream
+  api/battle/[id]/vote            Voting
+  api/battle/[id]/cancel          Cancel
+  api/battle/[id]/snapshot        Reconnect snapshot
+  api/providers/ping + models     Provider preflight & model list
 lib/
-  arena/types.ts  soft.ts  hard-code.ts   赛场抽象与实现
-  battle/runner.ts  events.ts  registry.ts  编排 + 事件契约 + 内存注册表
-  providers/registry.ts  stream.ts        选手池 + AI SDK 流式收口
-  judge/runner.ts                        双轮位置对调裁判
-  db/client.ts  schema.sql  repo.ts       SQLite 封装
-  sandbox/backend.ts  pyodide-worker.ts  judge0.ts  沙箱接口 + 两个实现
-  log/redact.ts                          日志脱敏
-components/arena/                       擂台 / 观战 / 卡片 / 赛况条 / 投票条 / 战报
-workers/pyodide-worker.mjs              Pyodide Worker 入口
+  arena/        Arena abstraction and implementations (soft / debate / banter / hard-code / chess)
+  battle/       Orchestration, event contract, in-memory registry
+  providers/    Provider registry and AI SDK streaming adapter
+  judge/        Judge with position-swapped double rounds
+  db/           node:sqlite wrapper
+  sandbox/      Sandbox interface + Pyodide / Judge0 backends
+  log/          Log redaction
+components/arena/   UI: setup / spectator / cards / scoreboard / voting / report
+workers/            Pyodide worker entry
 ```
 
-## 测试
+## Testing
 
 ```bash
-npm test            # 全部 node:test 用例（含沙箱真实执行）
-npm run build       # 生产构建（tsc + Turbopack）
+npm test        # all node:test suites (includes real sandbox execution)
+npm run build   # production build (type check + Turbopack)
 ```
 
-## 配置
+## Configuration
 
-复制 `.env.example` 为 `.env`，按需修改。参见 `.env.example` 中的注释。
+Copy `.env.example` to `.env` and adjust as needed — every variable is documented inline.
 
-## 文档
+## Documentation (Chinese)
 
-- [设计 spec（第一期）](docs/superpowers/specs/2026-10-09-ai-battle-arena-design.md) · [实现计划](docs/superpowers/plans/2026-10-10-melee-phase1.md)
-- 审计与工程记录：[项目审计](docs/audit/2026-10-13-project-audit.md) · [官方符合性](docs/audit/2026-10-13-official-conformance.md) · [编排与隔离](docs/audit/2026-10-13-orchestration-and-isolation.md) · [生态采用清单](docs/audit/2026-10-13-ecosystem-adoption-backlog.md) · [端点收口](docs/audit/2026-10-15-endpoint-hardening.md)
+- [Design spec (phase 1)](docs/superpowers/specs/2026-10-09-ai-battle-arena-design.md) · [Implementation plan](docs/superpowers/plans/2026-10-10-melee-phase1.md)
+- Audits & engineering records: [project audit](docs/audit/2026-10-13-project-audit.md) · [official conformance](docs/audit/2026-10-13-official-conformance.md) · [orchestration & isolation](docs/audit/2026-10-13-orchestration-and-isolation.md) · [ecosystem adoption](docs/audit/2026-10-13-ecosystem-adoption-backlog.md) · [endpoint hardening](docs/audit/2026-10-15-endpoint-hardening.md)
+
+## License
+
+[MIT](LICENSE)
