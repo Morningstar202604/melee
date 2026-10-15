@@ -42,3 +42,15 @@ export function withSecurityHeaders(init?: ResponseInit): ResponseInit {
 export function secureResponse(body: BodyInit | null, init?: ResponseInit): Response {
   return new Response(body, withSecurityHeaders(init))
 }
+
+/**
+ * 给已构建好的 Response（如 SDK 的流式响应、SSE 长连接）补安全头。
+ * 通过重建 Response 保留原 body 流、状态与既有头；不会覆盖同名头。
+ */
+export function hardenResponse(response: Response): Response {
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: withSecurityHeaders({ headers: response.headers }).headers,
+  })
+}

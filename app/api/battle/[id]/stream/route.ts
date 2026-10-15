@@ -1,4 +1,6 @@
 import { createUIMessageStream } from 'ai'
+import { spectatorLimiter } from '../../../../../lib/battle/ratelimit.ts'
+import { clientIp, rateLimitedResponse } from '../../../../../lib/http/request.ts'
 import {
   closesStream,
   getBattleHandle,
@@ -7,6 +9,7 @@ import {
 } from '../../../../../lib/battle/registry.ts'
 import type { BattleEvent } from '../../../../../lib/battle/events.ts'
 import { BATTLE_DATA_PART, type BattleUIMessage } from '../../../../../lib/battle/ui-stream.ts'
+import { hardenResponse, secureResponse } from '../../../../../lib/security.ts'
 
 export const runtime = 'nodejs'
 
@@ -23,11 +26,16 @@ export async function GET(
   request: Request,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  const ip = clientIp(request)
+  if (!spectatorLimiter.allow(ip)) {
+    return rateLimitedResponse(spectatorLimiter, '次观战连接')
+  }
+
   const { id } = await ctx.params
   const handle = getBattleHandle(id)
   if (!handle) {
-    return Response.json(
-      { error: '对战不存在或已回收，请从 /api/battle/' + id + '/snapshot 获取战报' },
+    return secureResponse(
+      JSON.stringify({ error: '对战不存在或已回收，请从 /api/battle/' + id + '/snapshot 获取战报' }),
       { status: 404 },
     )
   }
@@ -128,12 +136,14 @@ export async function GET(
     },
   })
 
-  return new Response(responseStream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    },
-  })
+  return hardenResponse(
+    new Response(responseStream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      },
+    }),
+  )
 }

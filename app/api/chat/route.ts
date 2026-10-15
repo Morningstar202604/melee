@@ -2,6 +2,9 @@ import { convertToModelMessages, createUIMessageStreamResponse, streamText, toUI
 import { getProvider, resolveModelRef, DEFAULT_MODEL_PROVIDER_ID } from '../../../lib/providers/registry.ts'
 import { logger } from '../../../lib/log/logger.ts'
 import { redact } from '../../../lib/log/redact.ts'
+import { chatLimiter } from '../../../lib/battle/ratelimit.ts'
+import { clientIp, rateLimitedResponse, readJsonCapped } from '../../../lib/http/request.ts'
+import { hardenResponse, secureResponse } from '../../../lib/security.ts'
 
 export const runtime = 'nodejs'
 
@@ -11,6 +14,9 @@ const MAX_MESSAGES = 40
 const MAX_MESSAGE_CHARS = 8000
 const MAX_API_KEY_LENGTH = 500
 const MAX_MODEL_ID_LENGTH = 200
+// 40 条 × 8000 字符的 CJK 每字符 3 字节 ≈ 960KB；emoji 场景按 UTF-16/UTF-8
+// 膨胀也不会到 2MB 的一半。上限要 ≥ 各字段上限的字节和，否则合法请求会被 413。
+const MAX_BODY_BYTES = 2 * 1024 * 1024
 
 interface ChatBody {
   messages?: unknown
@@ -24,12 +30,15 @@ function asString(value: unknown): string {
 }
 
 export async function POST(request: Request) {
-  let body: ChatBody
-  try {
-    body = (await request.json()) as ChatBody
-  } catch {
-    return Response.json({ error: '请求体不是合法 JSON' }, { status: 400 })
+  const ip = clientIp(request)
+  if (!chatLimiter.allow(ip)) {
+    logger.warn('聊天限流拒绝', { ip })
+    return rateLimitedResponse(chatLimiter, '轮对话')
   }
+
+  const read = await readJsonCapped<ChatBody>(request, MAX_BODY_BYTES)
+  if (!read.ok) return read.response
+  const body = read.body ?? {}
 
   const providerId = asString(body.providerId)
   const modelId = asString(body.modelId)
@@ -37,22 +46,26 @@ export async function POST(request: Request) {
   const messages = Array.isArray(body.messages) ? (body.messages as UIMessage[]) : []
 
   if (!providerId || !modelId || !apiKey) {
-    return Response.json({ error: 'providerId / modelId / apiKey 必填' }, { status: 400 })
+    return secureResponse(JSON.stringify({ error: 'providerId / modelId / apiKey 必填' }), {
+      status: 400,
+    })
   }
   if (modelId.length > MAX_MODEL_ID_LENGTH || apiKey.length > MAX_API_KEY_LENGTH) {
-    return Response.json({ error: 'modelId 或 apiKey 超长' }, { status: 400 })
+    return secureResponse(JSON.stringify({ error: 'modelId 或 apiKey 超长' }), { status: 400 })
   }
   const provider = getProvider(providerId)
   if (!provider) {
-    return Response.json({ error: `未知 provider：${providerId}` }, { status: 400 })
+    return secureResponse(JSON.stringify({ error: `未知 provider：${providerId}` }), { status: 400 })
   }
   if (messages.length === 0 || messages.length > MAX_MESSAGES) {
-    return Response.json({ error: `messages 数量需在 1~${MAX_MESSAGES}` }, { status: 400 })
+    return secureResponse(JSON.stringify({ error: `messages 数量需在 1~${MAX_MESSAGES}` }), {
+      status: 400,
+    })
   }
   for (const message of messages) {
     const text = JSON.stringify(message?.parts ?? '')
     if (text.length > MAX_MESSAGE_CHARS) {
-      return Response.json({ error: '单条消息超长' }, { status: 400 })
+      return secureResponse(JSON.stringify({ error: '单条消息超长' }), { status: 400 })
     }
   }
 
@@ -73,18 +86,20 @@ export async function POST(request: Request) {
       },
     })
     // 官方推荐组合（toUIMessageStreamResponse 已标记 deprecated）
-    return createUIMessageStreamResponse({
-      stream: toUIMessageStream({
-        stream: result.stream,
-        sendReasoning: true,
-        // 把底层错误转成可读文本（默认是 "An error occurred."）
-        onError: (error) =>
-          redact(error instanceof Error ? error.message : String(error), [apiKey]),
+    return hardenResponse(
+      createUIMessageStreamResponse({
+        stream: toUIMessageStream({
+          stream: result.stream,
+          sendReasoning: true,
+          // 把底层错误转成可读文本（默认是 "An error occurred."）
+          onError: (error) =>
+            redact(error instanceof Error ? error.message : String(error), [apiKey]),
+        }),
       }),
-    })
+    )
   } catch (error) {
     const message = redact(error instanceof Error ? error.message : String(error), [apiKey])
     logger.error('单挑台调用失败', { error: message })
-    return Response.json({ error: `调用失败：${message}` }, { status: 500 })
+    return secureResponse(JSON.stringify({ error: `调用失败：${message}` }), { status: 500 })
   }
 }

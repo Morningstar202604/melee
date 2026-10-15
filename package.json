@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test \"lib/**/*.test.ts\""
+    "test": "node --test \"app/**/*.test.ts\" \"lib/**/*.test.ts\""
   },
   "dependencies": {
     "@ai-sdk/alibaba": "^2.0.66",

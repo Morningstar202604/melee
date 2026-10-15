@@ -1,10 +1,17 @@
-import { createModel, getProvider } from '@/lib/providers/registry'
-import { streamModel } from '@/lib/providers/stream'
-import { redact } from '@/lib/log/redact'
+import { createModel, getProvider } from '../../../../lib/providers/registry.ts'
+import { streamModel } from '../../../../lib/providers/stream.ts'
+import { redact } from '../../../../lib/log/redact.ts'
+import { probeLimiter } from '../../../../lib/battle/ratelimit.ts'
+import { clientIp, rateLimitedResponse, readJsonCapped } from '../../../../lib/http/request.ts'
+import { secureResponse } from '../../../../lib/security.ts'
 
 export const runtime = 'nodejs'
 
 const PING_TIMEOUT_MS = 20000
+const MAX_BODY_BYTES = 64 * 1024
+const MAX_CONTESTANTS = 8
+const MAX_MODEL_ID_LENGTH = 200
+const MAX_API_KEY_LENGTH = 500
 
 interface PingContestant {
   slot: number
@@ -21,14 +28,15 @@ interface PingResult {
 }
 
 export async function POST(request: Request) {
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return Response.json({ error: '请求体不是合法 JSON' }, { status: 400 })
+  const ip = clientIp(request)
+  if (!probeLimiter.allow(ip)) {
+    return rateLimitedResponse(probeLimiter, '次预检请求')
   }
 
-  const raw = (body as { contestants?: unknown } | null)?.contestants
+  const read = await readJsonCapped<{ contestants?: unknown }>(request, MAX_BODY_BYTES)
+  if (!read.ok) return read.response
+
+  const raw = (read.body ?? {})?.contestants
   const contestants: PingContestant[] = Array.isArray(raw)
     ? raw.map((entry, index) => {
         const c = (entry ?? {}) as Record<string, unknown>
@@ -42,11 +50,30 @@ export async function POST(request: Request) {
     : []
 
   if (contestants.length === 0) {
-    return Response.json({ error: 'contestants 不能为空' }, { status: 400 })
+    return secureResponse(JSON.stringify({ error: 'contestants 不能为空' }), { status: 400 })
+  }
+  if (contestants.length > MAX_CONTESTANTS) {
+    return secureResponse(JSON.stringify({ error: `最多支持 ${MAX_CONTESTANTS} 名选手` }), {
+      status: 400,
+    })
+  }
+  for (const [index, contestant] of contestants.entries()) {
+    if (contestant.modelId.length > MAX_MODEL_ID_LENGTH) {
+      return secureResponse(
+        JSON.stringify({ error: `第 ${index + 1} 名选手的模型 ID 超出长度上限` }),
+        { status: 400 },
+      )
+    }
+    if (contestant.apiKey.length > MAX_API_KEY_LENGTH) {
+      return secureResponse(
+        JSON.stringify({ error: `第 ${index + 1} 名选手的 API Key 超出长度上限` }),
+        { status: 400 },
+      )
+    }
   }
 
   const results = await Promise.all(contestants.map((c) => pingOne(c)))
-  return Response.json({ results })
+  return secureResponse(JSON.stringify({ results }))
 }
 
 async function pingOne(contestant: PingContestant): Promise<PingResult> {

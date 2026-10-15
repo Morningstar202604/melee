@@ -1,7 +1,8 @@
 import { after } from 'next/server.js'
 import { arenaLimits, getArena } from '../../../../lib/arena/index.ts'
 import type { ArenaId, ContestantInput } from '../../../../lib/arena/types.ts'
-import { allow } from '../../../../lib/battle/ratelimit.ts'
+import { battleLimiter } from '../../../../lib/battle/ratelimit.ts'
+import { clientIp, rateLimitedResponse, readJsonCapped } from '../../../../lib/http/request.ts'
 import {
   startBattle,
   type BattleDeps,
@@ -16,16 +17,7 @@ export const runtime = 'nodejs'
 const MAX_TOPIC_LENGTH = 2000
 const MAX_API_KEY_LENGTH = 500
 const MAX_MODEL_ID_LENGTH = 200
-
-function clientIp(request: Request): string {
-  const forwardedFor = request.headers.get('x-forwarded-for')
-  if (forwardedFor) {
-    const first = forwardedFor.split(',')[0]?.trim()
-    if (first) return first
-  }
-  const realIp = request.headers.get('x-real-ip')?.trim()
-  return realIp || 'unknown'
-}
+const MAX_BODY_BYTES = 64 * 1024
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -69,21 +61,14 @@ function buildJudgeModelRef(): string | undefined {
 
 export async function POST(request: Request) {
   const ip = clientIp(request)
-  if (!allow(ip)) {
-    logger.warn('限流拒绝', { ip })
-    return secureResponse(
-      JSON.stringify({ error: '请求过于频繁：每 IP 每分钟最多发起 5 场对战' }),
-      { status: 429 },
-    )
+  if (!battleLimiter.allow(ip)) {
+    logger.warn('限流拒绝', { ip, profile: battleLimiter.profile.label })
+    return rateLimitedResponse(battleLimiter, '场对战')
   }
 
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return secureResponse(JSON.stringify({ error: '请求体不是合法 JSON' }), { status: 400 })
-  }
-  const payload = (body ?? {}) as Record<string, unknown>
+  const read = await readJsonCapped(request, MAX_BODY_BYTES)
+  if (!read.ok) return read.response
+  const payload = (read.body ?? {}) as Record<string, unknown>
 
   const arena = asString(payload.arena)
   if (!arena) {

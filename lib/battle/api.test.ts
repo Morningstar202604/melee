@@ -4,8 +4,10 @@ import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { POST as runBattle } from '../../app/api/battle/run/route.ts'
 import { POST as voteBattle } from '../../app/api/battle/[id]/vote/route.ts'
+import { POST as predictBattle } from '../../app/api/battle/[id]/predict/route.ts'
 import { POST as cancelBattleRoute } from '../../app/api/battle/[id]/cancel/route.ts'
 import { GET as getSnapshotRoute } from '../../app/api/battle/[id]/snapshot/route.ts'
+import { GET as getStreamRoute } from '../../app/api/battle/[id]/stream/route.ts'
 import { cancelBattle } from './runner.ts'
 import {
   createBattleHandle,
@@ -208,5 +210,127 @@ test('SSE 内存契约：先 subscribe 再发 backlog，重叠事件不重不漏
   )
 
   unsubscribe()
+  unregisterBattle(id)
+})
+
+test('vote：body 为 null / 数组 / 字符串时返回 400 而非 500', async () => {
+  for (const raw of ['null', '[]', '"str"']) {
+    const request = new Request('http://localhost:3000/api/battle/b/vote', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: raw,
+    })
+    const response = await voteBattle(request, { params: Promise.resolve({ id: 'b' }) })
+    assert.equal(response.status, 400, `body=${raw} 应为可读 400`)
+  }
+})
+
+test('vote / predict：voterKey 超长返回 400', async () => {
+  const longKey = 'v'.repeat(129)
+  const voteResponse = await voteBattle(
+    voteRequest('any-battle', { contestantId: 'c-1', voterKey: longKey }),
+    { params: Promise.resolve({ id: 'any-battle' }) },
+  )
+  assert.equal(voteResponse.status, 400)
+  const predictResponse = await predictBattle(
+    voteRequest('any-battle', { contestantId: 'c-1', voterKey: longKey }),
+    { params: Promise.resolve({ id: 'any-battle' }) },
+  )
+  assert.equal(predictResponse.status, 400)
+})
+
+test('run / vote：请求体超体积上限返回 413', async () => {
+  const bigRun = new Request(runUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.8' },
+    body: 'x'.repeat(70_000),
+  })
+  const runResponse = await runBattle(bigRun)
+  assert.equal(runResponse.status, 413)
+
+  const bigVote = new Request('http://localhost:3000/api/battle/b/vote', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: 'x'.repeat(5_000),
+  })
+  const voteResponse = await voteBattle(bigVote, { params: Promise.resolve({ id: 'b' }) })
+  assert.equal(voteResponse.status, 413)
+})
+
+test('spectator 档：snapshot 打满 60 次后 cancel / stream 同 IP 立即 429', async () => {
+  const ip = '203.0.113.61'
+  const snapshotRequestWithIp = () =>
+    new Request('http://localhost:3000/api/battle/no-such/snapshot', {
+      headers: { 'x-forwarded-for': ip },
+    })
+  for (let i = 0; i < 60; i += 1) {
+    const response = await getSnapshotRoute(snapshotRequestWithIp(), {
+      params: Promise.resolve({ id: 'no-such' }),
+    })
+    assert.equal(response.status, 404, `第 ${i + 1} 次应放行`)
+  }
+  const snapshotLimited = await getSnapshotRoute(snapshotRequestWithIp(), {
+    params: Promise.resolve({ id: 'no-such' }),
+  })
+  assert.equal(snapshotLimited.status, 429)
+
+  const cancelLimited = await cancelBattleRoute(
+    new Request('http://localhost:3000/api/battle/no-such/cancel', {
+      method: 'POST',
+      headers: { 'x-forwarded-for': ip },
+    }),
+    { params: Promise.resolve({ id: 'no-such' }) },
+  )
+  assert.equal(cancelLimited.status, 429)
+
+  const streamLimited = await getStreamRoute(
+    new Request('http://localhost:3000/api/battle/no-such/stream', {
+      headers: { 'x-forwarded-for': ip },
+    }),
+    { params: Promise.resolve({ id: 'no-such' }) },
+  )
+  assert.equal(streamLimited.status, 429)
+})
+
+test('stream：未知 id 404 且响应带安全头', async () => {
+  const response = await getStreamRoute(
+    new Request('http://localhost:3000/api/battle/no-such/stream', {
+      headers: { 'x-forwarded-for': '203.0.113.62' },
+    }),
+    { params: Promise.resolve({ id: 'no-such' }) },
+  )
+  assert.equal(response.status, 404)
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
+})
+
+test('stream：连接响应带安全头，事件带 id 行（Last-Event-ID 重放基础）', async () => {
+  const id = 'sse-hdr-' + Math.random().toString(36).slice(2)
+  const handle = createBattleHandle(id)
+  registerBattle(id, handle)
+
+  const response = await getStreamRoute(
+    new Request(`http://localhost:3000/api/battle/${id}/stream`, {
+      headers: { 'x-forwarded-for': '203.0.113.63' },
+    }),
+    { params: Promise.resolve({ id }) },
+  )
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'text/event-stream')
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
+
+  handle.emit({
+    type: 'battle.completed',
+    result: {
+      battleId: id,
+      arena: 'soft',
+      topic: 't',
+      contestants: [],
+      verdicts: [],
+      judgeAvailable: false,
+    },
+  })
+  const text = await response.text()
+  assert.match(text, /^id: 0\n/m, '第一条事件必须带 id 行')
+  assert.match(text, /battle\.completed/)
   unregisterBattle(id)
 })

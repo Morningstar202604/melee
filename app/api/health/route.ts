@@ -1,7 +1,7 @@
-import { getDb } from '@/lib/db/client'
-import { logger } from '@/lib/log/logger.ts'
-import { getActiveBattleCount } from '@/lib/battle/registry.ts'
-import { secureResponse } from '@/lib/security.ts'
+import { getDb } from '../../../lib/db/client.ts'
+import { logger } from '../../../lib/log/logger.ts'
+import { getActiveBattleCount } from '../../../lib/battle/registry.ts'
+import { secureResponse } from '../../../lib/security.ts'
 
 export const runtime = 'nodejs'
 
@@ -33,12 +33,8 @@ export async function GET() {
     )
   } catch (error) {
     logger.error('health检查失败', { error: error instanceof Error ? error.message : String(error) })
-    return secureResponse(
-      JSON.stringify({
-        ok: false,
-        error: `健康检查失败：${error instanceof Error ? error.message : '未知错误'}`,
-      }),
-      { status: 503 },
-    )
+    return secureResponse(JSON.stringify({ ok: false, error: '健康检查失败：数据库不可用' }), {
+      status: 503,
+    })
   }
 }

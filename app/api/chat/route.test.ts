@@ -58,6 +58,11 @@ test('chat 路由：不可达 provider 走可读错误且不泄漏 Key', async (
   }
 })
 
+test('chat 路由：请求体超 2MB 返回 413', async () => {
+  const response = await chatRoute(chatRequest('x'.repeat(2_200_000)))
+  assert.equal(response.status, 413)
+})
+
 test('chat 路由：合法请求返回官方 UIMessage 流，错误可读且不泄漏 Key', async () => {
   process.env.MELEE_BASE_URL_ZHIPU = 'http://127.0.0.1:1/v1'
   try {
