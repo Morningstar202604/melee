@@ -51,3 +51,6 @@ data/
 .cache/
 .meituan-catpaw/
 .v2c/
+
+# Playwright MCP 截图/快照产物目录（工具生成，不入库）
+.playwright-mcp/

@@ -157,8 +157,17 @@ export const CODE_TOPICS: CodeTopic[] = [
   },
 ]
 
-export function getCodeTopic(id: string): CodeTopic | undefined {
-  return CODE_TOPICS.find((topic) => topic.id === id)
+/**
+ * 解析 code 题目：先按 id 匹配（程序化调用），再按题面文本匹配。
+ * 前端与 /api/battle/run 的调用形态都是「题面文本」——与 chess 的
+ * puzzleFromTopic(文本) 契约一致，两条形态都必须可用。
+ */
+export function getCodeTopic(key: string): CodeTopic | undefined {
+  const needle = key.trim()
+  return (
+    CODE_TOPICS.find((topic) => topic.id === needle) ??
+    CODE_TOPICS.find((topic) => topic.prompt === needle)
+  )
 }
 
 export function getSoftTopic(id: string): SoftTopic | undefined {

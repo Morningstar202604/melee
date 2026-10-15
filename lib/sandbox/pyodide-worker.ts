@@ -44,6 +44,8 @@ function toErrorMessage(error: unknown): string {
 }
 
 function spawnWorker(): PooledWorker {
+  // 该 worker 会被打包器编译成 chunk；pyodide 必须保持外部化（见 next.config.ts
+  // 的 serverExternalPackages），否则其运行时资源加载会被替换成抛错桩。
   const worker = new Worker(WORKER_ENTRY, { workerData: {} })
   const pooled: PooledWorker = { worker, loaded: false, dead: false }
   alive.add(pooled)
@@ -218,6 +220,7 @@ export async function warmupPyodide(): Promise<void> {
     const target = pooled
     await new Promise<void>((resolve, reject) => {
       let settled = false
+      let bootError: string | undefined
       function finish(ok: boolean) {
         if (settled) return
         settled = true
@@ -225,14 +228,18 @@ export async function warmupPyodide(): Promise<void> {
         target.worker.off('message', onMessage)
         target.worker.off('error', onError)
         if (ok) resolve()
-        else reject(new Error('沙箱预热失败'))
+        else reject(new Error(bootError ? `沙箱预热失败：${bootError}` : '沙箱预热失败'))
       }
       function onMessage(value: WorkerMessage) {
         if (!value || typeof value !== 'object') return
         if (value.type === 'ready') finish(true)
-        if (value.type === 'boot-error') finish(false)
+        if (value.type === 'boot-error') {
+          bootError = value.errorMessage ?? '未知原因'
+          finish(false)
+        }
       }
-      function onError() {
+      function onError(error: unknown) {
+        bootError = toErrorMessage(error)
         finish(false)
       }
       const timer = setTimeout(() => finish(false), WORKER_LOAD_TIMEOUT_MS)

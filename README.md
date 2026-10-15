@@ -12,6 +12,20 @@ npm install && npm run dev
 
 打开 http://localhost:3000，默认沙箱走 Pyodide WASM，无需 Docker。
 
+## 界面预览
+
+| 擂台首页 · 选赛场 | 点大将 · 全员预检 |
+|---|---|
+| ![擂台首页](docs/screenshots/01-arena-setup.png) | ![点大将](docs/screenshots/02-lineup-preflight.png) |
+
+| 对战中 · 实时流式输出 | 战报 · 人类投票 + AI 裁判 |
+|---|---|
+| ![对战中](docs/screenshots/04-battle-live.png) | ![战报](docs/screenshots/05-battle-report.png) |
+
+| 硬战场 · 沙箱真跑测试用例 | 单挑台 · 免建场直接聊 |
+|---|---|
+| ![硬战场](docs/screenshots/07-hardcode-report.png) | ![单挑台](docs/screenshots/06-solo-chat.png) |
+
 ## 选手池（用户自带 Key）
 
 前端开打时从请求体带 Key，服务端仅存在于当次对战内存，不写库、不进日志。
@@ -35,7 +49,7 @@ npm install && npm run dev
 | Pyodide（默认） | WASM 语言级沙箱 | `SANDBOX_BACKEND=pyodide` |
 | Judge0 CE（可选） | OS 级容器隔离 | `SANDBOX_BACKEND=judge0` |
 
-> ⚠️ 默认后端的隔离级别弱于 OS 级隔离。在公网开放给陌生用户之前，**必须先启用 Judge0（或等价的 OS 级隔离后端）**，否则只能用于本地 / 自用 / 小范围可信环境。详见 spec §6.2。
+> ⚠️ 默认后端的隔离级别弱于 OS 级隔离。在公网开放给陌生用户之前，**必须先启用 Judge0（或等价的 OS 级隔离后端）**，否则只能用于本地 / 自用 / 小范围可信环境。详见 [设计 spec §6.2](docs/superpowers/specs/2026-10-09-ai-battle-arena-design.md)。
 
 ## 技术栈
 
@@ -75,3 +89,8 @@ npm run build       # 生产构建（tsc + Turbopack）
 ## 配置
 
 复制 `.env.example` 为 `.env`，按需修改。参见 `.env.example` 中的注释。
+
+## 文档
+
+- [设计 spec（第一期）](docs/superpowers/specs/2026-10-09-ai-battle-arena-design.md) · [实现计划](docs/superpowers/plans/2026-10-10-melee-phase1.md)
+- 审计与工程记录：[项目审计](docs/audit/2026-10-13-project-audit.md) · [官方符合性](docs/audit/2026-10-13-official-conformance.md) · [编排与隔离](docs/audit/2026-10-13-orchestration-and-isolation.md) · [生态采用清单](docs/audit/2026-10-13-ecosystem-adoption-backlog.md) · [端点收口](docs/audit/2026-10-15-endpoint-hardening.md)

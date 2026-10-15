@@ -2,7 +2,8 @@ import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { extractCode, judgeCodeSubmissions } from './hard-code.ts'
+import { createHardCodeArena, extractCode, judgeCodeSubmissions } from './hard-code.ts'
+import { getCodeTopic } from './topics.ts'
 import type { SandboxBackend } from '../sandbox/backend.ts'
 import type { SandboxProgress, Submission } from './types.ts'
 import { closeDb } from '../db/client.ts'
@@ -130,4 +131,67 @@ test('judgeCodeSubmissions 对未产出代码的选手不调用沙箱，并上�
   assert.equal(calls, 0)
   assert.equal(verdicts[0]?.rationale, '未产出可执行代码')
   assert.equal(progress[0]?.status, 'unavailable')
+})
+
+function workingSandbox(): { sandbox: SandboxBackend; calls: () => number } {
+  let calls = 0
+  const sandbox: SandboxBackend = {
+    id: 'pyodide',
+    isolationLevel: 'wasm-worker',
+    async run(input) {
+      calls += 1
+      return {
+        status: 'ok',
+        passed: input.tests.length,
+        total: input.tests.length,
+        timeMs: 5,
+        stdoutTail: '',
+      }
+    },
+  }
+  return { sandbox, calls: () => calls }
+}
+
+test('hardCodeArena.judge 接受题面文本作为 topic（前端与 API 的发送形态）', async () => {
+  const topic = getCodeTopic('code-two-sum')
+  assert.ok(topic)
+  const { sandbox, calls } = workingSandbox()
+  const arena = createHardCodeArena(sandbox)
+
+  const verdicts = await arena.judge([submission(1, 'print(1)'), submission(2, 'print(2)')], {
+    topic: topic.prompt,
+    judgeModelId: '',
+    judgeApiKey: '',
+  })
+
+  assert.equal(calls(), 2, '题面文本必须解析到题目并真正跑沙箱')
+  assert.ok(
+    verdicts.every((verdict) => verdict.total === topic.tests.length),
+    '用例总数必须来自题目定义，不能是 0',
+  )
+  assert.ok(
+    verdicts.every((verdict) => verdict.passed === topic.tests.length),
+    '全部通过时 passed 必须等于用例数',
+  )
+  assert.ok(
+    verdicts.every((verdict) => verdict.rationale !== '题目不存在'),
+    '题面文本不应被判定为题目不存在',
+  )
+})
+
+test('hardCodeArena.judge 也接受题目 id（程序化调用兼容）', async () => {
+  const topic = getCodeTopic('code-two-sum')
+  assert.ok(topic)
+  const { sandbox, calls } = workingSandbox()
+  const arena = createHardCodeArena(sandbox)
+
+  const verdicts = await arena.judge([submission(1, 'print(1)')], {
+    topic: 'code-two-sum',
+    judgeModelId: '',
+    judgeApiKey: '',
+  })
+
+  assert.equal(calls(), 1)
+  assert.equal(verdicts[0]?.total, topic.tests.length)
+  assert.equal(verdicts[0]?.passed, topic.tests.length)
 })
