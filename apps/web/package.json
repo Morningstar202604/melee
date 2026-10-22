@@ -1,0 +1,10 @@
+{
+  "name": "melee-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "python -m http.server 8088",
+    "check": "node --check src/main.js && node --check src/view.js && node --check src/sse.js"
+  }
+}

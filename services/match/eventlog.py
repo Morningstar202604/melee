@@ -1,0 +1,242 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+import threading
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Iterable
+
+EVENT_TYPES = {    "match.created",
+    "match.started",
+    "round.started",
+    "turn.started",
+    "thought.delta",
+    "action.proposed",
+    "action.rejected",
+    "action.applied",
+    "state.changed",
+    "narration.line",
+    "match.ended",
+    "director.cue",
+}
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS matches (
+  match_id   TEXT PRIMARY KEY,
+  game       TEXT NOT NULL,
+  seed       INTEGER NOT NULL,
+  players    TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  ended_at   TEXT
+);
+
+CREATE TABLE IF NOT EXISTS events (
+  match_id TEXT NOT NULL,
+  seq      INTEGER NOT NULL,
+  type     TEXT NOT NULL,
+  player   TEXT,
+  at       TEXT NOT NULL,
+  payload  TEXT NOT NULL,
+  PRIMARY KEY (match_id, seq)
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_type ON events (match_id, type);
+"""
+
+
+class EventLogError(ValueError):
+    pass
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+@dataclass
+class EventLog:
+    """append-only 事件日志。seq 由日志分配，调用方无法跳号、乱序或重复。"""
+
+    conn: sqlite3.Connection
+    match_id: str
+    _next: int = 0
+    on_event: Any = None
+    lock: threading.Lock = threading.Lock()
+
+    @classmethod
+    def open(cls, path: str | Path, match_id: str) -> "EventLog":
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        # runner 在线程池里执行，事件由它写；reader 在事件循环里读。
+        # 同一连接跨线程使用需要显式放开限制，并用锁保证写入串行。
+        conn = sqlite3.connect(str(path), check_same_thread=False, timeout=30.0)
+        conn.executescript(SCHEMA)
+        # WAL 让"读不挡写"；busy_timeout 与 NORMAL 同步在崩溃与并发之间取平衡。
+        # 不加这两条时，6 个并发写者会在 27 秒内打出 "database is locked"。
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        row = conn.execute(
+            "SELECT COALESCE(MAX(seq) + 1, 0) FROM events WHERE match_id = ?", (match_id,)
+        ).fetchone()
+        # 每条事件都推给广播：SSE 才能实时收到 worker 线程写的事件。
+        # 之前这条线没接，观众只能等 15 秒心跳回查日志，等同于"假直播"。
+        from .broadcast import publish_event
+
+        return cls(conn=conn, match_id=match_id, _next=int(row[0]), on_event=publish_event)
+
+    def create_match(self, game: str, seed: int, players: list[str]) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO matches (match_id, game, seed, players, created_at) VALUES (?,?,?,?,?)",
+            (self.match_id, game, seed, json.dumps(players, ensure_ascii=False), _now()),
+        )
+        self.conn.commit()
+
+    def append(
+        self,
+        event_type: str,
+        payload: dict[str, Any],
+        *,
+        player: str | None = None,
+        at: str | None = None,
+    ) -> dict[str, Any]:
+        if event_type not in EVENT_TYPES:
+            raise EventLogError(f"未知事件类型 {event_type}")
+        if not isinstance(payload, dict):
+            raise EventLogError("payload 必须是对象")
+
+        event: dict[str, Any] = {
+            "seq": self._next,
+            "matchId": self.match_id,
+            "type": event_type,
+            "at": at or _now(),
+            "payload": payload,
+        }
+        if player is not None:
+            event["player"] = player
+
+        payload_json = json.dumps(payload, ensure_ascii=False)
+        with self.lock:
+            # 多个连接（API、worker、导播台）会同时写同一场比赛：
+            # 各自的 _next 可能撞号，必须撞了重读再写，而不是抛给调用方。
+            for attempt in range(8):
+                event["seq"] = self._next
+                try:
+                    self.conn.execute(
+                        "INSERT INTO events (match_id, seq, type, player, at, payload) VALUES (?,?,?,?,?,?)",
+                        (self.match_id, event["seq"], event_type, player, event["at"], payload_json),
+                    )
+                    self.conn.commit()
+                    self._next += 1
+                    break
+                except sqlite3.IntegrityError:
+                    row = self.conn.execute(
+                        "SELECT COALESCE(MAX(seq) + 1, 0) FROM events WHERE match_id = ?",
+                        (self.match_id,),
+                    ).fetchone()
+                    self._next = int(row[0])
+                except sqlite3.OperationalError as exc:
+                    if "locked" not in str(exc).lower() or attempt == 7:
+                        raise
+                    time.sleep(0.02 * (attempt + 1))
+            else:
+                raise EventLogError(f"写入事件失败：{self.match_id} 连续 8 次序号冲突")
+        if self.on_event is not None:
+            self.on_event(event)
+        return event
+
+    def mark_ended(self) -> None:
+        self.conn.execute("UPDATE matches SET ended_at = ? WHERE match_id = ?", (_now(), self.match_id))
+        self.conn.commit()
+
+    def read(self, after: int = -1) -> list[dict[str, Any]]:
+        with self.lock:
+            rows = self.conn.execute(
+            "SELECT seq, type, player, at, payload FROM events "
+                "WHERE match_id = ? AND seq > ? ORDER BY seq ASC",
+                (self.match_id, after),
+            ).fetchall()
+        events = []
+        for seq, event_type, player, at, payload in rows:
+            event: dict[str, Any] = {
+                "seq": seq,
+                "matchId": self.match_id,
+                "type": event_type,
+                "at": at,
+                "payload": json.loads(payload),
+            }
+            if player is not None:
+                event["player"] = player
+            events.append(event)
+        return events
+
+    @property
+    def next_seq(self) -> int:
+        return self._next
+
+    def seqs(self) -> list[int]:
+        return [row[0] for row in self.conn.execute(
+            "SELECT seq FROM events WHERE match_id = ? ORDER BY seq ASC", (self.match_id,)
+        )]
+
+    def assert_contiguous(self) -> None:
+        seqs = self.seqs()
+        if seqs != list(range(len(seqs))):
+            raise EventLogError(f"事件序号不连续：{seqs}")
+
+    def close(self) -> None:
+        self.conn.close()
+
+
+def read_match(path: str | Path, match_id: str, after: int = -1) -> list[dict[str, Any]]:
+    """不依赖进程内注册表，直接从日志读某一场的事件。
+
+    赛季批量跑出来的比赛没有 MatchHandle，观战与战报仍要能读。
+    """
+    log = EventLog.open(path, match_id)
+    try:
+        return log.read(after)
+    finally:
+        log.close()
+
+
+def has_match(path: str | Path, match_id: str) -> bool:
+    """比赛是否已登记（不等于已有事件：worker 可能还没领取）。"""
+    conn = sqlite3.connect(str(path))
+    try:
+        exists = conn.execute("SELECT 1 FROM matches WHERE match_id = ?", (match_id,)).fetchone()
+        return exists is not None
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        conn.close()
+
+
+def replay(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """把事件流折叠成视图状态。用来验证「回放 = 直播」。"""
+    view: dict[str, Any] = {
+        "turns": [],
+        "narration": [],
+        "winner": None,
+        "endReason": "",
+        "cues": [],
+        "remaining": None,
+    }
+    for event in events:
+        payload = event["payload"]
+        kind = event["type"]
+        if kind == "action.applied":
+            view["turns"].append(
+                {"player": event.get("player"), "action": payload["action"], "effects": payload["effects"]}
+            )
+        elif kind == "state.changed":
+            view["remaining"] = payload["publicState"].get("remainingPublic")
+        elif kind == "narration.line":
+            view["narration"].append(payload["text"])
+        elif kind == "match.ended":
+            view["winner"] = payload["winner"]
+            view["endReason"] = payload["reason"]
+        elif kind == "director.cue":
+            view["cues"].append(payload["shot"])
+    return view

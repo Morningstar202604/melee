@@ -1,0 +1,24 @@
+[tool.pytest.ini_options]
+testpaths = ["services/match/tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = ["melee", "node_modules", "data"]
+
+[tool.ruff.lint]
+# F401 未使用导入、F841 未使用变量、E9 语法错误、F821 未定义名。
+# 这几条正是本次人工清扫发现的问题，交给工具守。
+select = ["F401", "F811", "F821", "F841", "E9"]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试里常有意保留未用的 fixture 依赖
+"services/match/tests/*" = ["F401"]
+
+[tool.bandit]
+# 低危项（B101 assert、B404/B603 subprocess）已在人工审查中逐条确认：
+# assert 只用于测试与内部不变量；subprocess 只调用本机 ffmpeg 与固定脚本。
+exclude_dirs = ["services/match/tests", "scripts", "melee", "data"]
+skips = ["B101"]

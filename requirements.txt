@@ -1,0 +1,16 @@
+fastapi==0.143.3
+uvicorn==0.54.0
+pydantic==2.14.1
+sse-starlette==3.5.0
+jsonschema==4.26.0
+pytest==8.4.2
+httpx==0.28.1
+datamodel-code-generator==0.86.0
+# 运行时实际依赖（此前漏在 requirements 外，换机会直接 ImportError）
+cryptography==48.0.1
+Pillow==12.3.0
+openskill==6.2.0
+# 可选：装了才注册 TextArena 赛制
+textarena==0.7.4
+# 可选：MELEE_BROADCAST=redis 时才需要
+redis==5.2.1

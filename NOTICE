@@ -1,0 +1,30 @@
+# NOTICE — 第三方依赖台账
+
+本项目运行时依赖与其许可证。新增依赖必须在同一提交里追加一行。
+
+| 包 | 版本 | 许可证 | 用途 |
+|---|---|---|---|
+| fastapi | 0.143.3 | MIT | HTTP 层 |
+| uvicorn | 0.54.0 | BSD-3-Clause | ASGI 服务器 |
+| pydantic | 2.14.1 | MIT | 请求/事件模型 |
+| sse-starlette | 3.5.0 | BSD-3-Clause | SSE 帧、心跳、断连处理 |
+| jsonschema | 4.26.0 | MIT | 事件契约校验 |
+| httpx | 0.28.1 | BSD-3-Clause | 模型端点调用 |
+| cryptography | 48.0.1 | Apache-2.0 OR BSD-3-Clause | Fernet 凭据封存 |
+| Pillow | 12.3.0 | MIT-CMU | 高光帧绘制 |
+| openskill | 6.2.0 | MIT | 赛季积分（PlackettLuce） |
+| textarena | 0.7.4 | MIT | 可选：确定性棋类环境 |
+| redis | 5.2.1 | MIT | 可选：跨副本广播 |
+| pytest | 8.4.2 | MIT | 测试 |
+| datamodel-code-generator | 0.86.0 | MIT | 契约代码生成 |
+
+## 原则
+
+1. 运行时依赖禁止 GPL / AGPL：`apps/web` 与 `services/match` 都不引入。
+2. 可选依赖（textarena、redis）缺失时服务必须照常启动，只在对应功能上降级。
+3. 修改第三方源码必须 fork 并在此记录来源与改动；本项目当前无 fork。
+4. 前端零构建，无 npm 运行时依赖；`apps/web/package.json` 只用于 `node --check`。
+
+## 前端
+
+前端没有打包器、没有 node_modules 运行时依赖，所有代码为原生 ES module。

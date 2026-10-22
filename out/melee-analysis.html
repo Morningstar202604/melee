@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>melee · AI 大乱斗 — 全仓深度分析报告</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js"></script>
+<style>
+:root{
+  --bg:#0b0d12; --panel:#12151d; --panel2:#171b25; --line:#232838;
+  --txt:#e8eaf2; --dim:#9aa3b5; --faint:#5c6478;
+  --soft:#8b8ff5; --debate:#67e8f9; --banter:#fb7185; --hard:#38bdf8; --chess:#e0a458;
+  --ok:#34d399; --warn:#fbbf24; --bad:#f87171; --accent:#8b8ff5;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:15px/1.75 "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;padding:32px 4vw 80px}
+h1{font-size:26px;letter-spacing:.5px}
+h2{font-size:20px;margin:48px 0 16px;padding-left:12px;border-left:3px solid var(--accent)}
+h3{font-size:16px;margin:20px 0 8px;color:var(--txt)}
+p{margin:8px 0;color:var(--dim)}
+ul{margin:8px 0 8px 22px;color:var(--dim)}
+li{margin:4px 0}
+li::marker{color:var(--accent)}
+code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font-size:13px;color:#a5b4fc;font-family:Consolas,"JetBrains Mono",monospace}
+.grid{display:grid;gap:16px}
+.cards{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.card .n{font-size:28px;font-weight:700;color:var(--txt)}
+.card .l{font-size:13px;color:var(--faint);margin-top:2px}
+.card .s{font-size:12px;color:var(--faint);margin-top:6px;line-height:1.5}
+.chart{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.chart .t{font-size:14px;color:var(--dim);padding:4px 6px 10px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--faint);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+td{color:var(--dim)}
+td b,td strong{color:var(--txt)}
+.tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
+.t-ok{color:var(--ok);border-color:#1d4a3a;background:#12211c}
+.t-warn{color:var(--warn);border-color:#4a3a1d;background:#211d12}
+.t-bad{color:var(--bad);border-color:#4a1d1d;background:#211212}
+.t-info{color:var(--debate);border-color:#1d3a4a;background:#121c21}
+.two{grid-template-columns:1fr 1fr}
+.three{grid-template-columns:repeat(3,1fr)}
+@media(max-width:900px){.two,.three{grid-template-columns:1fr}}
+.arena{border-top:3px solid}
+.note{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:8px;padding:12px 16px;font-size:14px;color:var(--dim);margin:12px 0}
+.note b{color:var(--txt)}
+.hero{background:linear-gradient(135deg,#141826 0%,#0b0d12 70%);border:1px solid var(--line);border-radius:14px;padding:28px 32px;margin-bottom:24px}
+.hero p{color:var(--dim);max-width:860px}
+.kpi{display:flex;gap:22px;flex-wrap:wrap;margin-top:18px}
+.kpi div{min-width:120px}
+.kpi .n{font-size:24px}
+footer{margin-top:56px;color:var(--faint);font-size:12px;border-top:1px solid var(--line);padding-top:16px}
+a{color:var(--debate)}
+.timeline{position:relative;margin:16px 0 16px 14px;padding-left:22px;border-left:2px solid var(--line)}
+.timeline .ev{position:relative;margin:14px 0}
+.timeline .ev::before{content:"";position:absolute;left:-29px;top:7px;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
+.timeline .d{font-size:12px;color:var(--faint)}
+.timeline .x{font-size:15px;color:var(--txt);font-weight:600}
+.timeline .y{font-size:13px;color:var(--dim)}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>melee · AI 大乱斗 <span class="tag t-info">深度分析报告</span></h1>
+  <p>一个让多个 LLM 同场竞技的"观赏向"产品：五个赛场（软场 / 辩论 / 互怼 / 硬核 / 残局）+ 单挑台，核心卖点不是 benchmark，而是赛事转播感——选手实时刷字、裁判三轮换位打分、观众投票押注、战报一句话定调、"翻车现场"就是内容。本仓库为单提交快照 <code>6dc590e</code>，共 115 个文本源文件，本次分析逐行通读全部代码、19 个测试文件与 7 份文档，并在本地完整跑通验证。</p>
+  <div class="kpi">
+    <div><div class="n">184 / 0</div><div class="l">测试通过 / 失败（node:test）</div></div>
+    <div><div class="n">5 + 1</div><div class="l">赛场 + 单挑台</div></div>
+    <div><div class="n">10</div><div class="l">API 路由</div></div>
+    <div><div class="n">14</div><div class="l">事件类型（zod 判别联合）</div></div>
+    <div><div class="n">6</div><div class="l">SQLite 表（node:sqlite，WAL）</div></div>
+  </div>
+</div>
+
+<div class="grid cards">
+  <div class="card arena" style="border-color:var(--soft)"><div class="n" style="color:var(--soft)">soft 软场</div><div class="s">同题作答（2500 token 帽），观众投票 + LLM 裁判双轨定胜负；裁判轴：逻辑 / 论据 / 切题。</div></div>
+  <div class="card arena" style="border-color:var(--debate)"><div class="n" style="color:var(--debate)">debate 辩论</div><div class="s">2 人，三轮：立论 → 驳斥 → 结辩；槽位奇偶定正反方；输出帽 2000；裁判加"交锋"轴。</div></div>
+  <div class="card arena" style="border-color:var(--banter)"><div class="n" style="color:var(--banter)">banter 互怼</div><div class="s">2–4 人，4 张角色卡随座位轮换，80 字硬上限（帽 800 含思考），裁判轴：接梗 / 杀伤 / 分寸。</div></div>
+  <div class="card arena" style="border-color:var(--hard)"><div class="n" style="color:var(--hard)">hard-code</div><div class="s">Python 编程场，沙箱按用例判通过率定胜负，<b>不走 LLM 裁判</b>；帽 4000。</div></div>
+  <div class="card arena" style="border-color:var(--chess)"><div class="n" style="color:var(--chess)">chess 残局</div><div class="s">N 步杀终局，chess.js 真实落子校验 + 强制杀棋搜索；4 道题；帽仅 64 token——专治"废话多不答题"。</div></div>
+  <div class="card arena" style="border-color:var(--ok)"><div class="n" style="color:var(--ok)">solo 单挑台</div><div class="s">/solo 页，官方 useChat + DefaultChatTransport 走 /api/chat，思考过程可折叠，Key 不出现在任何错误分支。</div></div>
+</div>
+
+<h2>一、架构总览</h2>
+<p>分层清晰：页面（Next 16 App Router）→ 10 条 API 路由（全量安全收口）→ lib/battle 编排层（runner / registry / ratelimit / ui-stream / events）→ 五个领域 lib（arena 赛制、judge 裁判、sandbox 沙箱、providers 模型接入、db 数据）。对战进行中状态只活在进程内存（BattleHandle 注册表：事件日志 + pub/sub + AbortController），SQLite 只存终态战报与落库证据；断线靠 SSE 事件日志 + <code>Last-Event-ID</code> 重放，终态 60s 宽限期内迟到连接仍可全量重放，宽限后 handle 回收、战报永久可读。</p>
+<div class="grid two">
+  <div class="chart"><div class="t">架构分层（节点关系图）</div><div id="arch" style="height:380px"></div></div>
+  <div class="chart"><div class="t">一场对战的生命周期（状态机）</div><div id="flow" style="height:380px"></div></div>
+</div>
+<table style="margin-top:16px">
+  <tr><th>层</th><th>关键文件</th><th>要点</th></tr>
+  <tr><td><b>页面</b></td><td><code>app/page.tsx</code> <code>app/battle/[id]/page.tsx</code> <code>app/solo/page.tsx</code></td><td>组队列（lineup-store 持久化）、观战壳（battle-shell + 轮次时间线 + 分段进度条 HUD）、战报页（结算面板 + 翻车现场 + 棋谱复盘 + 裁判雷达）。</td></tr>
+  <tr><td><b>API</b></td><td><code>app/api/**/route.ts</code> ×10</td><td>run / cancel / snapshot / stream / vote / predict / chat / health / models / ping；全部接入分档限流 + <code>readJsonCapped</code> + 安全头不变式（nosniff + CSP + X-Frame-Options: DENY）。</td></tr>
+  <tr><td><b>编排</b></td><td><code>lib/battle/runner.ts</code> <code>registry.ts</code> <code>events.ts</code></td><td><code>startBattle</code>：SQLite 建战 → 内存 handle → 回合 → 裁判 → 事件流；轮内 <code>Promise.all</code> 赛跑、单选手失败不连坐；官方 <code>timeout</code> 选项做回合/全场止损；Next <code>after()</code> 钩子 + setTimeout 回退。</td></tr>
+  <tr><td><b>传输</b></td><td><code>lib/battle/ui-stream.ts</code> stream 路由</td><td>官方 <code>createUIMessageStream</code>，14 种事件打包成 <code>data-battle</code> 数据部件（zod schema 即部件 schema）；15s 心跳；终态 <code>closesStream</code>；事件 id 单调递增支撑重放。</td></tr>
+  <tr><td><b>模型接入</b></td><td><code>lib/providers/registry.ts</code> <code>stream.ts</code></td><td>10 家内置（6 家国内直连 + openai/anthropic/google 代理 + Gateway）+ <code>MELEE_CUSTOM_PROVIDERS</code> 环境变量任意注入 OpenAI 兼容端点；官方 <code>createProviderRegistry</code>；所有厂家走 <code>.chat</code> 接口（避 v7 responses 陷阱）。</td></tr>
+  <tr><td><b>裁判</b></td><td><code>lib/judge/runner.ts</code></td><td>三种评分顺序（正 / 反 / 轮换）消除位置偏差，匿名 A/B/C，<code>Output.object</code> 结构化输出 + 三级 JSON 兜底；默认 <code>deepseek/deepseek-chat</code>。</td></tr>
+  <tr><td><b>沙箱</b></td><td><code>lib/sandbox/{pyodide-worker,judge0,backend}.ts</code> <code>workers/pyodide-worker.mjs</code></td><td>Pyodide WASM worker 池（池 2，instrumentation.ts 预热）默认；Judge0 CE 容器级可选；<code>getBackend()</code> 报隔离级别（wasm-worker / os-container）进战报。</td></tr>
+  <tr><td><b>数据</b></td><td><code>lib/db/{client,schema.sql,repo}.ts</code></td><td>node:sqlite DatabaseSync + WAL + 写队列串行 + 事务建战；6 表；PRAGMA 探测旧库补 <code>reasoning_text</code> 列。</td></tr>
+</table>
+
+<h2>二、赛制与隔离设计</h2>
+<div class="note"><b>定性结论（docs/audit/2026-10-13-orchestration-and-isolation.md）：</b>本项目是确定性控制流的 <b>workflow</b>，不是 agent 框架场景——谁在第几轮对谁说话由代码规定，模型无权改变（赛制的信任锚点）。因此不引入 LangGraph / Mastra / AutoGen / Temporal 等框架，而是把框架级编排模式逐条对齐实现（Orchestrator–Worker、轮内 Parallel、Pipeline 多轮、Supervisor 裁判、确定性环境沙箱、zod 事件 Blackboard、rAF 背压、失败与预算隔离）。</div>
+<table>
+  <tr><th>隔离面</th><th>机制</th><th>证据</th></tr>
+  <tr><td>上下文</td><td>每选手独立 ModelMessage[]；对手可见性 = 上一轮已结束的内容，本轮在飞内容绝不进他方提示词</td><td>multi-turn 测试："第二轮可见对手首轮、不含本轮"</td></tr>
+  <tr><td>内心话</td><td>reasoning 只进观测层（UI 面板 / 落库），不进裁判 Submission</td><td>runner finalizeRun + 行为锁</td></tr>
+  <tr><td>匿名</td><td>裁判只见 A/B/C 标签 + 三轮位置对调</td><td>judge/runner.test.ts</td></tr>
+  <tr><td>凭证</td><td>Key 只活在当次请求内存；全链 redact（含 AI SDK onError 脱敏）；不落库、不进日志、不进提示词、不进沙箱</td><td>stream.test.ts（5xx 错误体显示 <code>***</code>）；pyodide-worker 负向测试（worker 源码禁读 process.env）</td></tr>
+  <tr><td>执行</td><td>WASM 沙箱：HARDEN 弹模块、清环境变量、SNAPSHOT/RESET、64KB 输出即中止、超时 terminate worker；Judge0：网络关、5s 墙钟 / 256MB</td><td>pyodide-worker.test.ts 环境泄漏负向测试（PATH/USERPROFILE/TEMP 全探不到）</td></tr>
+  <tr><td>失败 / 预算</td><td>单选手失败不连坐；逐轮独立超时；全场超时 abort 剩余；每赛场 maxOutputTokens 帽（2500/2000/800/4000/64）</td><td>orchestration-contract.test.ts + runner.test.ts 全矩阵</td></tr>
+  <tr><td>观测者</td><td>观众只读流；投票 / 押注独立写路径，voterKey UNIQUE 去重（并发 5 路 → 恰好 1×200 + 4×409），押注终态收盘</td><td>api.test.ts / prediction.test.ts</td></tr>
+</table>
+<div class="grid two" style="margin-top:16px">
+  <div class="chart"><div class="t">各赛场输出预算帽（maxOutputTokens，防失控流而非限制发挥）</div><div id="caps" style="height:260px"></div></div>
+  <div class="chart"><div class="t">限流分档（每 60s / 单 IP，叠加全局帽 100 次/10s）</div><div id="rl" style="height:260px"></div></div>
+</div>
+
+<h2>三、安全姿态</h2>
+<p>安全是本仓最重的工程面，2026-10-15 收口批次对 14 条路由做了全量扫描，10 项发现全部修复并留行为锁。三条最值得注意的证据链：</p>
+<ul>
+  <li><b>XFF 防伪造</b>：直接取 x-forwarded-for 首段可无限轮换绕过限流（实测 10/10 通过）。修复为 <code>MELEE_TRUSTED_PROXY_HOPS</code>（默认 1，append 型反代）取链尾第 N 项，行为锁 <code>'bogus, 1.2.3.4' → 1.2.3.4</code>。</li>
+  <li><b>请求体放大</b>：chunked 编码可绕 content-length 做内存放大；<code>readJsonCapped</code> 双路径封死（声明超限即 413，未声明边读边计数、超限 cancel + 413）。</li>
+  <li><b>安全头不变式</b>：不加 helmet，手写 CSP/HSTS/nosniff/XFO/Referrer-Policy/Permissions-Policy；SSE 与手写 Response 会绕过 Next 默认响应，故 <code>hardenResponse</code> 重建保留流与状态；一条测试遍历 9 条路由断言 nosniff+CSP+X-Frame-Options 齐备（<code>lib/security.test.ts:48</code>）。</li>
+</ul>
+<div class="note"><b>上线闸门（spec §6.2 明文）：</b>WASM 沙箱是语言级隔离，弱于 OS 级。文档引用真实事故作锚点（Cohere Terrarium 沙箱逃逸 CVSS 9.3、n8n 两条、Grist-Core 环境泄漏），并立下硬规则：<b>非 OS 级隔离（默认 Pyodide 后端）不得公网暴露</b>；接 Judge0 CE 后战报隔离级别自动升为"混合"。这条与"翻车即内容"的产品定位并存——观赏的是真实发生的事，没有的事必须明说。</div>
+
+<h2>四、数据层与前端状态</h2>
+<div class="grid three">
+  <div class="card"><div class="l">SQLite（node:sqlite）</div><div class="s">6 表：battles / contestants / votes / predictions / judgements / sandbox_results。WAL + 写队列串行 + 建战事务。旧库用 PRAGMA table_info 探测缺列自动 ALTER（reasoning_text 迁移）。</div></div>
+  <div class="card"><div class="l">battle-store（zustand）</div><div class="s">rAF 帧调度器合并高频事件（一帧一次提交），终态事件立即写、取消未提交帧；快照水合时未提交草稿不得覆盖快照；hard-code / chess 的胜负从快照重建。</div></div>
+  <div class="card"><div class="l">lineup-store + prediction</div><div class="s">persist v2 + 一次性旧格式迁移；<b>Key 与阵容分流</b>：persist 只写阵容，Key 仅存 sessionStorage（测试断言 persist 内容零 Key）。押注记录存 localStorage 并本地统计战绩；胜负口径：硬场/棋场按通过数，其余先人票、平票全算、再裁判定分。</div></div>
+</div>
+<p style="margin-top:12px">BYOK 全链路：请求体里的 Key → 仅存活于本进程该场对战的生命周期 → 战报与日志全链 <code>redact()</code> → 客户端仅 sessionStorage 暂存、刷新即失忆。这是"无服务端账号体系"前提下做到的凭证最小驻留。</p>
+
+<h2>五、测试与演进史</h2>
+<div class="grid two">
+  <div class="chart"><div class="t">测试量随审计批次增长（node:test，无框架）</div><div id="growth" style="height:300px"></div></div>
+  <div class="chart"><div class="t">184 条测试按模块分布（top）</div><div id="dist" style="height:300px"></div></div>
+</div>
+<div class="timeline">
+  <div class="ev"><div class="d">2026-10-09</div><div class="x">设计 spec</div><div class="y">确立"观赏性优先"定位、技术锚点（Next ≥16 / Node ≥24 / AI SDK 7 / node:sqlite / Pyodide 314.0.7 / Judge0 CE）、已知逃逸事故表与 4 条沙箱硬约束。</div></div>
+  <div class="ev"><div class="d">2026-10-10</div><div class="x">Phase-1 TDD 计划</div><div class="y">13 任务；Global Constraints 锁定 AI SDK v7 陷阱（responses vs chat、usage PromiseLike、maxRetries:0）、120s 模型超时、Key 不落库不写日志等。初始 100 测试。</div></div>
+  <div class="ev"><div class="d">2026-10-13</div><div class="x">三篇并列审计</div><div class="y">项目审计（recordJudgement 无调用方、手写重试换官方、沙箱串行改 worker 池并行、100→143 测试）；官方符合性（reasoning 全链、官方消息数组、judge0 官方 batch、SDK 内部字段名 bug 双名兼容）；编排与隔离（workflow 定性、编排模式映射、9 面隔离矩阵、输出预算帽 + 契约测试）。</div></div>
+  <div class="ev"><div class="d">2026-10-14</div><div class="x">生态执行批次</div><div class="y">Next after()、zustand/persist 分流、useChat 单挑台、pruneMessages 按证关闭、baseUrl 环境变量覆盖、ARENA_IDS 下沉 lib。</div></div>
+  <div class="ev"><div class="d">2026-10-15</div><div class="x">端点收口批次</div><div class="y">14 路由全量收口 10 项修复；测试 glob 漏 app/** 修复（159→182）；生产构建冒烟 30/30；4 条有意保留限制文档化。当前 HEAD：184/184。</div></div>
+</div>
+
+<h2>六、风险与有意保留的边界</h2>
+<table>
+  <tr><th>项</th><th>状态</th><th>说明</th></tr>
+  <tr><td>限流状态为进程内存</td><td><span class="tag t-warn">已知边界</span></td><td>多实例部署会分裂、冷启重置；与"单实例演示"定位一致，升级路径已留（Redis 滑动窗口 / 平台层）。</td></tr>
+  <tr><td>全局容量帽 100 次/10s</td><td><span class="tag t-warn">已知边界</span></td><td>单源打满即全站 429；已有"3 次被拒 → 60s 封禁"缓和；上线需按真实流量重标定。</td></tr>
+  <tr><td>直连暴露时来源 IP 不可信</td><td><span class="tag t-warn">部署约束</span></td><td>必须置于代管 XFF 的反代之后并显式设 hops=1。</td></tr>
+  <tr><td>WASM 沙箱非 OS 级</td><td><span class="tag t-bad">上线闸门</span></td><td>文档明文：未接 Judge0 不得公网开放；战报面板自动披露隔离级别。</td></tr>
+  <tr><td>多进程 / 持久化内存注册表</td><td><span class="tag t-ok">刻意不做</span></td><td>WorkflowAgent 等框架级耐久方案被审计判定"需求出现再挂"，不预付成本；观赛断线已由事件日志重放覆盖。</td></tr>
+  <tr><td>暗色单主题</td><td><span class="tag t-info">产品选择</span></td><td>"转播演播室"风格，五赛场各有专属色（#8b8ff5 / #67e8f9 / #fb7185 / #38bdf8 / #e0a458）。</td></tr>
+</table>
+
+<h2>七、结论</h2>
+<p>这是一个完成度很高的"赛事转播"型项目：184 条测试全部离线可跑（假 OpenAI / 假 Judge0 服务器 + MockLanguageModelV4），核心不变式（事件 id 单调、隔离矩阵、安全头、Key 零落盘）都钉死了行为锁；文档与代码演进同步（每篇审计附修复与验证证据），"能官方就官方"的选型纪律执行得非常彻底。主要保留项全部是<b>有意识的范围决策</b>（单实例、演示定位、二期官方挂载点已定位），不是技术债遗漏。若走向生产，三件事按顺序做：反代 + XFF 配置、限流上 Redis、沙箱上 Judge0。</p>
+
+<footer>melee · AI 大乱斗 深度分析报告 — 基于仓库 6dc590e 全量 115 文件逐行通读 + 本地 npm install + node --test（184 pass / 0 fail / 27.5s）+ 7 份 spec/plan/audit 文档交叉验证。图表：ECharts 6（CDN）。生成于 2026-10-19。</footer>
+
+<script>
+if(!window.echarts){document.write('<p style="color:#fbbf24">ECharts CDN 加载失败（离线环境）：图表不可用，文字与表格内容完整。</p>')}
+var base={backgroundColor:'transparent',textStyle:{color:'#9aa3b5'},grid:{left:40,right:20,top:30,bottom:30,containLabel:true}};
+function mk(id,opt){var el=document.getElementById(id);if(!window.echarts||!el)return;var c=echarts.init(el);c.setOption(opt)}
+
+mk('arch',{backgroundColor:'transparent',tooltip:{},series:[{type:'graph',layout:'none',symbolSize:46,roam:true,
+  label:{color:'#e8eaf2',fontSize:11},
+  categories:[{name:'页面'},{name:'API'},{name:'编排'},{name:'领域'},{name:'外部'},{name:'数据'},{name:'前端状态'}],
+  color:['#8b8ff5','#67e8f9','#fb7185','#38bdf8','#e0a458','#34d399','#a78bfa'],
+  data:[
+   {name:'观战页',category:0,x:180,y:40},{name:'组队列页',category:0,x:60,y:150},{name:'单挑台 /solo',category:0,x:300,y:40},
+   {name:'10 条 API 路由',category:1,x:200,y:250},
+   {name:'battle runner',category:2,x:380,y:250},{name:'registry 事件流',category:2,x:560,y:250},{name:'ratelimit',category:2,x:140,y:340},
+   {name:'arena 赛制 ×5',category:3,x:560,y:150},{name:'judge 裁判',category:3,x:660,y:250},{name:'sandbox 沙箱',category:3,x:560,y:360},{name:'providers 10 家',category:3,x:660,y:360},
+   {name:'OpenAI 兼容端点 ×10',category:4,x:820,y:250},{name:'Judge0 CE',category:4,x:820,y:360},
+   {name:'node:sqlite 6 表',category:5,x:380,y:360},
+   {name:'battle-store',category:6,x:180,y:40},{name:'lineup-store',category:6,x:60,y:150},{name:'prediction',category:6,x:180,y:40}],
+  links:[
+   {source:'观战页',target:'battle-store'},{source:'观战页',target:'10 条 API 路由'},{source:'组队列页',target:'lineup-store'},{source:'组队列页',target:'battle-store'},{source:'单挑台 /solo',target:'10 条 API 路由'},{source:'观战页',target:'prediction'},
+   {source:'10 条 API 路由',target:'battle runner'},{source:'10 条 API 路由',target:'ratelimit'},
+   {source:'battle runner',target:'registry 事件流'},{source:'battle runner',target:'arena 赛制 ×5'},{source:'battle runner',target:'judge 裁判'},{source:'battle runner',target:'sandbox 沙箱'},{source:'battle runner',target:'providers 10 家'},{source:'battle runner',target:'node:sqlite 6 表'},{source:'registry 事件流',target:'10 条 API 路由',lineStyle:{type:'dashed'}},
+   {source:'providers 10 家',target:'OpenAI 兼容端点 ×10'},{source:'judge 裁判',target:'OpenAI 兼容端点 ×10'},{source:'sandbox 沙箱',target:'Judge0 CE'}]})});
+
+mk('flow',{backgroundColor:'transparent',tooltip:{},series:[{type:'sankey',nodeGap:14,label:{color:'#e8eaf2'},lineStyle:{color:'gradient',curveness:0.5},
+ data:[{name:'POST /run'},{name:'SQLite 建战'},{name:'内存 handle'},{name:'回合 N 轮'},{name:'沙箱判分（硬场/棋场）'},{name:'裁判 3 顺序'},{name:'终态落库'},{name:'SSE 事件流'},{name:'60s 宽限回收'},{name:'快照可重放'}],
+ links:[{source:'POST /run',target:'SQLite 建战',value:10},{source:'SQLite 建战',target:'内存 handle',value:10},{source:'内存 handle',target:'回合 N 轮',value:10},{source:'回合 N 轮',target:'沙箱判分（硬场/棋场）',value:4},{source:'回合 N 轮',target:'裁判 3 顺序',value:6},{source:'沙箱判分（硬场/棋场）',target:'终态落库',value:4},{source:'裁判 3 顺序',target:'终态落库',value:6},{source:'内存 handle',target:'SSE 事件流',value:10},{source:'终态落库',target:'60s 宽限回收',value:10},{source:'SSE 事件流',target:'快照可重放',value:10}]}}]});
+
+mk('caps',{backgroundColor:'transparent',grid:{left:10,right:16,top:30,bottom:10,containLabel:true},tooltip:{trigger:'axis'},
+ xAxis:{type:'category',data:['chess','banter','debate','soft','hard-code'],axisLabel:{color:'#9aa3b5'}},
+ yAxis:{type:'log',logBase:10,min:10,axisLabel:{color:'#5c6478'}},
+ series:[{type:'bar',data:[
+  {value:64,itemStyle:{color:'#e0a458'}},{value:800,itemStyle:{color:'#fb7185'}},{value:2000,itemStyle:{color:'#67e8f9'}},{value:2500,itemStyle:{color:'#8b8ff5'}},{value:4000,itemStyle:{color:'#38bdf8'}}],
+ barWidth:'46%',label:{show:true,position:'top',color:'#e8eaf2'}}]});
+
+mk('rl',{backgroundColor:'transparent',grid:{left:10,right:30,top:30,bottom:10,containLabel:true},tooltip:{},
+ xAxis:{type:'category',data:['建房 run','聊天 chat','预检 probe','观众三端点(共享)','全局帽(10s 窗)'],axisLabel:{color:'#9aa3b5',interval:0,rotate:12}},
+ yAxis:{axisLabel:{color:'#5c6478'},name:'次/窗口',nameTextStyle:{color:'#5c6478'}},
+ series:[{type:'bar',data:[
+  {value:5,itemStyle:{color:'#8b8ff5'}},{value:20,itemStyle:{color:'#38bdf8'}},{value:30,itemStyle:{color:'#67e8f9'}},{value:60,itemStyle:{color:'#fb7185'}},{value:100,itemStyle:{color:'#e0a458'}}],
+ barWidth:'42%',label:{show:true,position:'top',color:'#e8eaf2'},markLine:{silent:true,lineStyle:{color:'#f87171',type:'dashed'},data:[],symbol:'none'}}]});
+
+mk('growth',{backgroundColor:'transparent',grid:{left:40,right:20,top:40,bottom:20},tooltip:{trigger:'axis'},
+ legend:{data:['测试总数'],textStyle:{color:'#9aa3b5'},top:0},
+ xAxis:{type:'category',data:['10-10 计划基线','10-13 三篇审计','10-15 glob 修复前','10-15 收口后','当前 HEAD'],axisLabel:{color:'#9aa3b5'}},
+ yAxis:{axisLabel:{color:'#5c6478'}},
+ series:[{name:'测试总数',type:'line',smooth:true,data:[100,143,159,182,184],lineStyle:{color:'#8b8ff5',width:3},itemStyle:{color:'#8b8ff5'},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(139,143,245,.35)'},{offset:1,color:'rgba(139,143,245,0)'}]}},label:{show:true,color:'#e8eaf2',position:'top'}}]});
+
+mk('dist',{backgroundColor:'transparent',grid:{left:10,right:30,top:10,bottom:10,containLabel:true},tooltip:{},
+ yAxis:{type:'category',inverse:true,axisLabel:{color:'#9aa3b5'},data:['battle-store(25)','judge(17)','api(13)','runner(12)','stream×2(19)','arena 合计(46)','providers(19)','sandbox(16)','db(11)','http(8)','client 其余(7)','路由(9)','security+smoke(3)']},
+ xAxis:{show:false,max:46},
+ series:[{type:'bar',barWidth:14,data:[
+  {value:25,itemStyle:{color:'#a78bfa'}},{value:17,itemStyle:{color:'#8b8ff5'}},{value:13,itemStyle:{color:'#67e8f9'}},{value:12,itemStyle:{color:'#67e8f9'}},
+  {value:19,itemStyle:{color:'#38bdf8'}},{value:46,itemStyle:{color:'#8b8ff5'}},{value:19,itemStyle:{color:'#38bdf8'}},{value:16,itemStyle:{color:'#fb7185'}},
+  {value:11,itemStyle:{color:'#34d399'}},{value:8,itemStyle:{color:'#34d399'}},{value:7,itemStyle:{color:'#a78bfa'}},{value:9,itemStyle:{color:'#38bdf8'}},{value:3,itemStyle:{color:'#e0a458'}}],
+ label:{show:true,position:'right',color:'#e8eaf2',formatter:'{c}'}}]});
+</script>
+</body>
+</html>

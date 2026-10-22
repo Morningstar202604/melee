@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>melee · 导播台</title>
+<link rel="stylesheet" href="./src/theme.css">
+<style>
+.layout{display:grid;grid-template-columns:280px 1fr 340px;gap:14px;height:calc(100vh - 48px)}
+.col{overflow:auto;padding:14px;border-right:1px solid #161A24}
+.col:last-child{border-right:none;border-left:1px solid #161A24}
+.mi{padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:#0C1017;cursor:pointer;margin-bottom:8px}
+.mi:hover{border-color:#3A4356}
+.mi.on{border-color:var(--a);box-shadow:inset 2px 0 0 var(--a)}
+.mi .id{font-family:Consolas,monospace;font-size:11px;color:var(--faint)}
+.mi .p{font-size:13px;color:#D6DBE6;margin-top:3px}
+.shots{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.shot{padding:12px 10px;border-radius:9px;border:1px solid var(--line);background:#0C1017;cursor:pointer;text-align:center;font-size:12.5px;color:#C4CBDA}
+.shot:hover{border-color:#3A4356;background:#111722}
+.shot.on{border-color:var(--a);background:rgba(34,211,238,.08);color:var(--a)}
+.shot small{display:block;font-size:10px;color:var(--faint);margin-top:3px}
+.field-row{display:flex;gap:8px;margin-bottom:10px}
+.field-row .input{flex:1}
+.log{font-family:Consolas,monospace;font-size:11.5px;line-height:1.7;color:#8A93A5;white-space:pre-wrap;word-break:break-all}
+.log b{color:var(--a)}
+.cue-row{padding:7px 9px;border-radius:6px;background:#0A0D13;border:1px solid #171C26;margin-bottom:6px;font-size:11.5px}
+.cue-row .k{color:var(--a)}
+.manual{color:var(--b)}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">MELEE <span>/</span> 导播台</div>
+  <nav class="nav">
+    <a href="./index.html">观战</a>
+    <a href="./season.html">赛季</a>
+    <a href="./recap.html">战报</a>
+    <a href="./director.html" class="on">导播</a>
+  </nav>
+  <span class="conn" style="margin-left:auto" id="conn">未连接</span>
+</div>
+
+<div class="layout">
+  <div class="col">
+    <h2 style="margin-top:0">正在直播</h2>
+    <div id="matchList"><div class="muted">加载中…</div></div>
+    <button class="btn" id="refresh" style="width:100%;margin-top:6px">刷新</button>
+  </div>
+
+  <div class="col">
+    <div class="field-row">
+      <input class="input" id="matchId" placeholder="matchId（也可从左侧选）" />
+      <button class="btn" id="open">打开</button>
+    </div>
+
+    <h2>镜头</h2>
+    <div class="shots" id="shots">
+      <div class="shot" data-shot="wide">广角<small>默认</small></div>
+      <div class="shot" data-shot="close">特写<small>看某人</small></div>
+      <div class="shot" data-shot="thought">内心戏<small>展开思考</small></div>
+      <div class="shot" data-shot="reveal">揭晓<small>关键信息</small></div>
+      <div class="shot" data-shot="slowmo">慢镜<small>收尾</small></div>
+    </div>
+
+    <div class="field-row">
+      <input class="input" id="target" placeholder="目标选手（可空）" />
+      <input class="input" id="duration" value="1200" style="width:90px" />
+    </div>
+    <div class="field-row">
+      <input class="input" id="note" placeholder="给回放看的备注（可选）" />
+      <button class="btn primary" id="push">切</button>
+    </div>
+    <div class="muted" id="status"></div>
+
+    <h2>实时事件</h2>
+    <div class="log" id="log">未连接。</div>
+  </div>
+
+  <div class="col">
+    <h2 style="margin-top:0">本场统计</h2>
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--dim)">
+        <span>自动切镜</span><b id="autoCount" style="color:#D6DBE6">0</b>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--dim);margin-top:8px">
+        <span>人工切镜</span><b id="manualCount" style="color:var(--b)">0</b>
+      </div>
+    </div>
+
+    <h2>人工记录</h2>
+    <div id="cueList"><div class="muted">还没有人工切镜。</div></div>
+  </div>
+</div>
+
+<script type="module" src="./src/director.js"></script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Lint
+        run: python -m ruff check .
+      - name: License gate
+        run: python scripts/check_licenses.py
+      - name: Security scan (medium+)
+        run: python -m bandit -c pyproject.toml -ll -r services/match
+      - name: Frontend syntax
+        run: |
+          for f in apps/web/src/*.js; do node --check "$f"; done
+      - name: Tests with coverage
+        run: |
+          python -m pytest --cov=services.match --cov-branch \
+            --cov-report=term --cov-fail-under=80
+      - name: Contract codegen check
+        run: python packages/contracts/scripts/codegen.py --check
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t melee:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name melee -p 8099:8099 -e MELEE_AUTH=off melee:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8099/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs melee
+          exit 1

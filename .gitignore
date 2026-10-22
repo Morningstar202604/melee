@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# 运行数据（DB、WAL、渲染产物）
+data/
+*.db
+*.db-shm
+*.db-wal
+out/clips/
+
+# 设计稿与旧截图：只保留两个可交互 mockup
+out/*
+!out/broadcast-ui-mockup.html
+!out/melee-analysis.html
+
+# 工具运行时目录
+.v2c/
+
+# 本地环境
+.env
+.venv/
+venv/
+
+# AQG 工作区
+.aqg/
+
+# 旧 Next.js 参考实现（由 GitCode 上的 melee 仓库单独维护）
+melee/
+
+# 编辑器
+.idea/
+.vscode/
+.DS_Store

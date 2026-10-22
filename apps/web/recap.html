@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>melee · 战报</title>
+<link rel="stylesheet" href="./src/theme.css">
+<style>
+.hero{margin:10px 0 20px}
+.hero .kick{font-size:10px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase}
+.hero h1{font-size:38px;margin-top:8px}
+.hero .line{font-size:16px;color:#B6BECC;margin-top:10px;line-height:1.6;max-width:820px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:18px}
+@media (max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.stat b{display:block;font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.stat span{font-size:10.5px;color:var(--faint);letter-spacing:.08em}
+.hl{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+@media (max-width:820px){.hl{grid-template-columns:1fr}}
+.hlc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.hlc.hot{border-color:rgba(245,165,36,.4)}
+.hlc .k{font-size:10px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase}
+.hlc .t{font-size:15px;color:#E8EAF2;font-weight:600;margin:6px 0 4px}
+.hlc .d{font-size:12px;color:#8A93A5;line-height:1.6}
+.clips{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:14px}
+@media (max-width:820px){.clips{grid-template-columns:1fr}}
+.clip video{width:100%;border-radius:8px;background:#000;border:1px solid #1B2130}
+.clip .m{font-size:11px;color:var(--faint);margin-top:6px}
+.error{color:var(--bad);font-size:13px;margin-top:12px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">MELEE <span>/</span> 战报</div>
+  <nav class="nav">
+    <a href="./index.html">观战</a>
+    <a href="./season.html">赛季</a>
+    <a href="./recap.html" class="on">战报</a>
+    <a href="./director.html">导播</a>
+  </nav>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="kick" id="kick">比赛战报</div>
+    <h1 id="winner">加载中…</h1>
+    <p class="line" id="oneLine"></p>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <h2>三个瞬间</h2>
+  <div class="hl" id="highlights"></div>
+
+  <h2>高光视频 <button class="btn" id="render" style="margin-left:10px">渲染</button></h2>
+  <div class="clips" id="clips"><div class="muted">点「渲染」生成可播放片段（需要服务端有 ffmpeg）。</div></div>
+
+  <div class="error" id="error"></div>
+</div>
+
+<script type="module" src="./src/recap.js"></script>
+</body>
+</html>
