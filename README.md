@@ -5,6 +5,7 @@
 六个确定性赛制、实时直播、可拖动回放、自动+人工导播、事实校验战报、服务端渲染高光。
 Python + FastAPI + SQLite，前端零构建。一条命令起服务，一条命令起镜像。
 
+[![CI](https://github.com/badhope/melee/actions/workflows/ci.yml/badge.svg)](https://github.com/badhope/melee/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-317%20passed-brightgreen)](services/match/tests)
 [![Coverage](https://img.shields.io/badge/coverage-82.0%25%20lines%20%C2%B7%2074.2%25%20branches-yellow)](docs/AUDIT-2026-10-22.md)
 [![Lint](https://img.shields.io/badge/ruff-clean-brightgreen)](pyproject.toml)
@@ -310,15 +311,15 @@ CI（`.github/workflows/ci.yml`）复跑同一脚本，另加单端口冒烟与 
 
 ## 仓库
 
-同一份代码同步到五个位置（同 commit、同 CI）：
+同一份代码同步到五个位置，当前同一 commit（`58a7d78` 之后保持一致）：
 
-| 平台 | 地址 |
-|---|---|
-| GitHub（主） | https://github.com/badhope/melee |
-| GitHub | https://github.com/X33834/melee |
-| GitHub | https://github.com/Morningstar202604/melee |
-| Gitee | https://gitee.com/badhope/melee |
-| GitCode | https://gitcode.com/badhope/melee |
+| 平台 | 地址 | CI |
+|---|---|---|
+| GitHub（主） | https://github.com/badhope/melee | GitHub Actions：test + docker |
+| GitHub | https://github.com/X33834/melee | GitHub Actions：test + docker |
+| GitHub | https://github.com/Morningstar202604/melee | GitHub Actions：test + docker |
+| Gitee | https://gitee.com/badhope/melee | 同仓 `.github/workflows/ci.yml`（Gitee Go 需企业版，未启用） |
+| GitCode | https://gitcode.com/badhope/melee | 同仓 `.github/workflows/ci.yml`（GitCode CI 未对外开放） |
 
 旧版（Next.js 参考实现）保留在各仓库的 `legacy` 分支。
 
