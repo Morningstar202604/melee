@@ -245,7 +245,7 @@ def test_token_mode_end_to_end(tmp_path, monkeypatch):
 
 # ---------- 管理接口鉴权与任务载荷脱敏 ----------
 
-def test_admin_endpoints_require_token_and_never_echo_api_key(tmp_path, monkeypatch):
+def test_admin_endpoints_require_token_and_never_echo_api_key(tmp_path, monkeypatch, allow_local_endpoints):
     from fastapi.testclient import TestClient
 
     from services.match import api as api_module

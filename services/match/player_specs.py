@@ -27,6 +27,16 @@ class ModelSpec(BaseModel):
     maxTokens: int = Field(default=400, ge=64, le=4000)
     jsonMode: bool = True
 
+    @field_validator("baseUrl")
+    @classmethod
+    def _reject_internal_endpoint(cls, value: str) -> str:
+        from .outbound import OutboundAddressError, check_base_url
+
+        try:
+            return check_base_url(value)
+        except OutboundAddressError as exc:
+            raise ValueError(str(exc)) from None
+
 
 class PlayerSpec(BaseModel):
     id: str = Field(min_length=1, max_length=32)

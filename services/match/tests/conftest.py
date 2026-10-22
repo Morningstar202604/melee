@@ -6,6 +6,15 @@ from services.match import api as api_module
 from services.match.ratelimit import reset_limiter
 
 
+@pytest.fixture()
+def allow_local_endpoints(monkeypatch):
+    """显式选择"允许本机端点"的测试用。
+
+    默认不全局打开：否则 SSRF 门禁的测试会被自己的 fixture 绕过。
+    """
+    monkeypatch.setenv("MELEE_ALLOW_PRIVATE_ENDPOINTS", "1")
+
+
 @pytest.fixture(autouse=True)
 def _reset_inline_worker():
     """每个测试前后都停掉内嵌 worker。

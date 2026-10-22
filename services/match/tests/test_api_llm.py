@@ -13,7 +13,7 @@ SECRET = "sk-live-must-never-appear"
 
 
 @pytest.fixture()
-def client(tmp_path, monkeypatch):
+def client(tmp_path, monkeypatch, allow_local_endpoints):
     monkeypatch.setattr(api_module, "DB_PATH", Path(tmp_path) / "match.db")
     api_module.MATCHES.clear()
     # TestClient 不跑 lifespan，内嵌 worker 不会自动起；测试里显式拉起。
