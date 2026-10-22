@@ -3,6 +3,7 @@ name: ci
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -18,21 +19,21 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-      - name: Lint
-        run: python -m ruff check .
-      - name: License gate
-        run: python scripts/check_licenses.py
-      - name: Security scan (medium+)
-        run: python -m bandit -c pyproject.toml -ll -r services/match
-      - name: Frontend syntax
+      - name: Verify all gates
+        run: bash scripts/verify_all.sh
+      - name: Smoke test (single port)
         run: |
-          for f in apps/web/src/*.js; do node --check "$f"; done
-      - name: Tests with coverage
-        run: |
-          python -m pytest --cov=services.match --cov-branch \
-            --cov-report=term --cov-fail-under=80
-      - name: Contract codegen check
-        run: python packages/contracts/scripts/codegen.py --check
+          MELEE_DB=/tmp/ci.db MELEE_QUOTA_MATCHES=100 python scripts/serve.py --port 8099 &
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8099/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8099/health
+          curl -fsS http://127.0.0.1:8099/ | grep -q "转播台"
+          curl -fsS http://127.0.0.1:8099/games | grep -q "codenames"
+          curl -fsS -X POST http://127.0.0.1:8099/matches \
+            -H "Content-Type: application/json" \
+            -d '{"game":"tic-tac-toe","seed":1,"players":[{"id":"A"},{"id":"B"}]}' | grep -q matchId
 
   docker:
     runs-on: ubuntu-latest

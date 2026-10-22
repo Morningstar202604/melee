@@ -23,6 +23,7 @@ import os
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel, Field
 
@@ -826,6 +827,12 @@ def create_app() -> FastAPI:
             ping=15,
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    # 静态前端挂到根路径：单端口即可打开观战页，不用再起第二个 http.server。
+    # 必须放在所有 API 路由之后，否则 "/" 的挂载会吞掉它们。
+    web_dir = Path(__file__).resolve().parents[2] / "apps" / "web"
+    if web_dir.is_dir():
+        app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web")
 
     return app
 

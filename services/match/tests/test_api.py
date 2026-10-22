@@ -232,3 +232,14 @@ def test_openapi_hidden_in_token_mode(tmp_path, monkeypatch):
     client = TestClient(api_module.create_app())
     assert client.get("/openapi.json").status_code == 404
     assert client.get("/docs").status_code == 404
+
+
+def test_frontend_is_served_from_same_origin(client):
+    """单端口部署：根路径直接出观战页，API 仍可用。"""
+    root = client.get("/")
+    assert root.status_code == 200
+    assert "melee" in root.text.lower()
+    assert client.get("/index.html").status_code == 200
+    assert client.get("/season.html").status_code == 200
+    assert client.get("/games").status_code == 200
+    assert client.get("/health").status_code == 200

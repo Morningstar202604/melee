@@ -120,14 +120,14 @@ Python + FastAPI + SQLite，前端零构建。一条命令起服务，一条命�
 # 1. 安装
 python -m pip install -r requirements.txt
 
-# 2. 起服务（默认 127.0.0.1:8099，不信任 X-Forwarded-For）
+# 2. 起服务（单端口：前端 + API 都在 8099）
 python scripts/serve.py
-
-# 3. 起前端
-cd apps/web && python -m http.server 8088
 ```
 
-打开 <http://127.0.0.1:8088/index.html?api=http://127.0.0.1:8099>，选赛制，点「新开一局」。
+打开 <http://127.0.0.1:8099/>，选赛制，点「新开一局」。
+
+> 前端已挂到服务根路径，不需要再起第二个 `http.server`。旧版 `?api=` 参数仍兼容，
+> 也可以单独把 `apps/web` 当静态站部署（`python -m http.server 8088` + `?api=http://127.0.0.1:8099`）。
 
 ### Docker
 
