@@ -22,3 +22,15 @@ select = ["F401", "F811", "F821", "F841", "E9"]
 # assert 只用于测试与内部不变量；subprocess 只调用本机 ffmpeg 与固定脚本。
 exclude_dirs = ["services/match/tests", "scripts", "melee", "data"]
 skips = ["B101"]
+
+[tool.coverage.run]
+source = ["services/match"]
+# 覆盖率只统计产品代码；测试文件自身被计入会把总数稀释到 52%。
+omit = ["services/match/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
