@@ -218,13 +218,14 @@ class WorkerConfig:
 
     @classmethod
     def from_env(cls) -> "WorkerConfig":
-        raw = os.environ.get("MELEE_WORKER", "on").strip().lower()
-        kinds_raw = os.environ.get("MELEE_WORKER_KINDS", "run-match,render-clip")
+        from .settings import settings
+
+        cfg = settings()
         return cls(
-            kinds=tuple(k.strip() for k in kinds_raw.split(",") if k.strip()),
-            interval_s=float(os.environ.get("MELEE_WORKER_INTERVAL", "0.5")),
-            lease_s=float(os.environ.get("MELEE_WORKER_LEASE", "180")),
-            enabled=raw not in {"off", "0", "false", "no"},
+            kinds=tuple(cfg.worker_kind_list),
+            interval_s=cfg.worker_interval,
+            lease_s=cfg.worker_lease,
+            enabled=cfg.worker,
         )
 
 
@@ -317,7 +318,7 @@ def main() -> int:
 
     _logging.basicConfig(level=_logging.INFO, format="%(levelname)s %(name)s %(message)s")
     parser = argparse.ArgumentParser(description="melee 任务执行器")
-    parser.add_argument("--db", default=os.environ.get("MELEE_DB", "data/match.db"))
+    parser.add_argument("--db", default=str(__import__("services.match.settings", fromlist=["settings"]).settings().db))
     parser.add_argument("--once", action="store_true", help="只跑一轮就退出")
     args = parser.parse_args()
 

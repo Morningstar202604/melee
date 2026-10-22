@@ -14,3 +14,9 @@ openskill==6.2.0
 textarena==0.7.4
 # 可选：MELEE_BROADCAST=redis 时才需要
 redis==5.2.1
+# 用成熟库替代手写实现（限流 / 票据 / 指标 / 调度 / 配置）
+limits==5.8.0
+itsdangerous==2.2.0
+prometheus-fastapi-instrumentator==8.1.0
+apscheduler==3.11.3
+pydantic-settings==2.16.0

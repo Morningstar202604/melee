@@ -83,3 +83,26 @@ python scripts/serve.py        # 单端口起服务
 ```
 
 打开 <http://127.0.0.1:8099/> 即可看到观战页。
+
+---
+
+## 6. 重构记录（2026-10-23）
+
+**原则：能用成熟库就不自己写。** 本轮把四处手写实现换成了库：
+
+| 原实现 | 换成 | 代码量变化 | 收益 |
+|---|---|---|---|
+| 自写内存桶 + Redis ZSET 限流（约 150 行） | `limits` 5.8.0（`MovingWindowRateLimiter` + `MemoryStorage`/`RedisStorage`） | 150 → 95 行 | 后端可插拔、窗口语义标准、键过期由库处理 |
+| 进程内票据字典（SSE + 媒体） | `itsdangerous` 2.2.0 签名票据 | 60 → 35 行 | **无状态**：多副本任一副本都能验签，过期写进载荷，重启不失效 |
+| 手写 Prometheus 文本（5 行指标） | `prometheus-fastapi-instrumentator` 8.1.0 | — | 请求数/延迟直方图/状态码全部标准化；业务指标保留为 Gauge |
+| 线程 + sleep 的赛季调度 | `APScheduler` 3.11.3 `BackgroundScheduler` | 60 → 75 行（略增） | `max_instances=1`、`coalesce`、任务停止由库保证 |
+| 19 处 `os.environ.get("MELEE_*")` | `pydantic-settings` 2.16.0 单一 `Settings` | 分散 → 1 处 | 启动即校验类型，配置错误不再等到运行时 |
+| 手写 `innerHTML` + `escapeHtml`（30 处） | `lit-html` 3.3.3（8KB，vendored，无构建） | 1053 → 约 1000 行 | **模板自动转义**，XSS 从"记得转义"变成"默认安全" |
+| 手写 XOR 定长比较 | 标准库 `hmac.compare_digest` | -5 行 | 标准实现 |
+
+**顺带清掉的**：本地 `melee/` 旧实现（597MB，含 node_modules）——已备份到 `/tmp/legacy-backup/melee-legacy-20261023.tgz`，并保留在五个仓库的 `legacy` 分支。根目录只剩本项目。
+
+**未换的**（评估后认为自研更合适）：
+- 事件日志：`append-only + seq` 是产品契约的核心，SQLite 直接写最可控（换 Kafka/Redis Streams 会引入运维成本）。
+- 比赛引擎：规则本身就是产品，无成熟库可替代。
+- 解说事实校验：业务规则，没有通用库。

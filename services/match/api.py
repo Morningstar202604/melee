@@ -18,12 +18,12 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 import logging
-import os
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from prometheus_fastapi_instrumentator import Instrumentator
 from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel, Field
 
@@ -53,8 +53,9 @@ from .ratelimit import check as rate_check
 from .schedule import run_season
 from .scheduler import SeasonScheduler, ScheduleConfig, start_from_env
 from .season import Season, load, persist
+from .settings import settings
 
-DB_PATH = Path(os.environ.get("MELEE_DB", "data/match.db"))
+DB_PATH = Path(settings().db)
 logger = logging.getLogger("melee.match")
 
 class Bus:
@@ -266,9 +267,61 @@ _SCHEDULER_REF: dict[str, Any] = {"instance": None}
 
 def body_env_worker_enabled() -> bool:
     """MELEE_INLINE_WORKER=off 可关掉内嵌 worker（多副本各自跑独立 worker 时）。"""
-    import os
 
-    return os.environ.get("MELEE_INLINE_WORKER", "on").strip().lower() not in {"off", "0", "false", "no"}
+    return bool(settings().inline_worker)
+
+
+# prometheus_client 的默认注册表是进程级单例：create_app() 在测试里会被调用多次，
+# 重复注册同名 Gauge 会抛 DuplicateTimeseries。所以指标只在第一次构建时创建，
+# 每次 create_app 复用同一组 Gauge。
+_METRICS_LOCK = __import__("threading").Lock()
+_METRICS: dict[str, Any] = {}
+
+
+def _install_metrics(app: Any) -> None:
+    from prometheus_client import Gauge
+
+    from . import workqueue
+
+    with _METRICS_LOCK:
+        if not _METRICS:
+            _METRICS["events"] = Gauge("melee_events_total", "事件总数", ["match_id"])
+            _METRICS["jobs"] = Gauge("melee_jobs_total", "任务数", ["status"])
+
+    def refresh() -> None:
+        try:
+            conn = sqlite3.connect(str(DB_PATH), timeout=2)
+            try:
+                rows = conn.execute("SELECT match_id, COUNT(*) FROM events GROUP BY match_id").fetchall()
+            finally:
+                conn.close()
+            for match_id, count in rows:
+                _METRICS["events"].labels(match_id=match_id).set(count)
+        except sqlite3.OperationalError:
+            pass
+        counts = {workqueue.PENDING: 0, workqueue.RUNNING: 0, workqueue.DONE: 0, workqueue.FAILED: 0}
+        try:
+            for job in workqueue.list_jobs(DB_PATH, limit=500):
+                counts[job.status] = counts.get(job.status, 0) + 1
+        except Exception:  # noqa: BLE001 - 指标不能影响主流程
+            pass
+        for status, count in counts.items():
+            _METRICS["jobs"].labels(status=status).set(count)
+
+    Instrumentator(
+        should_group_status_codes=True,
+        should_ignore_untemplated=True,
+        excluded_handlers=["/metrics", "/health"],
+    ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+
+    @app.get("/metrics/business", include_in_schema=False)
+    async def business_metrics() -> dict[str, Any]:
+        """业务指标快照（JSON）：比 grep Prometheus 文本更适合人看。"""
+        refresh()
+        return {
+            "events": {sample.labels.get("match_id"): sample.value for sample in _METRICS["events"].collect()[0].samples if sample.name == "melee_events_total"},
+            "jobs": {sample.labels.get("status"): sample.value for sample in _METRICS["jobs"].collect()[0].samples if sample.name == "melee_jobs_total"},
+        }
 
 
 def create_app() -> FastAPI:
@@ -299,7 +352,7 @@ def create_app() -> FastAPI:
 
     # 观众端与比赛服务分开部署（静态站点 + API），本地开发跨端口。
     # 上线时用 MELEE_CORS_ORIGINS 收窄；默认 * 只适合本机演示。
-    origins = [item.strip() for item in os.environ.get("MELEE_CORS_ORIGINS", "*").split(",") if item.strip()]
+    origins = settings().origin_list
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins or ["*"],
@@ -314,7 +367,7 @@ def create_app() -> FastAPI:
         没有这些头时，任何同源注入都能被浏览器当作脚本执行；
         没有体积上限时，一个 2.2MB 的 script 列表会被原样接收并落库。
         """
-        limit = int(os.environ.get("MELEE_MAX_BODY_BYTES", str(2 * 1024 * 1024)))
+        limit = settings().max_body_bytes
         length = request.headers.get("content-length")
         if length and length.isdigit() and int(length) > limit:
             return JSONResponse(status_code=413, content={"detail": f"请求体超过 {limit} 字节上限"})
@@ -351,32 +404,9 @@ def create_app() -> FastAPI:
         payload = {"status": "ok" if ok else "degraded", "checks": checks}
         return JSONResponse(status_code=200 if ok else 503, content=payload)
 
-    @app.get("/metrics")
-    async def metrics(request: Request) -> Any:
-        """最小可用指标：事件数、任务数、队列积压。"""
-        _guard(request, "read")
-        from . import workqueue
-
-        conn = sqlite3.connect(str(DB_PATH), timeout=2)
-        try:
-            events = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
-            matches = conn.execute("SELECT COUNT(*) FROM matches").fetchone()[0]
-        except sqlite3.OperationalError:
-            events = matches = 0
-        finally:
-            conn.close()
-        jobs = workqueue.list_jobs(DB_PATH, limit=500)
-        pending = sum(1 for job in jobs if job.status == workqueue.PENDING)
-        running = sum(1 for job in jobs if job.status == workqueue.RUNNING)
-        failed = sum(1 for job in jobs if job.status == workqueue.FAILED)
-        lines = [
-            f"melee_events_total {events}",
-            f"melee_matches_total {matches}",
-            f"melee_jobs_pending {pending}",
-            f"melee_jobs_running {running}",
-            f"melee_jobs_failed {failed}",
-        ]
-        return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+    # 指标交给 prometheus-fastapi-instrumentator：请求数、延迟直方图、状态码分类
+    # 都是标准 HTTP 指标，不用自己数。业务指标用 Gauge 暴露。
+    _install_metrics(app)
 
     @app.post("/matches", status_code=201)
     async def create_match(body: CreateMatch, request: Request) -> dict[str, Any]:

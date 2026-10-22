@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import ipaddress
-import os
 import socket
 from urllib.parse import urlsplit
 
@@ -36,7 +35,9 @@ class OutboundAddressError(ValueError):
 
 
 def _allow_private() -> bool:
-    return os.environ.get("MELEE_ALLOW_PRIVATE_ENDPOINTS", "").strip().lower() in {"1", "true", "yes", "on"}
+    from .settings import settings
+
+    return bool(settings().allow_private_endpoints)
 
 
 def _classify(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str | None:

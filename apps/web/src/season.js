@@ -1,3 +1,4 @@
+import { html, render as litRender } from '../vendor/lit-html.js'
 import { setToken } from './sse.js'
 
 const params = new URLSearchParams(location.search)
@@ -8,10 +9,6 @@ const seasonId = params.get('season') || ''
 
 const el = (id) => document.getElementById(id)
 const headers = () => (token ? { Authorization: `Bearer ${token}` } : {})
-
-function escapeHtml(text) {
-  return String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
-}
 
 async function load() {
   if (!seasonId) {
@@ -26,34 +23,37 @@ async function load() {
     el('title').textContent = data.name || seasonId
     el('subtitle').textContent = `${data.standings.length} 位选手 · ${data.fixtures.length} 场赛程`
 
-    el('standings').innerHTML = data.standings
-      .map(
-        (row, index) => `<div class="rank">
+    litRender(
+      html`${data.standings.map(
+        (row, index) => html`<div class="rank">
           <span class="no">${index + 1}</span>
-          <span class="nm">${escapeHtml(row.display || row.playerId)}</span>
+          <span class="nm">${row.display || row.playerId}</span>
           <span class="w">${row.wins}</span>
           <span class="l">${row.losses}</span>
           <span class="r">${row.rating.toFixed(1)}</span>
         </div>`,
-      )
-      .join('')
+      )}`,
+      el('standings'),
+    )
 
-    el('rivalries').innerHTML = data.rivalries.length
-      ? data.rivalries
-          .map(
-            (r) => `<div class="fixture"><span>${escapeHtml(r.a)} vs ${escapeHtml(r.b)}</span>
-              <span style="margin-left:auto">${r.games} 场 · ${r.aWins}-${r.bWins} · 领先 ${escapeHtml(r.leador)}</span></div>`,
-          )
-          .join('')
-      : '<div class="muted">暂无（需交手 2 场以上）</div>'
+    litRender(
+      data.rivalries.length
+        ? html`${data.rivalries.map(
+            (r) => html`<div class="fixture"><span>${r.a} vs ${r.b}</span>
+              <span style="margin-left:auto">${r.games} 场 · ${r.aWins}-${r.bWins} · 领先 ${r.leador}</span></div>`,
+          )}`
+        : html`<div class="muted">暂无（需交手 2 场以上）</div>`,
+      el('rivalries'),
+    )
 
-    el('fixtures').innerHTML = data.fixtures
-      .map(
-        (f) => `<div class="fixture"><span class="rd">R${f.round}</span>
-          <span>${escapeHtml(f.a)} vs ${escapeHtml(f.b)}</span>
+    litRender(
+      html`${data.fixtures.map(
+        (f) => html`<div class="fixture"><span class="rd">R${f.round}</span>
+          <span>${f.a} vs ${f.b}</span>
           <span style="margin-left:auto">${f.scheduledAt ? formatWhen(f.scheduledAt) : ''}</span></div>`,
-      )
-      .join('')
+      )}`,
+      el('fixtures'),
+    )
     renderNextUp(data.fixtures)
   } catch (error) {
     el('error').textContent = String(error.message || error)

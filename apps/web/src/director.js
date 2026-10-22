@@ -1,3 +1,4 @@
+import { html, render as litRender } from '../vendor/lit-html.js'
 import { setToken } from './sse.js'
 
 const params = new URLSearchParams(location.search)
@@ -12,10 +13,6 @@ let currentMatch = ''
 let selectedShot = 'wide'
 let timer = null
 
-function escapeHtml(text) {
-  return String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
-}
-
 async function api(path, options = {}) {
   const response = await fetch(`${API}${path}`, { ...options, headers: { ...headers(), ...(options.headers || {}) } })
   if (!response.ok) throw new Error(`${response.status} ${await response.text()}`)
@@ -29,17 +26,18 @@ async function loadMatches() {
     el('conn').textContent = '已连接'
     el('conn').className = 'conn ok'
     if (!data.matches.length) {
-      list.innerHTML = '<div class="muted">没有正在进行的比赛。开一局新的，或用下方输入 matchId 打开。</div>'
+      litRender(html`<div class="muted">没有正在进行的比赛。开一局新的，或用下方输入 matchId 打开。</div>`, list)
       return
     }
-    list.innerHTML = data.matches
-      .map(
-        (m) => `<div class="mi" data-id="${escapeHtml(m.matchId)}">
-          <div class="id">${escapeHtml(m.matchId)}</div>
-          <div class="p">${escapeHtml(m.players.join(' vs '))} · 剩 ${m.remaining ?? '—'}</div>
+    litRender(
+      html`${data.matches.map(
+        (m) => html`<div class="mi" data-id="${m.matchId}">
+          <div class="id">${m.matchId}</div>
+          <div class="p">${m.players.join(' vs ')} · 剩 ${m.remaining ?? '—'}</div>
         </div>`,
-      )
-      .join('')
+      )}`,
+      list,
+    )
     list.querySelectorAll('.mi').forEach((node) => {
       node.onclick = () => openMatch(node.dataset.id)
     })
@@ -51,7 +49,7 @@ async function loadMatches() {
   } catch (error) {
     el('conn').textContent = '连接失败'
     el('conn').className = 'conn bad'
-    el('matchList').innerHTML = `<div class="muted">拉取失败：${escapeHtml(String(error.message || error))}</div>`
+    litRender(html`<div class="muted">拉取失败：${String(error.message || error)}</div>`, el('matchList'))
   }
 }
 
@@ -78,23 +76,26 @@ async function refreshDirector() {
     const data = await api(`/director/${encodeURIComponent(currentMatch)}`)
     el('autoCount').textContent = String(data.cues.auto)
     el('manualCount').textContent = String(data.cues.manual)
-    el('cueList').innerHTML = data.recent.length
-      ? data.recent
-          .map(
-            (cue) => `<div class="cue-row">
-              <span class="k">${escapeHtml(cue.payload.shot)}</span>
-              <span class="manual">${escapeHtml(cue.payload.trigger)}</span>
+    litRender(
+      data.recent.length
+        ? html`${data.recent.map(
+            (cue) => html`<div class="cue-row">
+              <span class="k">${cue.payload.shot}</span>
+              <span class="manual">${cue.payload.trigger}</span>
               <div class="muted">seq ${cue.seq} · ${cue.payload.durationMs}ms</div>
             </div>`,
-          )
-          .join('')
-      : '<div class="muted">还没有人工切镜。</div>'
-    el('log').innerHTML = data.lastEvents
-      .map((event) => {
-        const player = event.player ? ` <b>${escapeHtml(event.player)}</b>` : ''
-        return `<div>${String(event.seq).padStart(3, '0')} ${escapeHtml(event.type)}${player}</div>`
-      })
-      .join('')
+          )}`
+        : html`<div class="muted">还没有人工切镜。</div>`,
+      el('cueList'),
+    )
+    litRender(
+      html`${data.lastEvents.map(
+        (event) => html`<div>${String(event.seq).padStart(3, '0')} ${event.type}${
+          event.player ? html` <b>${event.player}</b>` : ''
+        }</div>`,
+      )}`,
+      el('log'),
+    )
   } catch (error) {
     el('status').textContent = `刷新失败：${error.message || error}`
   }

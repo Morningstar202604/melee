@@ -1,3 +1,5 @@
+// 渲染用 lit-html（8KB，无构建）：模板自动转义，不再手写 innerHTML + escapeHtml。
+import { html, render as litRender } from '../vendor/lit-html.js'
 import { connectEvents, fetchMatch, createMatch, renderClips, clipUrl, setToken, fetchMediaTicket } from './sse.js'
 import { createView, reduce, replayView, latestThoughtOf, currentCue } from './view.js'
 
@@ -21,13 +23,6 @@ const GAME_LABELS = {
 }
 
 const el = (id) => document.getElementById(id)
-
-// 非二十问时顶栏的 pill 会被整体重写，maxq/remainHead 随之消失；
-// 之后的渲染必须容忍它们不存在，否则第二帧就抛 null。
-const setText = (id, value) => {
-  const node = el(id)
-  if (node) node.textContent = value
-}
 
 let view = createView()
 let events = []
@@ -68,10 +63,6 @@ function fitStage() {
 
 function render() {
   const shown = mode === 'live' ? view : replayView(events, cursor)
-  setText('qnum', shown.turnIndex)
-  setText('maxq', shown.maxQuestions)
-  setText('remain', shown.remaining ?? '—')
-  setText('remainHead', shown.remaining ?? '—')
   const lastLine = shown.narration.length ? shown.narration[shown.narration.length - 1].text : ''
   el('narration').textContent = lastLine || '等待第一条解说。'
   el('headline').textContent = lastLine || '等待第一条解说。'
@@ -115,57 +106,47 @@ function playerCard(player, index, shown) {
   const active = shown.activePlayer === player && shown.status !== 'ended'
   const isQuiz = shown.gameKind === 'twenty-questions'
   const tone = index % 2 === 0 ? '#22D3EE' : '#F5A524'
-  // 每张卡显示"这个人"做了多少手，不是全场总步数（后者会让所有人都一样）。
-  const value = history.length
-  const label = isQuiz ? '已问' : '出手'
 
-  const rows = history
-    .slice(-8)
-    .map((item) => {
-      // 三种赛制三种记录形态：提问（是否）、线索（数量）、落子/翻牌（颜色）
-      if (item.kind === 'ask') {
-        const yes = item.answer === 'yes'
-        return `<div class="qrow"><span class="idx"></span>
-          <span class="q">${escapeHtml(item.value)}</span>
-          <span class="ans ${yes ? 'y' : 'n'}">${yes ? '是' : '否'}</span></div>`
-      }
-      if (item.kind === 'hint') {
-        return `<div class="qrow"><span class="idx" style="color:#F5A524">线索</span>
-          <span class="q">${escapeHtml(item.value)}</span></div>`
-      }
-      if (item.kind === 'pick') {
-        const tone = { red: 'y', blue: 'n', neutral: 'n', assassin: 'n' }[item.color] || 'n'
-        return `<div class="qrow"><span class="idx"></span>
-          <span class="q">${escapeHtml(item.value)}</span>
-          <span class="ans ${tone}">${escapeHtml(TEAM_LABELS[item.color] || '')}</span></div>`
-      }
-      return `<div class="qrow"><span class="idx" style="color:#3E4658">步</span>
-        <span class="q">${escapeHtml(item.value)}</span></div>`
-    })
-    .join('')
+  const rows = history.slice(-8).map((item) => {
+    if (item.kind === 'ask') {
+      return html`<div class="qrow"><span class="idx"></span>
+        <span class="q">${item.value}</span>
+        <span class="ans ${item.answer === 'yes' ? 'y' : 'n'}">${item.answer === 'yes' ? '是' : '否'}</span></div>`
+    }
+    if (item.kind === 'hint') {
+      return html`<div class="qrow"><span class="idx" style="color:#F5A524">线索</span>
+        <span class="q">${item.value}</span></div>`
+    }
+    if (item.kind === 'pick') {
+      const cls = { red: 'y', blue: 'n', neutral: 'n', assassin: 'n' }[item.color] || 'n'
+      return html`<div class="qrow"><span class="idx"></span>
+        <span class="q">${item.value}</span>
+        <span class="ans ${cls}">${TEAM_LABELS[item.color] || ''}</span></div>`
+    }
+    return html`<div class="qrow"><span class="idx" style="color:#3E4658">步</span>
+      <span class="q">${item.value}</span></div>`
+  })
 
-  return `<div class="card ${active ? 'active' : ''}" style="--tone:${tone}">
+  return html`<div class="card ${active ? 'active' : ''}" style="--tone:${tone}">
     <div class="phead">
-      <div class="avatar">${escapeHtml(player.slice(0, 1))}</div>
-      <div><div class="pname">${escapeHtml(player)}</div><div class="pmodel">选手</div></div>
+      <div class="avatar">${player.slice(0, 1)}</div>
+      <div><div class="pname">${player}</div><div class="pmodel">选手</div></div>
       <div class="status ${active ? 'think' : ''}">${active ? '思考中' : '等待'}</div>
     </div>
-    <div class="big"><div class="n">${value}</div><div class="l">${label}</div></div>
+    <div class="big"><div class="n">${history.length}</div><div class="l">${isQuiz ? '已问' : '出手'}</div></div>
     <div class="label">内心戏</div>
-    <div class="thought">${escapeHtml(thought) || '（还没有内心戏）'}</div>
+    <div class="thought">${thought || '（还没有内心戏）'}</div>
     <div class="label">记录</div>
-    <div class="ledger">${rows || '<div class="empty">暂无</div>'}</div>
+    <div class="ledger">${rows.length ? rows : html`<div class="empty">暂无</div>`}</div>
   </div>`
 }
 
 // 按选手数量动态分配到左右两栏，2 人时一人一边，4 人时 2v2。
 function renderSides(shown) {
   const players = shown.players && shown.players.length ? shown.players : ['A', 'B']
-  const left = el('sideLeft')
-  const right = el('sideRight')
   const half = Math.ceil(players.length / 2)
-  left.innerHTML = players.slice(0, half).map((p, i) => playerCard(p, i, shown)).join('')
-  right.innerHTML = players.slice(half).map((p, i) => playerCard(p, i + half, shown)).join('')
+  litRender(html`${players.slice(0, half).map((p, i) => playerCard(p, i, shown))}`, el('sideLeft'))
+  litRender(html`${players.slice(half).map((p, i) => playerCard(p, i + half, shown))}`, el('sideRight'))
 }
 
 function renderArena(shown) {
@@ -173,29 +154,28 @@ function renderArena(shown) {
   el('gameLabel').textContent = 'TRANSMISSION · ' + (GAME_LABELS[shown.gameKind] || shown.gameKind)
 
   // 顶栏的"第 N 手 / 上限 M 手"只对二十问成立；棋类改显示事件数。
-  const qnum = el('qnum')
-  const maxq = el('maxq')
-  const pill = qnum && qnum.closest('.pill')
-  if (pill) {
-    if (isQuiz) {
-      pill.innerHTML = `第 <b id="qnum">${shown.turnIndex}</b> 手 / 上限 <b id="maxq">${shown.maxQuestions}</b> 手`
-    } else {
-      pill.innerHTML = `第 <b id="qnum">${shown.turnIndex ?? 0}</b> 步`
-    }
-  }
+  litRender(
+    isQuiz
+      ? html`第 <b id="qnum">${shown.turnIndex}</b> 手 / 上限 <b id="maxq">${shown.maxQuestions}</b> 手`
+      : html`第 <b id="qnum">${shown.turnIndex ?? 0}</b> 步`,
+    el('turnPill'),
+  )
+  litRender(
+    isQuiz
+      ? html`候选 <b id="remain">${shown.remaining ?? '—'}</b>`
+      : html`<span class="muted">${GAME_LABELS[shown.gameKind] || ''}</span>`,
+    el('remainPill'),
+  )
   const title = el('panelTitle')
   const meta = el('panelMeta')
-  const remainPill = el('remainPill')
 
   if (isQuiz) {
     title.textContent = '公开提问记录'
-    meta.innerHTML = `剩 <b id="remainHead">${shown.remaining ?? '—'}</b> 个候选`
-    remainPill.style.display = ''
+    litRender(html`剩 <b id="remainHead">${shown.remaining ?? '—'}</b> 个候选`, meta)
     return renderHistory(shown)
   }
   title.textContent = '当前局面'
   meta.textContent = GAME_LABELS[shown.gameKind] || shown.gameKind
-  remainPill.style.display = 'none'
   if (shown.gameKind === 'codenames') return renderCodenames(shown)
   if (shown.gameKind === 'nim') return renderPiles(shown)
   renderBoard(shown)
@@ -203,92 +183,65 @@ function renderArena(shown) {
 
 // 取石子：三堆石子用横条长度表示，一眼看出哪堆还能拿。
 function renderPiles(shown) {
-  const list = el('historyList')
   const piles = shown.gameState && shown.gameState.piles
-  if (!Array.isArray(piles)) {
-    list.innerHTML = '<div class="empty">等待局面状态…</div>'
-    return
-  }
+  if (!Array.isArray(piles)) return litRender(html`<div class="empty">等待局面状态…</div>`, el('historyList'))
   const max = Math.max(1, ...piles.map((n) => Number(n) || 0))
-  list.innerHTML =
-    '<div class="piles">' +
-    piles
-      .map(
-        (count, index) =>
-          `<div class="pile"><span class="pno">堆 ${index}</span>
-            <span class="pbar"><i style="width:${(Number(count) / max) * 100}%"></i></span>
-            <span class="pnum">${count}</span></div>`,
-      )
-      .join('') +
-    '</div>'
+  litRender(
+    html`<div class="piles">${piles.map(
+      (count, index) => html`<div class="pile"><span class="pno">堆 ${index}</span>
+        <span class="pbar"><i style="width:${(Number(count) / max) * 100}%"></i></span>
+        <span class="pnum">${count}</span></div>`,
+    )}</div>`,
+    el('historyList'),
+  )
 }
 
 // 代号：5×5 词阵。只显示已翻开的颜色，未翻开的保持中性。
 function renderCodenames(shown) {
-  const list = el('historyList')
   const board = shown.gameState && shown.gameState.board
-  if (!Array.isArray(board)) {
-    list.innerHTML = '<div class="empty">等待棋盘状态…</div>'
-    return
-  }
+  if (!Array.isArray(board)) return litRender(html`<div class="empty">等待棋盘状态…</div>`, el('historyList'))
   const COLOR = { red: '#F87171', blue: '#60A5FA', neutral: '#6B7280', assassin: '#111827' }
   const teams = shown.teamRemaining || {}
   const turn = shown.turn === 'blue' ? '蓝队' : shown.turn === 'red' ? '红队' : ''
   const phase = shown.phase === 'hint' ? '队长给线索' : '队员猜词'
   const hint = shown.hint
-  const hintText = hint ? `线索「${escapeHtml(hint.word)}」× ${hint.count}` : '还没有线索'
-  list.innerHTML =
-    `<div class="cnHead">
-      <span class="cnTurn ${shown.turn === 'blue' ? 'blue' : 'red'}">${turn} · ${phase}</span>
-      <span class="cnHint">${hintText}</span>
-      <span class="cnLeft">红 ${teams.red ?? '—'} · 蓝 ${teams.blue ?? '—'}</span>
-    </div>` +
-    '<div class="cnGrid">' +
-    board
-      .map((cell) => {
+  litRender(
+    html`<div class="cnHead">
+        <span class="cnTurn ${shown.turn === 'blue' ? 'blue' : 'red'}">${turn} · ${phase}</span>
+        <span class="cnHint">${hint ? `线索「${hint.word}」× ${hint.count}` : '还没有线索'}</span>
+        <span class="cnLeft">红 ${teams.red ?? '—'} · 蓝 ${teams.blue ?? '—'}</span>
+      </div>
+      <div class="cnGrid">${board.map((cell) => {
         const bg = cell.revealed && cell.color ? COLOR[cell.color] || '#1C2230' : '#0E121A'
         const style = cell.revealed ? `background:${bg};border-color:${bg};color:#fff` : ''
-        return `<div class="cnCell" style="${style}">${escapeHtml(cell.word)}</div>`
-      })
-      .join('') +
-    '</div>'
+        return html`<div class="cnCell" style="${style}">${cell.word}</div>`
+      })}</div>`,
+    el('historyList'),
+  )
 }
 
 function renderBoard(shown) {
-  const list = el('historyList')
-  const state = shown.gameState
-  const board = state && state.board
-  if (!Array.isArray(board)) {
-    list.innerHTML = '<div class="empty">等待棋盘状态…</div>'
-    return
-  }
-  list.innerHTML =
-    '<div class="board">' +
-    board
-      .map(
-        (row) =>
-          '<div class="brow">' +
-          row
-            .map((cell) => `<span class="cell">${escapeHtml(cell || '·')}</span>`)
-            .join('') +
-          '</div>',
-      )
-      .join('') +
-    '</div>'
+  const board = shown.gameState && shown.gameState.board
+  if (!Array.isArray(board)) return litRender(html`<div class="empty">等待棋盘状态…</div>`, el('historyList'))
+  litRender(
+    html`<div class="board">${board.map(
+      (row) => html`<div class="brow">${row.map((cell) => html`<span class="cell">${cell || '·'}</span>`)}</div>`,
+    )}</div>`,
+    el('historyList'),
+  )
 }
 
 function renderHistory(shown) {
-  const list = el('historyList')
   const recent = shown.history.slice(-6)
-  list.innerHTML = recent.length
-    ? recent
-        .map((item) => {
-          const yes = item.answer === 'yes'
-          return `<div class="hrow"><b class="${item.by === 'A' ? 'a' : 'b'}">${escapeHtml(item.by)}</b>
-            <span>${escapeHtml(item.value)}</span><i class="${yes ? 'y' : 'n'}">${yes ? '是' : '否'}</i></div>`
-        })
-        .join('')
-    : '<div class="empty">等待第一次提问</div>'
+  litRender(
+    recent.length
+      ? html`${recent.map(
+          (item) => html`<div class="hrow"><b class="${item.by === 'A' ? 'a' : 'b'}">${item.by}</b>
+            <span>${item.value}</span><i class="${item.answer === 'yes' ? 'y' : 'n'}">${item.answer === 'yes' ? '是' : '否'}</i></div>`,
+        )}`
+      : html`<div class="empty">等待第一次提问</div>`,
+    el('historyList'),
+  )
 }
 
 function renderTimeline() {
@@ -311,10 +264,6 @@ function renderStatus(shown) {
   el('lastAction').textContent = last
     ? `${last.player} ${last.kind === 'ask' ? '提问' : last.kind === 'guess' ? '报答案' : last.kind} ${last.value || ''}`
     : '—'
-}
-
-function escapeHtml(text) {
-  return String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 }
 
 function appendEvent(event) {
@@ -469,26 +418,27 @@ async function exportHighlights() {
   const panel = el('clipPanel')
   const body = el('clipBody')
   panel.classList.add('on')
-  body.innerHTML = '<div class="cp-empty">正在渲染…（几秒到十几秒）</div>'
+  litRender(html`<div class="cp-empty">正在渲染…（几秒到十几秒）</div>`, body)
 
   try {
     const result = await renderClips(matchId, { baseUrl: API, limit: 3, perEventMs: 900 })
     if (!result.clips.length) {
-      body.innerHTML = '<div class="cp-empty">这场比赛没有可剪的高光</div>'
+      litRender(html`<div class="cp-empty">这场比赛没有可剪的高光</div>`, body)
       return
     }
     const ticket = await fetchMediaTicket(matchId, { baseUrl: API })
-    body.innerHTML = result.clips
-      .map(
-        (clip) => `<div class="clip">
-          <div class="c-title">${escapeHtml(clip.title)}</div>
+    litRender(
+      html`${result.clips.map(
+        (clip) => html`<div class="clip">
+          <div class="c-title">${clip.title}</div>
           <div class="c-meta">${clip.kind} · ${(clip.durationMs / 1000).toFixed(1)}s · ${clip.frames} 帧</div>
           <video controls preload="none" poster="" src="${clipUrl(matchId, clip.file, API, ticket)}"></video>
         </div>`,
-      )
-      .join('')
+      )}`,
+      body,
+    )
   } catch (error) {
-    body.innerHTML = `<div class="c-err">${escapeHtml(String(error.message || error))}</div>`
+    litRender(html`<div class="c-err">${String(error.message || error)}</div>`, body)
   }
 }
 
@@ -505,7 +455,10 @@ async function loadGames() {
     if (Array.isArray(data.games) && data.games.length) {
       GAMES = data.games
       const picker = el('gamePick')
-      picker.innerHTML = GAMES.map((g) => `<option value="${g.gameId}">${g.label}</option>`).join('')
+      litRender(
+        html`${GAMES.map((g) => html`<option value="${g.gameId}">${g.label}</option>`)}`,
+        picker,
+      )
     }
   } catch {
     /* 拉不到就用内置默认 */

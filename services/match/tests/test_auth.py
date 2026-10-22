@@ -8,7 +8,7 @@ import pytest
 
 from services.match import auth, ratelimit
 from services.match.auth import AuthError, Principal, QuotaConfig, authenticate, check_and_consume, usage
-from services.match.ratelimit import RateLimiter
+from services.match.ratelimit import Limiter
 from services.match.secrets import SecretCipher, cipher_from_env, fingerprint, generate_key, open_specs, seal_specs
 
 
@@ -139,36 +139,36 @@ def test_quota_isolated_per_principal(tmp_path):
 
 
 # ---------- 限流 ----------
+# 实现交给 limits 库（MovingWindowRateLimiter + MemoryStorage/RedisStorage），
+# 这里只测我们的分档与封装语义。
 
 def test_limiter_allows_within_limit():
-    limiter = RateLimiter()
-    for _ in range(3):
-        allowed, _remaining = limiter.hit("k", limit=3, window_s=60)
-        assert allowed
+    limiter = Limiter()
+    for _ in range(10):
+        assert limiter.hit("k", "write_match").allowed
 
 
 def test_limiter_blocks_over_limit():
-    limiter = RateLimiter()
-    for _ in range(3):
-        limiter.hit("k", limit=3, window_s=60)
-    allowed, remaining = limiter.hit("k", limit=3, window_s=60)
-    assert not allowed and remaining == 0
+    limiter = Limiter()
+    for _ in range(10):
+        limiter.hit("k", "write_match")
+    decision = limiter.hit("k", "write_match")
+    assert not decision.allowed
+    assert decision.remaining == 0
 
 
 def test_limiter_isolates_keys():
-    limiter = RateLimiter()
-    limiter.hit("a", limit=1, window_s=60)
-    allowed, _ = limiter.hit("b", limit=1, window_s=60)
-    assert allowed
+    limiter = Limiter()
+    limiter.hit("a", "write_season")
+    assert limiter.hit("b", "write_season").allowed
 
 
-def test_limiter_cleanup_drops_stale():
-    limiter = RateLimiter()
-    limiter.hit("old", limit=1, window_s=0.001)
-    import time
+def test_limiter_profiles_have_expected_limits():
+    from services.match.ratelimit import PROFILES
 
-    time.sleep(0.01)
-    assert limiter.cleanup(older_than_s=0.005) >= 1
+    assert PROFILES["write_match"] == "10/minute"
+    assert PROFILES["read"] == "120/minute"
+    assert PROFILES["stream"] == "30/minute"
 
 
 class FakeRequest:
@@ -338,44 +338,42 @@ def test_clip_download_requires_credentials_in_token_mode(tmp_path, monkeypatch)
     assert client.get("/matches/m2/clips/01-guess.mp4?ticket=" + ticket).status_code == 401
 
 
-def test_ratelimit_redis_backend_delivers_and_fails_open():
-    """MELEE_RATELIMIT=redis 必须有真实实现：跨进程计数，且 Redis 挂了不锁死服务。"""
-    from services.match.ratelimit import RedisRateLimiter
+def test_ratelimit_redis_backend_shares_state_across_instances():
+    """MELEE_RATELIMIT=redis：两个 Limiter 实例共享同一份计数。"""
+    from limits.storage import RedisStorage
+
+    from services.match.ratelimit import Limiter
 
     url = os.environ.get("MELEE_TEST_REDIS_URL")
     if not url:
         pytest.skip("未提供 MELEE_TEST_REDIS_URL")
-    limiter = RedisRateLimiter(url)
-    limiter.reset()
-    assert limiter.hit("k", limit=2, window_s=60)[0] is True
-    assert limiter.hit("k", limit=2, window_s=60)[0] is True
-    allowed, remaining = limiter.hit("k", limit=2, window_s=60)
-    assert allowed is False and remaining == 0
-    limiter.reset()
-
-
-def test_ratelimit_redis_backend_fails_open_when_unreachable():
-    from services.match.ratelimit import RedisRateLimiter
-
-    limiter = RedisRateLimiter("redis://127.0.0.1:1/0", socket_timeout=0.2)
-    allowed, _remaining = limiter.hit("k", limit=1, window_s=60)
-    assert allowed is True, "Redis 不可用时不能把全部请求打死"
+    first = Limiter(RedisStorage(url))
+    second = Limiter(RedisStorage(url))
+    first.reset()
+    for _ in range(10):
+        assert first.hit("shared", "write_match").allowed
+    assert second.hit("shared", "write_match").allowed is False
+    first.reset()
 
 
 def test_ratelimit_backend_selection(monkeypatch):
-    """MELEE_RATELIMIT 决定后端；缺 URL 时不能崩，要退回内存。"""
+    """MELEE_RATELIMIT 决定后端；缺 URL 或连不上时退回内存，不让启动失败。"""
+    from limits.storage import MemoryStorage, RedisStorage
+
     from services.match import ratelimit
 
     ratelimit.reset_limiter()
     monkeypatch.setenv("MELEE_RATELIMIT", "redis")
     monkeypatch.delenv("MELEE_REDIS_URL", raising=False)
-    assert isinstance(ratelimit.limiter(), ratelimit.RateLimiter)
+    assert isinstance(ratelimit.limiter()._storage, MemoryStorage)
 
     monkeypatch.setenv("MELEE_REDIS_URL", "redis://127.0.0.1:6399/0")
-    assert isinstance(ratelimit.limiter(), ratelimit.RedisRateLimiter)
+    from services.match.settings import reset_settings
+
+    reset_settings()
     ratelimit.reset_limiter()
-    monkeypatch.delenv("MELEE_RATELIMIT", raising=False)
-    assert isinstance(ratelimit.limiter(), ratelimit.RateLimiter)
+    assert isinstance(ratelimit.limiter()._storage, RedisStorage)
+    ratelimit.reset_limiter()
 
 
 def test_oauth_like_errors_do_not_leak_internal_details(tmp_path, monkeypatch):
@@ -392,3 +390,24 @@ def test_oauth_like_errors_do_not_leak_internal_details(tmp_path, monkeypatch):
     body = response.text
     assert "Traceback" not in body
     assert "site-packages" not in body
+
+
+def test_tickets_are_signed_not_stored(monkeypatch):
+    """票据是签名串：改一个字符就失效；两个进程用同一密钥也能互相验证。"""
+    from services.match.auth import issue_media_ticket, redeem_media_ticket
+
+    monkeypatch.setenv("MELEE_TICKET_SECRET", "fixed-secret-for-test")
+    ticket = issue_media_ticket(Principal("alice", True), "m1")
+    assert "." in ticket  # itsdangerous 的 payload.timestamp.signature 三段
+    tampered = ticket[:-2] + "xx"
+    assert redeem_media_ticket(tampered, "m1") is None
+
+
+def test_ticket_survives_process_restart(monkeypatch):
+    """无状态票据：同一密钥下，重新构造的 serializer 也能验证（跨副本/重启可用）。"""
+    from services.match.auth import _ticket_serializer, issue_media_ticket
+
+    monkeypatch.setenv("MELEE_TICKET_SECRET", "another-fixed-secret")
+    ticket = issue_media_ticket(Principal("bob", True), "m2")
+    data = _ticket_serializer().loads(ticket)
+    assert data["n"] == "bob" and data["m"] == "m2" and data["k"] == "media"

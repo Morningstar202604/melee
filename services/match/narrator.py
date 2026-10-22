@@ -123,22 +123,23 @@ def narrator_from_env(client: Any | None = None) -> Any:
     MELEE_NARRATOR=llm 时必须同时给 model / base_url / api_key，缺一个就退回
     规则式并告警——宁可解说朴素，也不能让配置错误把比赛跑挂。
     """
-    import os
 
-    kind = os.environ.get("MELEE_NARRATOR", "rule").strip().lower()
-    if kind != "llm":
+    from .settings import settings
+
+    cfg = settings()
+    if cfg.narrator.lower() != "llm":
         return RuleNarrator()
 
-    model = os.environ.get("MELEE_NARRATOR_MODEL", "").strip()
-    base_url = os.environ.get("MELEE_NARRATOR_BASE_URL", "").strip()
-    api_key = os.environ.get("MELEE_NARRATOR_API_KEY", "").strip()
+    model = cfg.narrator_model.strip()
+    base_url = cfg.narrator_base_url.strip()
+    api_key = cfg.narrator_api_key.strip()
     if not (model and base_url and api_key):
         return RuleNarrator()
 
     if client is None:
         import httpx
 
-        client = httpx.Client(timeout=float(os.environ.get("MELEE_NARRATOR_TIMEOUT", "20")))
+        client = httpx.Client(timeout=cfg.narrator_timeout)
     return LLMNarrator(client, model=model, base_url=base_url, api_key=api_key)
 
 

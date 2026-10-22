@@ -4,6 +4,7 @@ import pytest
 
 from services.match import api as api_module
 from services.match.ratelimit import reset_limiter
+from services.match.settings import reset_settings
 
 
 @pytest.fixture()
@@ -13,6 +14,18 @@ def allow_local_endpoints(monkeypatch):
     默认不全局打开：否则 SSRF 门禁的测试会被自己的 fixture 绕过。
     """
     monkeypatch.setenv("MELEE_ALLOW_PRIVATE_ENDPOINTS", "1")
+
+
+@pytest.fixture(autouse=True)
+def _reset_settings():
+    """每个测试都从干净的环境变量重新构建配置。
+
+    `settings()` 有进程级缓存，monkeypatch 改环境变量后必须清缓存，
+    否则测试会读到上一个测试的配置。
+    """
+    reset_settings()
+    yield
+    reset_settings()
 
 
 @pytest.fixture(autouse=True)

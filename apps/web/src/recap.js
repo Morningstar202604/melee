@@ -1,3 +1,4 @@
+import { html, render as litRender } from '../vendor/lit-html.js'
 import { clipUrl, fetchMediaTicket, setToken } from './sse.js'
 
 const params = new URLSearchParams(location.search)
@@ -8,10 +9,6 @@ const matchId = params.get('match') || ''
 
 const el = (id) => document.getElementById(id)
 const headers = () => (token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' })
-
-function escapeHtml(text) {
-  return String(text ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
-}
 
 const TEAM_LABELS = { red: '红队', blue: '蓝队' }
 const prettyWinner = (value) => (value ? TEAM_LABELS[value] || value : '')
@@ -42,21 +39,23 @@ async function load() {
           ['步数', data.moves],
           ['犯规', data.rejected],
         ]
-    el('stats').innerHTML = stats
-      .map(([label, value]) => `<div class="stat"><b>${value}</b><span>${label}</span></div>`)
-      .join('')
+    litRender(
+      html`${stats.map(([label, value]) => html`<div class="stat"><b>${value}</b><span>${label}</span></div>`)}`,
+      el('stats'),
+    )
 
-    el('highlights').innerHTML = data.highlights.length
-      ? data.highlights
-          .map(
-            (h) => `<div class="hlc ${h.weight >= 80 ? 'hot' : ''}">
-              <div class="k">${escapeHtml(h.kind)} · seq ${h.seq}</div>
-              <div class="t">${escapeHtml(h.title)}</div>
-              <div class="d">${escapeHtml(h.detail)}</div>
+    litRender(
+      data.highlights.length
+        ? html`${data.highlights.map(
+            (h) => html`<div class="hlc ${h.weight >= 80 ? 'hot' : ''}">
+              <div class="k">${h.kind} · seq ${h.seq}</div>
+              <div class="t">${h.title}</div>
+              <div class="d">${h.detail}</div>
             </div>`,
-          )
-          .join('')
-      : '<div class="muted">这场比赛没有明显转折点。</div>'
+          )}`
+        : html`<div class="muted">这场比赛没有明显转折点。</div>`,
+      el('highlights'),
+    )
   } catch (error) {
     el('error').textContent = String(error.message || error)
   }
@@ -64,7 +63,7 @@ async function load() {
 
 async function renderClips() {
   if (!matchId) return
-  el('clips').innerHTML = '<div class="muted">渲染中…</div>'
+  litRender(html`<div class="muted">渲染中…</div>`, el('clips'))
   try {
     const response = await fetch(`${API}/matches/${encodeURIComponent(matchId)}/clips/render?limit=3`, {
       method: 'POST',
@@ -73,18 +72,19 @@ async function renderClips() {
     if (!response.ok) throw new Error(`${response.status} ${await response.text()}`)
     const data = await response.json()
     const ticket = await fetchMediaTicket(matchId, { baseUrl: API })
-    el('clips').innerHTML = data.clips.length
-      ? data.clips
-          .map(
-            (clip) => `<div class="clip">
+    litRender(
+      data.clips.length
+        ? html`${data.clips.map(
+            (clip) => html`<div class="clip">
               <video controls preload="none" src="${clipUrl(matchId, clip.file, API, ticket)}"></video>
-              <div class="m">${escapeHtml(clip.title)} · ${(clip.durationMs / 1000).toFixed(1)}s</div>
+              <div class="m">${clip.title} · ${(clip.durationMs / 1000).toFixed(1)}s</div>
             </div>`,
-          )
-          .join('')
-      : '<div class="muted">没有可剪的高光。</div>'
+          )}`
+        : html`<div class="muted">没有可剪的高光。</div>`,
+      el('clips'),
+    )
   } catch (error) {
-    el('clips').innerHTML = `<div class="error">${escapeHtml(String(error.message || error))}</div>`
+    litRender(html`<div class="error">${String(error.message || error)}</div>`, el('clips'))
   }
 }
 

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import threading
 from typing import Any, Callable, Protocol
 
@@ -193,8 +192,11 @@ def global_broadcaster() -> Broadcaster:
         return _GLOBAL
     with _GLOBAL_LOCK:
         if _GLOBAL is None:
-            kind = os.environ.get("MELEE_BROADCAST", "memory").strip().lower() or "memory"
-            url = os.environ.get("MELEE_REDIS_URL") or None
+            from .settings import settings
+
+            cfg = settings()
+            kind = cfg.broadcast or "memory"
+            url = cfg.redis_url or None
             try:
                 _GLOBAL = make_broadcaster(kind, redis_url=url)
             except Exception:  # noqa: BLE001 - 广播是增强，不是启动前提

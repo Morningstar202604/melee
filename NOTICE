@@ -28,3 +28,17 @@
 ## 前端
 
 前端没有打包器、没有 node_modules 运行时依赖，所有代码为原生 ES module。
+| limits | 5.8.0 | MIT | 限流（滑动窗口 + 内存/Redis 后端） |
+| itsdangerous | 2.2.0 | BSD-3-Clause | 签名票据（SSE / 媒体） |
+| prometheus-fastapi-instrumentator | 8.1.0 | ISC | HTTP 指标与 /metrics |
+| prometheus-client | 0.26.0 | Apache-2.0 AND BSD-2-Clause | 指标导出（instrumentator 依赖） |
+| apscheduler | 3.11.3 | MIT | 赛程调度 |
+| pydantic-settings | 2.16.0 | MIT | 配置集中与环境变量解析 |
+
+## 前端
+
+| 包 | 版本 | 许可证 | 用途 |
+|---|---|---|---|
+| lit-html | 3.3.3 | BSD-3-Clause | 模板渲染（vendored，无构建） |
+
+`lit-html` 以单文件 vendored 到 `apps/web/vendor/lit-html.js`（8KB），许可证随文件放在同目录。

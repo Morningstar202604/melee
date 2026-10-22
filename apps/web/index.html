@@ -251,8 +251,9 @@ select{height:36px;background:#0F131A;border:1px solid var(--line);color:#C4CBDA
   <div id="stage">
     <div class="topline">
       <span class="season" id="gameLabel">TRANSMISSION</span>
-      <div class="pill">第 <b id="qnum">0</b> 手 / 上限 <b id="maxq">21</b> 手</div>
-      <div class="pill" id="remainPill">候选 <b id="remain">—</b></div>
+      <!-- 这两个 pill 的内容由 lit-html 整块渲染：留空，避免静态文本与模板叠在一起。 -->
+      <div class="pill" id="turnPill"></div>
+      <div class="pill" id="remainPill"></div>
       <div class="live"><span class="dot"></span><span id="liveLabel">LIVE</span></div>
       <div class="right"><span>事件 <b id="tlCount" style="color:#D6DBE6">0 / 0</b></span></div>
     </div>
@@ -268,7 +269,7 @@ select{height:36px;background:#0F131A;border:1px solid var(--line);color:#C4CBDA
         <div class="field" id="arenaPanel">
           <div class="head">
             <span class="t" id="panelTitle">公开提问记录</span>
-            <span class="n" id="panelMeta">剩 <b id="remainHead">—</b> 个候选</span>
+            <span class="n" id="panelMeta"></span>
             <div class="bar"><i id="bar" style="width:100%"></i></div>
           </div>
           <div class="history" id="historyList"></div>

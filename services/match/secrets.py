@@ -18,7 +18,6 @@ import base64
 import hashlib
 import json
 import logging
-import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -61,7 +60,9 @@ def generate_key() -> str:
 
 
 def cipher_from_env() -> SecretCipher:
-    key = os.environ.get("MELEE_SECRET_KEY", "").strip()
+    from .settings import settings
+
+    key = settings().secret_key.strip()
     cipher = SecretCipher(key or None)
     if not cipher.enabled:
         logger.warning(

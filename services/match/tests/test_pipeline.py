@@ -127,8 +127,10 @@ def test_verify_renderable_rejects_empty_clip():
 # ---------- 调度 ----------
 
 def test_scheduler_disabled_by_default(tmp_path):
+    """没配置赛季时 start() 不注册 job（APScheduler 不会启动）。"""
     scheduler = SeasonScheduler(ScheduleConfig(), tmp_path / "s.db")
-    assert scheduler.start() is None or scheduler._thread is None
+    scheduler.start()
+    assert scheduler.running is False
     assert scheduler.tick() == []
 
 
