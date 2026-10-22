@@ -55,6 +55,31 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _enable_wal(conn: sqlite3.Connection, attempts: int = 5) -> None:
+    """切 WAL；并发打开时被锁占用就退避重试，仍失败则保持默认日志模式。
+
+    为什么不用 try/except pass：切不过去不该让启动失败——WAL 是性能优化，
+    默认的 delete 模式在单写多读下也能工作，只是并发写更容易撞锁。
+    但必须留下日志，否则线上会以为已经开了 WAL。
+    """
+    import logging
+    import time as _time
+
+    logger = logging.getLogger("melee.eventlog")
+    for attempt in range(attempts):
+        try:
+            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+            if mode and str(mode[0]).lower() == "wal":
+                return
+            logger.warning("journal_mode 切换未生效：%s", mode)
+            return
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            _time.sleep(0.05 * (attempt + 1))
+    logger.warning("连续 %d 次切换 WAL 失败，继续使用默认 journal 模式", attempts)
+
+
 @dataclass
 class EventLog:
     """append-only 事件日志。seq 由日志分配，调用方无法跳号、乱序或重复。"""
@@ -71,11 +96,11 @@ class EventLog:
         # runner 在线程池里执行，事件由它写；reader 在事件循环里读。
         # 同一连接跨线程使用需要显式放开限制，并用锁保证写入串行。
         conn = sqlite3.connect(str(path), check_same_thread=False, timeout=30.0)
-        conn.executescript(SCHEMA)
-        # WAL 让"读不挡写"；busy_timeout 与 NORMAL 同步在崩溃与并发之间取平衡。
-        # 不加这两条时，6 个并发写者会在 27 秒内打出 "database is locked"。
-        conn.execute("PRAGMA journal_mode=WAL")
+        # 先设 busy_timeout 再切 WAL：切 journal_mode 需要短暂独占锁，
+        # 并发 open 时若别的连接正持有锁，会直接抛 "database is locked"（CI 上实测）。
         conn.execute("PRAGMA busy_timeout=30000")
+        _enable_wal(conn)
+        conn.executescript(SCHEMA)
         conn.execute("PRAGMA synchronous=NORMAL")
         row = conn.execute(
             "SELECT COALESCE(MAX(seq) + 1, 0) FROM events WHERE match_id = ?", (match_id,)

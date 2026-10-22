@@ -202,3 +202,28 @@ def test_forfeit_marks_opponent_as_winner():
     assert result.legal
     assert result.next_state["winner"] == "B"
     assert result.next_state["endReason"] == "弃权"
+
+
+def test_concurrent_open_does_not_fail_when_switching_wal(tmp_path):
+    """并发 open 同一库时，切 WAL 撞锁不能把建场打断（CI 上真实炸过）。"""
+    import threading
+
+    from services.match.eventlog import EventLog
+
+    db = tmp_path / "concurrent.db"
+    errors: list[str] = []
+
+    def open_one(index: int) -> None:
+        try:
+            log = EventLog.open(db, f"m{index}")
+            log.create_match("twenty-questions", index, ["A", "B"])
+            log.close()
+        except Exception as exc:  # noqa: BLE001 - 收集所有失败
+            errors.append(f"{index}:{type(exc).__name__}:{exc}")
+
+    threads = [threading.Thread(target=open_one, args=(i,)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not errors, errors
