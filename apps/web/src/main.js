@@ -160,12 +160,12 @@ function renderArena(shown) {
       : html`第 <b id="qnum">${shown.turnIndex ?? 0}</b> 步`,
     el('turnPill'),
   )
+  // 只有二十问有"候选数"这个指标；棋类/代号不显示，避免和左侧赛制名重复。
   litRender(
-    isQuiz
-      ? html`候选 <b id="remain">${shown.remaining ?? '—'}</b>`
-      : html`<span class="muted">${GAME_LABELS[shown.gameKind] || ''}</span>`,
+    isQuiz ? html`候选 <b id="remain">${shown.remaining ?? '—'}</b>` : html``,
     el('remainPill'),
   )
+  el('remainPill').style.display = isQuiz ? '' : 'none'
   const title = el('panelTitle')
   const meta = el('panelMeta')
 
