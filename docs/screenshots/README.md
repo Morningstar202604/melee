@@ -1,6 +1,6 @@
 # 截图与录屏
 
-全部由 Playwright 驱动真实 Chromium 在真实服务上截取（`MELEE_DB=/tmp/... python scripts/serve.py`）。
+全部由 Playwright 驱动真实 Chromium 在真实服务上截取（单端口 `scripts/serve.py`，1470×900 与 390×844 两种视口）。截图里的比赛都是真跑出来的，不是静态稿。
 
 | 文件 | 页面 | 说明 |
 |---|---|---|
