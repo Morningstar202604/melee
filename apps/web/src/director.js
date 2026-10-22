@@ -43,6 +43,11 @@ async function loadMatches() {
     list.querySelectorAll('.mi').forEach((node) => {
       node.onclick = () => openMatch(node.dataset.id)
     })
+    // 只有一个直播时自动打开：导播台第一眼就该看到画面与事件，
+    // 而不是空白面板加一条需要手动点的列表项。
+    if (data.matches.length === 1 && !currentMatch) {
+      openMatch(data.matches[0].matchId)
+    }
   } catch (error) {
     el('conn').textContent = '连接失败'
     el('conn').className = 'conn bad'

@@ -178,12 +178,15 @@ select{height:36px;background:#0F131A;border:1px solid var(--line);color:#C4CBDA
 /* 移动端：不再缩放 16:9 桌面舞台，改为纵向堆叠的原生布局。
    固定舞台缩小到手机上文字会小到不可读，这不是适配，是将就。 */
 @media (max-width: 900px){
-  #topbar{height:48px;min-height:48px;max-height:48px;padding:0 8px;gap:4px;flex-wrap:nowrap;overflow-x:auto;align-items:center}
+  /* 手机顶栏两行：第一行品牌 + 赛制 + 开赛，第二行导航。单行会挤掉按钮。 */
+  #topbar{height:auto;min-height:48px;max-height:none;padding:6px 10px;gap:6px;flex-wrap:wrap;align-items:center}
   #topbar .field{display:none}
   #topbar .brand{flex:none;font-size:11px}
-  #topbar .nav{margin-left:auto;gap:0}
-  #topbar .nav a{padding:5px 7px;font-size:11px}
+  #topbar .nav{order:3;width:100%;margin-left:0;gap:2px;justify-content:space-between}
+  #topbar .nav a{padding:5px 8px;font-size:11px}
   #topbar button{height:30px;padding:0 10px;font-size:11.5px}
+  #topbar .spacer{display:none}
+  #topbar .conn{margin-left:auto;font-size:10.5px;padding:2px 7px}
   #matchId,#connectError{display:none}
 
   #frame{position:static;inset:auto;display:block;overflow:visible;padding:0;background:#05070A}
@@ -197,9 +200,13 @@ select{height:36px;background:#0F131A;border:1px solid var(--line);color:#C4CBDA
   .topline .season{width:100%}
   .right{display:none}
   .main{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+  /* display:contents 让两侧的卡直接参与 .main 的纵向排序；
+     否则 .side 仍是一个没有高度的 flex 容器，卡片会被压成一条。 */
+  .side{display:contents}
+  .side .card{flex:none;min-height:auto}
   .main .center{order:1}
-  .main .card:first-child{order:2}
-  .main .card:last-child{order:3}
+  .main .side .card{order:2}
+  .main .side:last-of-type .card{order:3}
   .card{min-height:auto;padding:12px 14px}
   .card .ledger{max-height:160px}
   .thought{min-height:52px;max-height:80px}

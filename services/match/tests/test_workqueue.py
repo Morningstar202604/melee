@@ -163,3 +163,59 @@ def test_queued_match_can_resume_after_crash(db):
     seqs = [e["seq"] for e in second]
     assert seqs == list(range(len(seqs))), "重跑不能产生重复或断号"
     assert sum(1 for e in second if e["type"] == "match.started") == 1
+
+
+def test_renew_extends_lease_and_rejects_other_owner(db):
+    workqueue.enqueue(db, "demo", {})
+    job = workqueue.claim(db, "w1", ["demo"], lease_s=1)
+    assert job is not None
+    time.sleep(1.2)
+    # 租约已过期，但还没人接手，原 owner 仍可续租
+    assert workqueue.renew(db, job.job_id, "w1", lease_s=30) is True
+    # 别人不能续
+    assert workqueue.renew(db, job.job_id, "w2", lease_s=30) is False
+
+
+def test_renewed_lease_prevents_duplicate_claim(db):
+    """长任务续租后，第二个 worker 不应再领到同一场。"""
+    workqueue.enqueue(db, "demo", {})
+    job = workqueue.claim(db, "w1", ["demo"], lease_s=1)
+    assert job is not None
+    time.sleep(1.2)
+    assert workqueue.renew(db, job.job_id, "w1", lease_s=30) is True
+    assert workqueue.claim(db, "w2", ["demo"], lease_s=30) is None
+
+
+def test_long_job_is_not_claimed_twice_by_two_workers(db, monkeypatch):
+    """回归：两个 worker 同时跑长任务时，只能执行一次。
+
+    复现条件：租约短于任务时长。修复前第二个 worker 会在租约到期后
+    把同一场再跑一遍，事件流里出现两条 match.ended（实测 seq 375 / 384）。
+    """
+    import threading
+    import time as _time
+
+    from services.match.worker import HANDLERS, Worker, WorkerConfig
+
+    runs: list[str] = []
+    gate = threading.Event()
+
+    def slow_handler(_db, payload):
+        runs.append(payload["id"])
+        # 跑 2.5 秒，租约只有 1 秒
+        gate.wait(2.5)
+
+    monkeypatch.setitem(HANDLERS, "demo", slow_handler)
+    workqueue.enqueue(db, "demo", {"id": "x"})
+
+    cfg = WorkerConfig(kinds=("demo",), lease_s=1.0, interval_s=0.1)
+    w1 = Worker(db, cfg)
+    w2 = Worker(db, cfg)
+
+    t1 = threading.Thread(target=w1.run_once)
+    t1.start()
+    _time.sleep(1.3)  # 让 w1 的原始租约过期
+    w2.run_once()
+    t1.join(timeout=5)
+
+    assert runs == ["x"], f"同一任务被执行了 {len(runs)} 次"

@@ -263,6 +263,22 @@ class Worker:
         if job is None:
             return None
 
+        # 长任务续租：一局比赛可能跑几分钟，默认租约 180s 到期后
+        # 别的副本会把同一场再领一次，导致重复的 match.ended。
+        stop_renew = threading.Event()
+
+        def renew_loop() -> None:
+            # 续租间隔必须小于租约本身：取 1/3 留两次重试余量，
+            # 下限 0.2s 是为了让短租约（测试/小任务）也能生效。
+            interval = max(0.2, self.config.lease_s / 3)
+            while not stop_renew.wait(interval):
+                if not workqueue.renew(self.db_path, job.job_id, self.owner, self.config.lease_s):
+                    logger.warning("任务 %s 租约已被接手，当前执行继续但不再续租", job.job_id)
+                    return
+
+        renewer = threading.Thread(target=renew_loop, name="melee-lease-renew", daemon=True)
+        renewer.start()
+
         handler = HANDLERS.get(job.kind)
         try:
             if handler is None:
@@ -276,6 +292,8 @@ class Worker:
         else:
             self.processed += 1
             workqueue.complete(self.db_path, job.job_id)
+        finally:
+            stop_renew.set()
         return job
 
 

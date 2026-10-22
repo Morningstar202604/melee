@@ -5,7 +5,7 @@
 六个确定性赛制、实时直播、可拖动回放、自动+人工导播、事实校验战报、服务端渲染高光。
 Python + FastAPI + SQLite，前端零构建。一条命令起服务，一条命令起镜像。
 
-[![Tests](https://img.shields.io/badge/tests-314%20passed-brightgreen)](services/match/tests)
+[![Tests](https://img.shields.io/badge/tests-317%20passed-brightgreen)](services/match/tests)
 [![Coverage](https://img.shields.io/badge/coverage-82.0%25%20lines%20%C2%B7%2074.2%25%20branches-yellow)](docs/AUDIT-2026-10-22.md)
 [![Lint](https://img.shields.io/badge/ruff-clean-brightgreen)](pyproject.toml)
 [![Security](https://img.shields.io/badge/bandit-0%20medium%2B-brightgreen)](pyproject.toml)
@@ -263,7 +263,7 @@ scripts/        serve / seed_demo / capture_screenshots / check_licenses
 
 | 指标 | 当前 | 红线 | 判定 |
 |---|---|---|---|
-| 测试 | 314 passed / 1 skipped（跳过项为 Redis 集成） | — | — |
+| 测试 | 317 passed / 1 skipped（跳过项为 Redis 集成） | — | — |
 | 行覆盖率（非测试代码，CI 门禁 80%） | 82.0%（3029/3695） | ≥90% | 不通过 |
 | 分支覆盖率（非测试代码） | 74.2%（865/1166） | ≥85% | 不通过 |
 | 变异分数（30 抽样） | 73% | ≥80% | 不通过 |

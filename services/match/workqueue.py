@@ -218,3 +218,23 @@ def _row_to_job(row: sqlite3.Row) -> Job:
         max_attempts=row["max_attempts"],
         last_error=row["last_error"],
     )
+
+
+def renew(db_path: str | Path, job_id: str, owner: str, lease_s: float) -> bool:
+    """续租：长任务（一局比赛可能跑好几分钟）必须定期延长租约。
+
+    不续租的话，租约到期后别的副本会把仍在运行的任务再领一次，
+    两个 worker 同时往同一场比赛写事件——实测会出现两条 match.ended。
+    返回 False 表示租约已经不属于自己（被别的副本接手）或任务已结束。
+    """
+    conn = connect(db_path)
+    try:
+        cursor = conn.execute(
+            "UPDATE jobs SET lease_until = ?, updated_at = ? "
+            "WHERE job_id = ? AND lease_owner = ? AND status = ?",
+            (time.time() + lease_s, time.time(), job_id, owner, RUNNING),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
