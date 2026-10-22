@@ -6,8 +6,8 @@
 Python + FastAPI + SQLite，前端零构建。一条命令起服务，一条命令起镜像。
 
 [![CI](https://github.com/badhope/melee/actions/workflows/ci.yml/badge.svg)](https://github.com/badhope/melee/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-317%20passed-brightgreen)](services/match/tests)
-[![Coverage](https://img.shields.io/badge/coverage-82.0%25%20lines%20%C2%B7%2074.2%25%20branches-yellow)](docs/AUDIT-2026-10-22.md)
+[![Tests](https://img.shields.io/badge/tests-318%20passed-brightgreen)](services/match/tests)
+[![Coverage](https://img.shields.io/badge/coverage-82.2%25%20lines%20%C2%B7%2074.2%25%20branches-yellow)](docs/AUDIT-2026-10-22.md)
 [![Lint](https://img.shields.io/badge/ruff-clean-brightgreen)](pyproject.toml)
 [![Security](https://img.shields.io/badge/bandit-0%20medium%2B-brightgreen)](pyproject.toml)
 [![CVE](https://img.shields.io/badge/CVE-0%20known-brightgreen)](scripts/audit_cves.py)
@@ -172,6 +172,20 @@ python scripts/serve.py --host 0.0.0.0
 
 ---
 
+## 技术选型：能复用就不自研
+
+| 需求 | 用的是 | 没有自己写 |
+|---|---|---|
+| 限流 | `limits`（MovingWindow + Redis 后端） | 内存桶、ZSET 滑动窗口 |
+| 短时票据 | `itsdangerous`（签名 URL） | 进程内字典 |
+| 指标 | `prometheus-fastapi-instrumentator` | Prometheus 文本拼装 |
+| 定时任务 | `APScheduler` | 线程 + sleep |
+| 配置 | `pydantic-settings` | 19 处 `os.environ` |
+| 前端模板 | `lit-html`（8KB，vendored） | `innerHTML` + `escapeHtml` |
+| 定长比较 | 标准库 `hmac.compare_digest` | XOR 循环 |
+
+自研的只有三件事：**比赛引擎**（规则即产品）、**事件日志**（append-only + seq 是契约）、**解说事实校验**（业务规则）。
+
 ## 架构
 
 ```
@@ -264,8 +278,8 @@ scripts/        serve / seed_demo / capture_screenshots / check_licenses
 
 | 指标 | 当前 | 红线 | 判定 |
 |---|---|---|---|
-| 测试 | 317 passed / 1 skipped（跳过项为 Redis 集成） | — | — |
-| 行覆盖率（非测试代码，CI 门禁 80%） | 82.0%（3029/3695） | ≥90% | 不通过 |
+| 测试 | 318 passed / 1 skipped（跳过项为 Redis 集成） | — | — |
+| 行覆盖率（非测试代码，CI 门禁 80%） | 82.2%（3175/3748） | ≥90% | 不通过 |
 | 分支覆盖率（非测试代码） | 74.2%（865/1166） | ≥85% | 不通过 |
 | 变异分数（30 抽样） | 73% | ≥80% | 不通过 |
 | 圈复杂度 ≤10 的函数 | 91.4%（265/290） | 100% | 不通过 |
