@@ -222,3 +222,26 @@ def test_textarena_probe_cli_reports_environment():
     outcome = textarena_probe.probe("TicTacToe-v0")
     assert outcome["ok"] is True, outcome["reason"]
     assert outcome["action"]
+
+
+def test_demo_main_prints_timeline(tmp_path, capsys, monkeypatch):
+    from services.match import demo
+
+    monkeypatch.setattr("sys.argv", ["demo", "--seed", "11", "--db", str(tmp_path / "demo.db")])
+    assert demo.main() == 0
+    out = capsys.readouterr().out
+    assert "种子 11" in out
+    assert "结束：" in out
+
+
+def test_probe_main_reports_single_env(capsys):
+    from services.match.engine import textarena_adapter
+    from services.match.engine import textarena_probe
+
+    if not textarena_adapter.is_available():
+        pytest.skip("未安装 textarena")
+    code = textarena_probe.main(["probe", "TicTacToe-v0"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "TicTacToe-v0" in out
+    assert "可用" in out

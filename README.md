@@ -5,7 +5,7 @@
 六个确定性赛制、实时直播、可拖动回放、自动+人工导播、事实校验战报、服务端渲染高光。
 Python + FastAPI + SQLite，前端零构建。一条命令起服务，一条命令起镜像。
 
-[![Tests](https://img.shields.io/badge/tests-298%20passed-brightgreen)](services/match/tests)
+[![Tests](https://img.shields.io/badge/tests-300%20passed-brightgreen)](services/match/tests)
 [![Coverage](https://img.shields.io/badge/coverage-83.1%25%20lines%20%C2%B7%2072.9%25%20branches-yellow)](docs/AUDIT-2026-10-22.md)
 [![Lint](https://img.shields.io/badge/ruff-clean-brightgreen)](pyproject.toml)
 [![Security](https://img.shields.io/badge/bandit-0%20medium%2B-brightgreen)](pyproject.toml)
@@ -261,8 +261,8 @@ scripts/        serve / seed_demo / capture_screenshots / check_licenses
 
 | 指标 | 当前 | 红线 | 判定 |
 |---|---|---|---|
-| 测试 | 298 passed / 1 skipped | — | — |
-| 行覆盖率（非测试代码，`--cov-fail-under=80`） | 83.1%（合并分支口径 80.6%） | ≥90% | 不通过 |
+| 测试 | 300 passed / 1 skipped（跳过项为 Redis 集成） | — | — |
+| 行覆盖率（非测试代码，CI 门禁 80%） | 83.1%（本地全量）/ 81.9%（CI 同口径） | ≥90% | 不通过 |
 | 分支覆盖率（非测试代码） | 72.9% | ≥85% | 不通过 |
 | 变异分数（30 抽样） | 73% | ≥80% | 不通过 |
 | 圈复杂度 ≤10 的函数 | 91.4%（265/290） | 100% | 不通过 |
@@ -289,7 +289,7 @@ scripts/        serve / seed_demo / capture_screenshots / check_licenses
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest                                    # 298 passed
+python -m pytest                                    # 300 passed, 1 skipped
 python -m pytest --cov=services.match --cov-branch  # 覆盖率
 python -m ruff check .                              # lint
 python -m bandit -c pyproject.toml -ll -r services/match
