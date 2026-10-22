@@ -10,12 +10,12 @@
 | sse-starlette | 3.5.0 | BSD-3-Clause | SSE 帧、心跳、断连处理 |
 | jsonschema | 4.26.0 | MIT | 事件契约校验 |
 | httpx | 0.28.1 | BSD-3-Clause | 模型端点调用 |
-| cryptography | 48.0.1 | Apache-2.0 OR BSD-3-Clause | Fernet 凭据封存 |
-| Pillow | 12.3.0 | MIT-CMU | 高光帧绘制 |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | Fernet 凭据封存 |
+| Pillow | 13.0.0 | MIT-CMU | 高光帧绘制 |
 | openskill | 6.2.0 | MIT | 赛季积分（PlackettLuce） |
 | textarena | 0.7.4 | MIT | 可选：确定性棋类环境 |
 | redis | 5.2.1 | MIT | 可选：跨副本广播 |
-| pytest | 8.4.2 | MIT | 测试 |
+| pytest | 9.1.1 | MIT | 测试 |
 | datamodel-code-generator | 0.86.0 | MIT | 契约代码生成 |
 
 ## 原则

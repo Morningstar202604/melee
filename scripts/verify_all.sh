@@ -5,26 +5,29 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-echo "== 1/7 pytest =="
+echo "== 1/8 pytest =="
 python -m pytest
 
-echo "== 2/7 coverage (>=80) =="
+echo "== 2/8 coverage (>=80) =="
 python -m pytest --cov=services.match --cov-branch --cov-report=term --cov-fail-under=80 -q
 
-echo "== 3/7 ruff =="
+echo "== 3/8 ruff =="
 python -m ruff check .
 
-echo "== 4/7 bandit (medium+) =="
+echo "== 4/8 bandit (medium+) =="
 python -m bandit -c pyproject.toml -ll -r services/match
 
-echo "== 5/7 license gate =="
+echo "== 5/8 license gate =="
 python scripts/check_licenses.py
 
-echo "== 6/7 frontend syntax =="
+echo "== 6/8 frontend syntax =="
 for f in apps/web/src/*.js; do node --check "$f"; done
 
-echo "== 7/7 contract codegen =="
+echo "== 7/8 contract codegen =="
 python packages/contracts/scripts/codegen.py --check
+
+echo "== 8/8 dependency CVE (OSV) =="
+python scripts/audit_cves.py --fail-on high
 
 echo
 echo "ALL GREEN"

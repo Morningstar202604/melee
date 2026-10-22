@@ -9,6 +9,7 @@ Python + FastAPI + SQLite，前端零构建。一条命令起服务，一条命�
 [![Coverage](https://img.shields.io/badge/coverage-83.1%25%20lines%20%C2%B7%2072.9%25%20branches-yellow)](docs/AUDIT-2026-10-22.md)
 [![Lint](https://img.shields.io/badge/ruff-clean-brightgreen)](pyproject.toml)
 [![Security](https://img.shields.io/badge/bandit-0%20medium%2B-brightgreen)](pyproject.toml)
+[![CVE](https://img.shields.io/badge/CVE-0%20known-brightgreen)](scripts/audit_cves.py)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 ![观战页直播](docs/screenshots/02-twenty-questions.png)
@@ -268,7 +269,7 @@ scripts/        serve / seed_demo / capture_screenshots / check_licenses
 | 圈复杂度 ≤10 的函数 | 91.4%（265/290） | 100% | 不通过 |
 | 重复行 | 1.33% | <3% | 通过 |
 | Bandit Medium+ | 0 | 0 | 通过 |
-| 依赖 CVE | 未确认（pip-audit 网络超时） | 0 | 未确认 |
+| 依赖 CVE（OSV 实测） | **0**（13 个依赖，36 个漏洞已通过升级清除） | 0 | 通过 |
 
 ---
 
@@ -287,16 +288,38 @@ scripts/        serve / seed_demo / capture_screenshots / check_licenses
 
 ## 开发
 
+**一条命令跑完全部门禁**：
+
 ```bash
-pip install -r requirements-dev.txt
-python -m pytest                                    # 300 passed, 1 skipped
-python -m pytest --cov=services.match --cov-branch  # 覆盖率
-python -m ruff check .                              # lint
-python -m bandit -c pyproject.toml -ll -r services/match
-python scripts/check_licenses.py                    # 许可证门禁
+bash scripts/verify_all.sh     # 8 道门禁，全过打印 ALL GREEN
 ```
 
-CI（`.github/workflows/ci.yml`）：lint → 许可证 → bandit → 前端语法 → 覆盖率测试 → 契约生成检查 → Docker 构建与冒烟。
+| # | 门禁 | 命令 |
+|---|---|---|
+| 1 | 测试 | `python -m pytest` |
+| 2 | 覆盖率 ≥80% | `pytest --cov --cov-branch --cov-fail-under=80` |
+| 3 | Lint | `python -m ruff check .` |
+| 4 | 安全扫描（Medium+ 归零） | `bandit -c pyproject.toml -ll -r services/match` |
+| 5 | 许可证台账 | `python scripts/check_licenses.py` |
+| 6 | 前端语法 | `node --check` × 6 |
+| 7 | 契约生成物 | `python packages/contracts/scripts/codegen.py --check` |
+| 8 | 依赖 CVE | `python scripts/audit_cves.py --fail-on high` |
+
+CI（`.github/workflows/ci.yml`）复跑同一脚本，另加单端口冒烟与 Docker 构建冒烟。
+
+## 仓库
+
+同一份代码同步到五个位置（同 commit、同 CI）：
+
+| 平台 | 地址 |
+|---|---|
+| GitHub（主） | https://github.com/badhope/melee |
+| GitHub | https://github.com/X33834/melee |
+| GitHub | https://github.com/Morningstar202604/melee |
+| Gitee | https://gitee.com/badhope/melee |
+| GitCode | https://gitcode.com/badhope/melee |
+
+旧版（Next.js 参考实现）保留在各仓库的 `legacy` 分支。
 
 ## 许可证
 
