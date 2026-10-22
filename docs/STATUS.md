@@ -96,6 +96,7 @@ python scripts/serve.py        # 单端口起服务
 | 进程内票据字典（SSE + 媒体） | `itsdangerous` 2.2.0 签名票据 | 60 → 35 行 | **无状态**：多副本任一副本都能验签，过期写进载荷，重启不失效 |
 | 手写 Prometheus 文本（5 行指标） | `prometheus-fastapi-instrumentator` 8.1.0 | — | 请求数/延迟直方图/状态码全部标准化；业务指标保留为 Gauge |
 | 线程 + sleep 的赛季调度 | `APScheduler` 3.11.3 `BackgroundScheduler` | 60 → 75 行（略增） | `max_instances=1`、`coalesce`、任务停止由库保证 |
+| 单线程 worker | 可配置并发（默认 4 线程） | +10 行 | 慢对局不再阻塞新开赛（实测 6 场并发跑完，队列 0 积压） |
 | 19 处 `os.environ.get("MELEE_*")` | `pydantic-settings` 2.16.0 单一 `Settings` | 分散 → 1 处 | 启动即校验类型，配置错误不再等到运行时 |
 | 手写 `innerHTML` + `escapeHtml`（30 处） | `lit-html` 3.3.3（8KB，vendored，无构建） | 1053 → 约 1000 行 | **模板自动转义**，XSS 从"记得转义"变成"默认安全" |
 | 手写 XOR 定长比较 | 标准库 `hmac.compare_digest` | -5 行 | 标准实现 |

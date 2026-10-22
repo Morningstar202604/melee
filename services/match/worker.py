@@ -215,6 +215,8 @@ class WorkerConfig:
     interval_s: float = 0.5
     lease_s: float = 180.0
     enabled: bool = True
+    # 并发线程数：慢对局（每步几秒）会占满一个线程，多开几个保证新场次能立刻开始。
+    concurrency: int = 4
 
     @classmethod
     def from_env(cls) -> "WorkerConfig":
@@ -226,6 +228,7 @@ class WorkerConfig:
             interval_s=cfg.worker_interval,
             lease_s=cfg.worker_lease,
             enabled=cfg.worker,
+            concurrency=max(1, cfg.workers),
         )
 
 
@@ -245,7 +248,11 @@ class Worker:
             return
         self._thread = threading.Thread(target=self._loop, name="melee-worker", daemon=True)
         self._thread.start()
-        logger.info("worker 已启动：%s", self.owner)
+        for index in range(1, self.config.concurrency):
+            threading.Thread(
+                target=self._loop, name=f"melee-worker-{index}", daemon=True
+            ).start()
+        logger.info("worker 已启动：%s（%d 线程）", self.owner, self.config.concurrency)
 
     def stop(self) -> None:
         self._stop.set()

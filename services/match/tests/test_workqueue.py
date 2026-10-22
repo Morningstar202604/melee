@@ -219,3 +219,33 @@ def test_long_job_is_not_claimed_twice_by_two_workers(db, monkeypatch):
     t1.join(timeout=5)
 
     assert runs == ["x"], f"同一任务被执行了 {len(runs)} 次"
+
+
+def test_worker_concurrency_runs_jobs_in_parallel(db, monkeypatch):
+    """慢任务占住一个线程时，另一个线程仍能领到下一场。"""
+    import threading
+    import time as _time
+
+    from services.match.worker import HANDLERS, Worker, WorkerConfig
+
+    started: list[str] = []
+    release = threading.Event()
+
+    def slow(_db, payload):
+        started.append(payload["id"])
+        release.wait(3)
+
+    monkeypatch.setitem(HANDLERS, "demo", slow)
+    workqueue.enqueue(db, "demo", {"id": "a"})
+    workqueue.enqueue(db, "demo", {"id": "b"})
+
+    config = WorkerConfig(kinds=("demo",), interval_s=0.05, lease_s=30, concurrency=2)
+    worker = Worker(db, config)
+    worker.start()
+    for _ in range(40):
+        if len(started) >= 2:
+            break
+        _time.sleep(0.05)
+    release.set()
+    worker.stop()
+    assert sorted(started) == ["a", "b"], started

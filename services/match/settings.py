@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     worker_kinds: str = "run-match,render-clip"
     worker_interval: float = 0.5
     worker_lease: float = 180.0
+    # 单进程里并发跑几个任务：一场慢比赛不该把后面新开的局全堵住。
+    workers: int = 4
 
     schedule: str = ""
     schedule_interval: float = 120.0
