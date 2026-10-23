@@ -249,3 +249,67 @@ def test_worker_concurrency_runs_jobs_in_parallel(db, monkeypatch):
     release.set()
     worker.stop()
     assert sorted(started) == ["a", "b"], started
+
+
+def test_render_job_without_ffmpeg_fails(db, monkeypatch):
+    from services.match import worker as worker_module
+
+    monkeypatch.setattr(worker_module, "find_ffmpeg", lambda: None)
+    with pytest.raises(RuntimeError, match="ffmpeg"):
+        worker_module.render_job(db, {"matchId": "m1"})
+
+
+def test_render_job_without_events_fails(db, monkeypatch):
+    from services.match import worker as worker_module
+
+    monkeypatch.setattr(worker_module, "find_ffmpeg", lambda: "/usr/bin/ffmpeg")
+    with pytest.raises(RuntimeError, match="没有这场比赛"):
+        worker_module.render_job(db, {"matchId": "nope"})
+
+
+def test_render_job_renders_all_clips(db, monkeypatch):
+    from services.match import worker as worker_module
+    from services.match.render import RenderResult
+    from services.match.eventlog import EventLog
+
+    log = EventLog.open(db, "m1")
+    log.create_match("twenty-questions", 1, ["A", "B"])
+    log.append("match.created", {"game": "twenty-questions", "players": ["A", "B"], "seed": 1})
+    log.append("match.started", {"firstPlayer": "A"})
+    log.append("match.ended", {"winner": "A", "reason": "猜中", "finalState": {}})
+    log.close()
+
+    calls = []
+
+    def fake_render(clip, out_path, **_kwargs):
+        calls.append(Path(out_path).name)
+        out_path = Path(out_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"x")
+        return RenderResult(path=out_path, frames=1, duration_ms=100, bytes=1)
+
+    monkeypatch.setattr(worker_module, "find_ffmpeg", lambda: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(worker_module, "render_clip", fake_render)
+    # build_clips 需要转折点；用真实事件流构造
+    worker_module.render_job(db, {"matchId": "m1", "limit": 2})
+    assert calls  # 只要执行到渲染即可（这场比赛可能没有可剪的转折点）
+
+
+def test_default_agents_by_game():
+    from services.match.worker import _default_agents
+
+    assert set(_default_agents(["A", "B"], "twenty-questions")) == {"A", "B"}
+    assert set(_default_agents(list("ABCD"), "codenames")) == set("ABCD")
+    assert set(_default_agents(["A", "B"], "tic-tac-toe")) == {"A", "B"}
+
+
+def test_worker_marks_unknown_kind_failed(db):
+    from services.match.worker import Worker, WorkerConfig
+
+    # max_attempts=1：第一次失败就终态，不再 pending 重试
+    workqueue.enqueue(db, "unknown-kind", {}, max_attempts=1)
+    worker = Worker(db, WorkerConfig(kinds=("unknown-kind",), interval_s=0.01, lease_s=10))
+    job = worker.run_once()
+    assert job is not None
+    assert worker.failed == 1
+    assert workqueue.get(db, job.job_id).status == workqueue.FAILED

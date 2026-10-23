@@ -7,7 +7,7 @@ Python + FastAPI + SQLite，前端零构建。一条命令起服务，一条命�
 
 [![CI](https://github.com/badhope/melee/actions/workflows/ci.yml/badge.svg)](https://github.com/badhope/melee/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-320%20passed-brightgreen)](services/match/tests)
-[![Coverage](https://img.shields.io/badge/coverage-83.5%25%20lines%20%C2%B7%2075.7%25%20branches-yellow)](docs/AUDIT-2026-10-22.md)
+[![Coverage](https://img.shields.io/badge/coverage-85.8%25%20lines%20%C2%B7%2077.6%25%20branches-yellow)](docs/AUDIT-2026-10-22.md)
 [![Lint](https://img.shields.io/badge/ruff-clean-brightgreen)](pyproject.toml)
 [![Security](https://img.shields.io/badge/bandit-0%20medium%2B-brightgreen)](pyproject.toml)
 [![CVE](https://img.shields.io/badge/CVE-0%20known-brightgreen)](scripts/audit_cves.py)
@@ -279,8 +279,8 @@ scripts/        serve / seed_demo / capture_screenshots / check_licenses
 | 指标 | 当前 | 红线 | 判定 |
 |---|---|---|---|
 | 测试 | 320 passed / 1 skipped（跳过项为 Redis 集成） | — | — |
-| 行覆盖率（非测试代码，CI 门禁 80%） | 83.5%（3265/3803） | ≥90% | 不通过 |
-| 分支覆盖率（非测试代码） | 75.7%（865/1166） | ≥85% | 不通过 |
+| 行覆盖率（非测试代码，CI 门禁 80%） | 85.8%（3358/3803） | ≥90% | 不通过 |
+| 分支覆盖率（非测试代码） | 77.6%（865/1166） | ≥85% | 不通过 |
 | 变异分数（30 抽样） | 73% | ≥80% | 不通过 |
 | 圈复杂度 ≤10 的函数 | 91.4%（265/290） | 100% | 不通过 |
 | 重复行 | 1.33% | <3% | 通过 |

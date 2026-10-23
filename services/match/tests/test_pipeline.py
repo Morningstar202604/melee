@@ -323,3 +323,24 @@ def test_backup_script_roundtrip(tmp_path):
         assert restored.execute("SELECT * FROM t").fetchall() == [(1,)]
     finally:
         restored.close()
+
+
+def test_scheduler_runs_job_and_records_errors(tmp_path, monkeypatch):
+    """调度 tick 内部抛错时要记录到 last_error，且不中断其它赛季。"""
+    from services.match.scheduler import ScheduleConfig, SeasonScheduler
+
+    calls: list[str] = []
+
+    def boom(season_id, **_kwargs):
+        calls.append(season_id)
+        raise RuntimeError("赛季坏了")
+
+    scheduler = SeasonScheduler(
+        ScheduleConfig(season_ids=["s1", "s2"], interval_s=60, per_tick=1, enabled=True),
+        tmp_path / "x.db",
+        run=boom,
+    )
+    assert scheduler.tick() == []
+    assert calls == ["s1", "s2"]
+    assert scheduler.last_error == "赛季坏了"
+    assert scheduler.ticks == 1
