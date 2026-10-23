@@ -402,8 +402,11 @@ def test_tickets_are_signed_not_stored(monkeypatch):
 
     monkeypatch.setenv("MELEE_TICKET_SECRET", "fixed-secret-for-test")
     ticket = issue_media_ticket(Principal("alice", True), "m1")
-    assert "." in ticket  # itsdangerous 的 payload.timestamp.signature 三段
-    tampered = ticket[:-2] + "xx"
+    head, _, rest = ticket.partition(".")
+    assert rest  # itsdangerous 的 payload.timestamp.signature 三段
+    # 改 payload 里的一个字符：签名必然对不上。
+    # 不能改签名尾部：base64 的最后两个字符可能只影响填充位（Linux 上实测过）。
+    tampered = ("b" if head[0] != "b" else "c") + head[1:] + "." + rest
     assert redeem_media_ticket(tampered, "m1") is None
 
 
