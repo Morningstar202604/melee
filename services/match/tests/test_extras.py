@@ -403,7 +403,7 @@ def test_redis_broadcaster_with_fakeredis():
     import asyncio
     import time
 
-    import fakeredis
+    fakeredis = pytest.importorskip("fakeredis")
     import redis
 
     from services.match.broadcast import RedisBroadcaster
@@ -430,7 +430,7 @@ def test_redis_broadcaster_with_fakeredis():
 
 def test_redis_broadcaster_skips_malformed_messages(monkeypatch):
     """Redis 里出现非 JSON 消息时，监听线程要跳过而不是崩掉。"""
-    import fakeredis
+    fakeredis = pytest.importorskip("fakeredis")
     import redis
 
     from services.match.broadcast import RedisBroadcaster
