@@ -31,129 +31,72 @@ class Highlight:
         }
 
 
+def _answer_highlights(event: dict[str, Any], effect: dict[str, Any], player: str) -> list[Highlight]:
+    """二十问的一次提问：大范围收窄 / 收敛到 1 / 白问。"""
+    out: list[Highlight] = []
+    narrowed = int(effect.get("narrowed", 0))
+    answer = "是" if effect.get("answer") == "yes" else "否"
+    if narrowed >= 4:
+        out.append(_hl(event, "big_sweep", f"{player} 一次排除 {narrowed} 个",
+                       f"问「{effect.get('value')}」，答{answer}，候选大幅减少。", narrowed * 10))
+    if effect.get("remainingPublic") == 1:
+        out.append(_hl(event, "narrowed_to_one", "只剩一个可能",
+                       f"{player} 把候选压到 1 个，下一步就能报答案。", 80))
+    if narrowed == 0:
+        out.append(_hl(event, "wasted_question", f"{player} 白问了一手",
+                       f"问「{effect.get('value')}」，答{answer}，候选数量没有变化。", 10))
+    return out
+
+
+def _reveal_highlights(event: dict[str, Any], effect: dict[str, Any], player: str) -> list[Highlight]:
+    """代号的一次翻牌：翻到刺客最重，翻中己方次之。"""
+    if effect.get("color") == "assassin":
+        return [_hl(event, "assassin", f"{player} 翻到刺客「{effect.get('word')}」",
+                    "翻到刺客立即判负，比赛结束。", 100)]
+    if effect.get("color") == effect.get("team"):
+        return [_hl(event, "own_word", f"{player} 翻中己方词「{effect.get('word')}」",
+                    "猜对可以继续。", 40)]
+    return []
+
+
+def _hl(event: dict[str, Any], kind: str, title: str, detail: str, weight: int) -> Highlight:
+    return Highlight(kind=kind, seq=event["seq"], at=event["at"], title=title, detail=detail, weight=weight)
+
+
+def _highlights_of(event: dict[str, Any]) -> list[Highlight]:
+    """单条事件产生的所有高光；没有就返回空列表。"""
+    kind, payload = event["type"], event["payload"]
+    if kind == "match.ended":
+        winner = payload.get("winner")
+        title = f"{_TEAM_LABELS.get(winner, winner)} 获胜" if winner else "无人获胜"
+        return [_hl(event, "end", title, str(payload.get("reason", "")), 60)]
+    if kind == "action.rejected":
+        return [_hl(event, "rejected", f"{event.get('player')} 动作被判犯规", payload["reason"], 30)]
+    if kind != "action.applied":
+        return []
+
+    player = event.get("player", "")
+    out: list[Highlight] = []
+    for effect in payload["effects"]:
+        effect_kind = effect["kind"]
+        if effect_kind == "answer":
+            out += _answer_highlights(event, effect, player)
+        elif effect_kind == "guess":
+            correct = effect.get("correct")
+            out.append(_hl(event, "guess", f"{player} 报出「{effect.get('value')}」",
+                           "猜中，比赛结束。" if correct else "猜错，直接判负。", 100 if correct else 90))
+        elif effect_kind == "forfeit":
+            out.append(_hl(event, "forfeit", f"{player} 弃权", "连续无法给出合法动作。", 70))
+        elif effect_kind == "reveal":
+            out += _reveal_highlights(event, effect, player)
+    return out
+
+
 def find_highlights(events: list[dict[str, Any]], limit: int = 3) -> list[Highlight]:
+    """按权重挑前 N 个转折点。规则分散在 _highlights_of 的几个分支里。"""
     highlights: list[Highlight] = []
-
     for event in events:
-        kind = event["type"]
-        payload = event["payload"]
-
-        if kind == "action.applied":
-            effects = payload["effects"]
-            player = event.get("player", "")
-
-            for effect in effects:
-                if effect["kind"] == "answer":
-                    narrowed = int(effect.get("narrowed", 0))
-                    answer = "是" if effect.get("answer") == "yes" else "否"
-                    if narrowed >= 4:
-                        highlights.append(
-                            Highlight(
-                                kind="big_sweep",
-                                seq=event["seq"],
-                                at=event["at"],
-                                title=f"{player} 一次排除 {narrowed} 个",
-                                detail=f"问「{effect.get('value')}」，答{answer}，候选从 {narrowed} 个以上直接砍到更少。",
-                                weight=narrowed * 10,
-                            )
-                        )
-                    remaining = effect.get("remainingPublic")
-                    if remaining == 1:
-                        highlights.append(
-                            Highlight(
-                                kind="narrowed_to_one",
-                                seq=event["seq"],
-                                at=event["at"],
-                                title="只剩一个可能",
-                                detail=f"{player} 把候选压到 1 个，下一步就能报答案。",
-                                weight=80,
-                            )
-                        )
-                    if narrowed == 0:
-                        highlights.append(
-                            Highlight(
-                                kind="wasted_question",
-                                seq=event["seq"],
-                                at=event["at"],
-                                title=f"{player} 白问了一手",
-                                detail=f"问「{effect.get('value')}」，答{answer}，候选数量没有变化。",
-                                weight=10,
-                            )
-                        )
-                elif effect["kind"] == "guess":
-                    correct = effect.get("correct")
-                    highlights.append(
-                        Highlight(
-                            kind="guess",
-                            seq=event["seq"],
-                            at=event["at"],
-                            title=f"{player} 报出「{effect.get('value')}」",
-                            detail="猜中，比赛结束。" if correct else "猜错，直接判负。",
-                            weight=100 if correct else 90,
-                        )
-                    )
-                elif effect["kind"] == "forfeit":
-                    highlights.append(
-                        Highlight(
-                            kind="forfeit",
-                            seq=event["seq"],
-                            at=event["at"],
-                            title=f"{player} 弃权",
-                            detail="连续无法给出合法动作。",
-                            weight=70,
-                        )
-                    )
-                elif effect["kind"] == "reveal":
-                    color = effect.get("color")
-                    team = effect.get("team")
-                    if color == "assassin":
-                        highlights.append(
-                            Highlight(
-                                kind="assassin",
-                                seq=event["seq"],
-                                at=event["at"],
-                                title=f"{player} 翻到刺客「{effect.get('word')}」",
-                                detail="翻到刺客立即判负，比赛结束。",
-                                weight=100,
-                            )
-                        )
-                    elif color == team:
-                        highlights.append(
-                            Highlight(
-                                kind="own_word",
-                                seq=event["seq"],
-                                at=event["at"],
-                                title=f"{player} 翻中己方词「{effect.get('word')}」",
-                                detail="猜对可以继续。",
-                                weight=40,
-                            )
-                        )
-
-        elif kind == "match.ended":
-            winner = payload.get("winner")
-            highlights.append(
-                Highlight(
-                    kind="end",
-                    seq=event["seq"],
-                    at=event["at"],
-                    title=f"{_TEAM_LABELS.get(winner, winner)} 获胜" if winner else "无人获胜",
-                    detail=str(payload.get("reason", "")),
-                    weight=60,
-                )
-            )
-
-        elif kind == "action.rejected":
-            highlights.append(
-                Highlight(
-                    kind="rejected",
-                    seq=event["seq"],
-                    at=event["at"],
-                    title=f"{event.get('player')} 动作被判犯规",
-                    detail=payload["reason"],
-                    weight=30,
-                )
-            )
-
+        highlights.extend(_highlights_of(event))
     highlights.sort(key=lambda h: (-h.weight, h.seq))
     return highlights[:limit]
 
@@ -161,84 +104,145 @@ def find_highlights(events: list[dict[str, Any]], limit: int = 3) -> list[Highli
 _TEAM_LABELS = {"red": "红队", "blue": "蓝队"}
 
 
-def _winner_label(events: list[dict[str, Any]], winner: str | None) -> str:
+def _winner_label(winner: str | None) -> str:
     """代号/团队赛的胜者是 red/blue，战报要翻成人话。"""
     if winner in _TEAM_LABELS:
         return _TEAM_LABELS[winner]
     return str(winner)
 
 
-def build_recap(events: list[dict[str, Any]]) -> dict[str, Any]:
-    """一句话战报 + 关键数据。所有数字都从事件里数出来。"""
-    end = next((e for e in events if e["type"] == "match.ended"), None)
-    created = next((e for e in events if e["type"] == "match.created"), None)
-    game = (created or {}).get("payload", {}).get("game", "")
-    applied = [e for e in events if e["type"] == "action.applied"]
-    rejected = [e for e in events if e["type"] == "action.rejected"]
-    thoughts = [e for e in events if e["type"] == "thought.delta"]
+@dataclass
+class _Counts:
+    """一场比赛的可数事实。所有字段都由事件算出，不含推断。"""
 
-    asks = [e for e in applied if e["payload"]["action"]["kind"] == "ask"]
-    guesses = [e for e in applied if e["payload"]["action"]["kind"] == "guess"]
-    forfeits = [e for e in applied if e["payload"]["action"]["kind"] == "forfeit"]
+    game: str
+    winner: str | None
+    reason: str
+    turns: int
+    asks: int
+    guesses: int
+    rejected: int
+    per_player: dict[str, dict[str, int]]
+    last_guess_correct: bool
+    last_forfeit_by: str | None
 
-    winner = end["payload"]["winner"] if end else None
-    reason = end["payload"]["reason"] if end else ""
 
-    players = sorted({e["player"] for e in applied if e.get("player")})
-    per_player = {
+def _by_kind(applied: list[dict[str, Any]], kind: str) -> list[dict[str, Any]]:
+    return [e for e in applied if e["payload"]["action"]["kind"] == kind]
+
+
+def _per_player(
+    players: list[str],
+    asks: list[dict[str, Any]],
+    guesses: list[dict[str, Any]],
+    rejected: list[dict[str, Any]],
+    thoughts: list[dict[str, Any]],
+) -> dict[str, dict[str, int]]:
+    def count(events: list[dict[str, Any]], player: str) -> int:
+        return sum(1 for e in events if e.get("player") == player)
+
+    return {
         player: {
-            "asks": sum(1 for e in asks if e.get("player") == player),
-            "guesses": sum(1 for e in guesses if e.get("player") == player),
-            "rejected": sum(1 for e in rejected if e.get("player") == player),
-            "thoughts": sum(1 for e in thoughts if e.get("player") == player),
+            "asks": count(asks, player),
+            "guesses": count(guesses, player),
+            "rejected": count(rejected, player),
+            "thoughts": count(thoughts, player),
         }
         for player in players
     }
 
-    turns = [t for t in applied if t["payload"]["action"]["kind"] != "forfeit"]
-    label = _winner_label(events, winner)
+
+def _last_guess_hit(guesses: list[dict[str, Any]]) -> bool:
+    if not guesses:
+        return False
+    effects = guesses[-1]["payload"]["effects"]
+    return bool(effects) and bool(effects[0].get("correct"))
+
+
+def _collect(events: list[dict[str, Any]]) -> _Counts:
+    end = next((e for e in events if e["type"] == "match.ended"), None)
+    created = next((e for e in events if e["type"] == "match.created"), None)
+    applied = [e for e in events if e["type"] == "action.applied"]
+    rejected = [e for e in events if e["type"] == "action.rejected"]
+    thoughts = [e for e in events if e["type"] == "thought.delta"]
+
+    asks, guesses, forfeits = (_by_kind(applied, "ask"), _by_kind(applied, "guess"), _by_kind(applied, "forfeit"))
+    players = sorted({e["player"] for e in applied if e.get("player")})
+
+    return _Counts(
+        game=(created or {}).get("payload", {}).get("game", ""),
+        winner=end["payload"]["winner"] if end else None,
+        reason=end["payload"]["reason"] if end else "",
+        turns=len(applied) - len(forfeits),
+        asks=len(asks),
+        guesses=len(guesses),
+        rejected=len(rejected),
+        per_player=_per_player(players, asks, guesses, rejected, thoughts),
+        last_guess_correct=_last_guess_hit(guesses),
+        last_forfeit_by=forfeits[-1].get("player") if forfeits else None,
+    )
+
+
+def _one_line(counts: _Counts) -> str:
+    """一句话战报：只陈述事件里能查到的事。"""
+    label = _winner_label(counts.winner)
     # 中文不加空格；拉丁字母的选手名加空格，读起来才不粘。
     pad = " " if label.isascii() else ""
-    if winner:
-        if guesses and guesses[-1].get("player") == winner and guesses[-1]["payload"]["effects"][0].get("correct"):
-            one_line = f"{label}{pad}在第 {len(turns)} 手报出答案并命中。"
-        elif forfeits and forfeits[-1].get("player") != winner:
-            one_line = f"{label}{pad}获胜：对手弃权。"
-        elif reason:
-            # 棋类/代号的引擎自带"谁获胜"，再拼一遍就成了「A 获胜：A 获胜。」
-            if reason in (f"{winner} 获胜", "对局结束", "猜中"):
-                one_line = f"{label}{pad}获胜。"
-            else:
-                one_line = f"{label}{pad}获胜：{reason}。"
-        else:
-            one_line = f"{label}{pad}获胜。"
-    else:
-        one_line = f"无人获胜：{reason or '比赛结束'}。"
+    if not counts.winner:
+        return f"无人获胜：{counts.reason or '比赛结束'}。"
 
+    last_guess_by_winner = counts.last_guess_correct and counts.guesses > 0
+    if last_guess_by_winner:
+        return f"{label}{pad}在第 {counts.turns} 手报出答案并命中。"
+    if counts.last_forfeit_by is not None and counts.last_forfeit_by != counts.winner:
+        return f"{label}{pad}获胜：对手弃权。"
+    if not counts.reason:
+        return f"{label}{pad}获胜。"
+    # 棋类/代号的引擎自带"谁获胜"，再拼一遍就成了「A 获胜：A 获胜。」
+    if counts.reason in (f"{counts.winner} 获胜", "对局结束", "猜中"):
+        return f"{label}{pad}获胜。"
+    return f"{label}{pad}获胜：{counts.reason}。"
+
+
+def build_recap(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """一句话战报 + 关键数据。所有数字都从事件里数出来。
+
+    拆成 _collect（数事实）/ _one_line（措辞）两步：
+    之前一个函数 44 圈复杂度，改一个措辞要通读一遍统计逻辑。
+    """
+    counts = _collect(events)
+    summary = {
+        "winner": counts.winner,
+        "turns": counts.turns,
+        "asks": counts.asks,
+        "guesses": counts.guesses,
+        "rejected": counts.rejected,
+        "perPlayer": counts.per_player,
+    }
     return {
-        "game": game,
-        "winner": winner,
-        "reason": reason,
-        "oneLine": one_line,
+        "game": counts.game,
+        "winner": counts.winner,
+        "reason": counts.reason,
+        "oneLine": _one_line(counts),
         # 二十问按提问/报答案计数；棋类与代号只有"步"，统一给 moves。
-        "turns": len(turns),
-        "moves": len(turns),
-        "asks": len(asks),
-        "guesses": len(guesses),
-        "rejected": len(rejected),
-        "perPlayer": per_player,
+        "turns": counts.turns,
+        "moves": counts.turns,
+        "asks": counts.asks,
+        "guesses": counts.guesses,
+        "rejected": counts.rejected,
+        "perPlayer": counts.per_player,
         "highlights": [h.as_dict() for h in find_highlights(events)],
-        "problems": verify_summary(
-            {
-                "winner": winner,
-                "turns": len(turns),
-                "asks": len(asks),
-                "guesses": len(guesses),
-                "rejected": len(rejected),
-                "perPlayer": per_player,
-            },
-            events,
-        ),
+        "problems": verify_summary(summary, events),
+    }
+
+
+def _event_counts(events: list[dict[str, Any]]) -> dict[str, int]:
+    applied = [e for e in events if e["type"] == "action.applied"]
+    return {
+        "turns": sum(1 for e in applied if e["payload"]["action"]["kind"] != "forfeit"),
+        "asks": sum(1 for e in applied if e["payload"]["action"]["kind"] == "ask"),
+        "guesses": sum(1 for e in applied if e["payload"]["action"]["kind"] == "guess"),
+        "rejected": sum(1 for e in events if e["type"] == "action.rejected"),
     }
 
 
@@ -247,30 +251,19 @@ def verify_summary(summary: dict[str, Any], events: list[dict[str, Any]]) -> lis
 
     规则很简单——战报里出现的每个数字，都必须能在事件里数出来。
     """
-    problems: list[str] = []
-    counts = {
-        "turns": sum(
-            1
-            for e in events
-            if e["type"] == "action.applied" and e["payload"]["action"]["kind"] != "forfeit"
-        ),
-        "asks": sum(1 for e in events if e["type"] == "action.applied" and e["payload"]["action"]["kind"] == "ask"),
-        "guesses": sum(
-            1 for e in events if e["type"] == "action.applied" and e["payload"]["action"]["kind"] == "guess"
-        ),
-        "rejected": sum(1 for e in events if e["type"] == "action.rejected"),
-    }
-    for key, expected in counts.items():
-        if summary.get(key) != expected:
-            problems.append(f"{key} 对不上：战报 {summary.get(key)}，事件里 {expected}")
+    problems = [
+        f"{key} 对不上：战报 {summary.get(key)}，事件里 {expected}"
+        for key, expected in _event_counts(events).items()
+        if summary.get(key) != expected
+    ]
 
     end = next((e for e in events if e["type"] == "match.ended"), None)
     if end is not None and summary.get("winner") != end["payload"]["winner"]:
         problems.append("胜者与 match.ended 不一致")
 
     winner = summary.get("winner")
-    if winner:
-        # 团队赛的胜者是 red / blue，不在 perPlayer（选手 id）里，属正常。
-        if winner not in _TEAM_LABELS and winner not in summary.get("perPlayer", {}):
-            problems.append("胜者不在参赛名单里")
+    # 团队赛的胜者是 red / blue，不在 perPlayer（选手 id）里，属正常。
+    if winner and winner not in _TEAM_LABELS and winner not in summary.get("perPlayer", {}):
+        problems.append("胜者不在参赛名单里")
     return problems
+

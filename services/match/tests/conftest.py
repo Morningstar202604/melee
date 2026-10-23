@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from services.match import api as api_module
@@ -40,6 +42,18 @@ def _reset_inline_worker():
     yield
     api_module._stop_inline_worker()
     reset_limiter()
+
+
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    """API 客户端：独立临时库，不跑 lifespan（所以不会起内嵌 worker）。"""
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(api_module, "DB_PATH", Path(tmp_path) / "match.db")
+    api_module.MATCHES.clear()
+    client = TestClient(api_module.create_app())
+    yield client
+    api_module._stop_inline_worker()
 
 
 @pytest.fixture(autouse=True)

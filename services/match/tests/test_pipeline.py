@@ -247,3 +247,79 @@ def test_probe_main_reports_single_env(capsys):
     out = capsys.readouterr().out
     assert "TicTacToe-v0" in out
     assert "可用" in out
+
+
+# ---------- API 边界：渲染 / 剪辑下载 / 调度接口 ----------
+
+def test_render_endpoint_returns_503_without_ffmpeg(client, monkeypatch):
+    from services.match import api as api_module
+
+    monkeypatch.setattr(api_module, "find_ffmpeg", lambda: None)
+    response = client.post("/matches/whatever/clips/render")
+    assert response.status_code == 503
+    assert "ffmpeg" in response.text
+
+
+def test_clip_download_rejects_path_traversal(client):
+    assert client.get("/matches/m1/clips/..%2f..%2fetc%2fpasswd").status_code in {400, 404}
+    assert client.get("/matches/m1/clips/nope.mp4").status_code == 404
+
+
+def test_scheduler_tick_requires_configuration(client):
+    response = client.post("/scheduler/tick")
+    assert response.status_code == 400
+    assert "MELEE_SCHEDULE" in response.text
+
+
+def test_parse_start_at_accepts_unix_iso_and_empty():
+    from services.match.api import _parse_start_at
+
+    assert _parse_start_at(None) is None
+    assert _parse_start_at("") is None
+    assert _parse_start_at(1_700_000_000) == 1_700_000_000.0
+    assert _parse_start_at("1700000000") == 1_700_000_000.0
+    assert _parse_start_at("2026-10-22T00:00:00Z") == 1792627200.0
+    # 无时区的 ISO 按 UTC 解释
+    assert _parse_start_at("2026-10-22T00:00:00") == 1792627200.0
+
+
+def test_visibility_filter():
+    from services.match.api import visible
+
+    assert visible({"visibility": "public"}, None)
+    assert visible({}, "A")
+    assert visible({"visibility": {"players": ["A"]}}, "A")
+    assert not visible({"visibility": {"players": ["A"]}}, "B")
+    assert not visible({"visibility": {"players": ["A"]}}, None)
+    # 结构异常时按可见处理（不在读路径上 fail-closed，避免整场消失）
+    assert visible({"visibility": "weird"}, None)
+
+
+def test_backup_script_roundtrip(tmp_path):
+    """备份脚本产出的文件必须能直接打开并读到数据。"""
+    import subprocess
+    import sys
+
+    import sqlite3
+
+    db = tmp_path / "m.db"
+    conn = sqlite3.connect(db)
+    conn.executescript("CREATE TABLE t(a); INSERT INTO t VALUES(1);")
+    conn.commit()
+    conn.close()
+
+    out = tmp_path / "backups"
+    result = subprocess.run(
+        [sys.executable, "scripts/backup.py", "--db", str(db), "--out", str(out), "--keep", "2"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert result.returncode == 0, result.stderr
+    files = sorted(out.glob("*.db"))
+    assert len(files) == 1
+    restored = sqlite3.connect(files[0])
+    try:
+        assert restored.execute("SELECT * FROM t").fetchall() == [(1,)]
+    finally:
+        restored.close()

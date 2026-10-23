@@ -6,6 +6,17 @@ from pathlib import Path
 
 import pytest
 
+
+def _redis_reachable(url: str) -> bool:
+    """Redis 不可达时跳过而不是失败：这是集成测试，环境没起 Redis 不算代码错。"""
+    try:
+        import redis
+
+        client = redis.Redis.from_url(url, socket_timeout=0.5)
+        return bool(client.ping())
+    except Exception:  # noqa: BLE001
+        return False
+
 from services.match.agents.llm import LLMAgent, LLMConfig
 from services.match.agents.scripted import GreedyAgent
 from services.match.clips import build_clips, export_manifest, verify_clip
@@ -299,3 +310,88 @@ def test_narrator_from_env_falls_back_when_incomplete(monkeypatch):
     monkeypatch.setenv("MELEE_NARRATOR", "llm")
     monkeypatch.delenv("MELEE_NARRATOR_API_KEY", raising=False)
     assert isinstance(narrator_from_env(), RuleNarrator)
+
+
+# ---------- Redis 广播 / 调度 / 配置 / worker 的边界 ----------
+
+def test_redis_broadcaster_roundtrip_against_real_server():
+    """真 Redis（可选）：发布→订阅，验证协议与 JSON 编解码。"""
+    import asyncio
+    import os
+
+    from services.match.broadcast import RedisBroadcaster
+
+    url = os.environ.get("MELEE_TEST_REDIS_URL")
+    if not url:
+        pytest.skip("未提供 MELEE_TEST_REDIS_URL")
+    if not _redis_reachable(url):
+        pytest.skip(f"Redis 不可达：{url}")
+    publisher = RedisBroadcaster(url, channel_prefix="melee:test:")
+    subscriber = RedisBroadcaster(url, channel_prefix="melee:test:")
+    sub = subscriber.subscribe("m1")
+    import time
+
+    time.sleep(0.5)
+    publisher.publish("m1", {"seq": 7, "type": "x"})
+    event = asyncio.run(sub.get(timeout_s=3))
+    sub.close()
+    publisher.close()
+    subscriber.close()
+    assert event == {"seq": 7, "type": "x"}
+
+
+def test_memory_broadcaster_drops_slow_consumer_instead_of_blocking():
+    """队列满时必须丢弃该消费者，不能让 publish 阻塞比赛。"""
+    import asyncio
+
+    from services.match.broadcast import MemoryBroadcaster
+
+    bus = MemoryBroadcaster()
+    sub = bus.subscribe("m1")
+    # 手动挤满队列（maxsize=1000）
+    for index in range(1000):
+        bus.publish("m1", {"seq": index})
+    bus.publish("m1", {"seq": 9999})  # 不应抛异常
+    sub.close()
+
+
+def test_scheduler_job_is_registered_only_when_enabled(tmp_path):
+    from services.match.scheduler import ScheduleConfig, SeasonScheduler
+
+    disabled = SeasonScheduler(ScheduleConfig(), tmp_path / "a.db")
+    disabled.start()
+    assert disabled.running is False
+
+    enabled = SeasonScheduler(
+        ScheduleConfig(season_ids=["s1"], interval_s=60, per_tick=1, enabled=True),
+        tmp_path / "b.db",
+    )
+    enabled.start()
+    try:
+        assert enabled.running is True
+        assert enabled._scheduler.get_job("melee-season-tick") is not None
+    finally:
+        enabled.stop()
+
+
+def test_settings_parses_lists_and_bools(monkeypatch):
+    from services.match.settings import Settings
+
+    monkeypatch.setenv("MELEE_API_TOKENS", "alice:t1,bob:t2")
+    monkeypatch.setenv("MELEE_SCHEDULE", "s1, s2")
+    monkeypatch.setenv("MELEE_INLINE_WORKER", "off")
+    settings = Settings()
+    assert settings.tokens == {"alice": "t1", "bob": "t2"}
+    assert settings.season_ids == ["s1", "s2"]
+    assert settings.inline_worker is False
+
+
+def test_player_spec_rejects_bad_script_and_delay():
+    from pydantic import ValidationError
+
+    from services.match.player_specs import PlayerSpec
+
+    with pytest.raises(ValidationError):
+        PlayerSpec(id="A", script=["x" * 201])
+    with pytest.raises(ValidationError):
+        PlayerSpec(id="A", delayMs=99_999)

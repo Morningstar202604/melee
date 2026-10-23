@@ -302,6 +302,16 @@ scripts/        serve / seed_demo / capture_screenshots / check_licenses
 
 ---
 
+## 部署
+
+三种形态（单机 / 反代 / 多副本 + Redis）与备份恢复步骤见 **[docs/DEPLOY.md](docs/DEPLOY.md)**。
+最常踩的坑是反代下 `X-Forwarded-For` 不信任导致"所有用户共用一个限流桶"——文档里有 Caddy / nginx 的正确写法。
+
+```bash
+# 备份（在线，不加锁）
+python scripts/backup.py --db data/match.db --out backups/ --keep 7
+```
+
 ## 开发
 
 **一条命令跑完全部门禁**：

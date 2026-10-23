@@ -347,6 +347,10 @@ def test_ratelimit_redis_backend_shares_state_across_instances():
     url = os.environ.get("MELEE_TEST_REDIS_URL")
     if not url:
         pytest.skip("未提供 MELEE_TEST_REDIS_URL")
+    from services.match.tests.test_extras import _redis_reachable
+
+    if not _redis_reachable(url):
+        pytest.skip(f"Redis 不可达：{url}")
     first = Limiter(RedisStorage(url))
     second = Limiter(RedisStorage(url))
     first.reset()
@@ -411,3 +415,34 @@ def test_ticket_survives_process_restart(monkeypatch):
     ticket = issue_media_ticket(Principal("bob", True), "m2")
     data = _ticket_serializer().loads(ticket)
     assert data["n"] == "bob" and data["m"] == "m2" and data["k"] == "media"
+
+
+def test_quota_is_atomic_under_concurrency(tmp_path):
+    """并发占额度不能超发：20 个线程抢 5 个名额，只能成 5 个。"""
+    import threading
+
+    db = tmp_path / "q.db"
+    principal = Principal("alice", True)
+    config = QuotaConfig(mode="token", matches_per_day=5)
+    ok: list[int] = []
+    denied: list[int] = []
+    lock = threading.Lock()
+
+    def worker() -> None:
+        try:
+            check_and_consume(db, principal, "matches", config)
+        except AuthError as exc:
+            with lock:
+                denied.append(exc.status)
+        else:
+            with lock:
+                ok.append(1)
+
+    threads = [threading.Thread(target=worker) for _ in range(20)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(ok) == 5, f"放行了 {len(ok)} 次，应该恰好 5 次"
+    assert len(denied) == 15

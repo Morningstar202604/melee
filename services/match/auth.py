@@ -93,40 +93,50 @@ def _today() -> str:
 
 
 def check_and_consume(db_path: str | Path, principal: Principal, kind: str, config: QuotaConfig) -> None:
-    """先检查再记一次用量。kind 是 matches / renders。"""
+    """原子地"检查 + 记一次用量"。kind 是 matches / renders。
+
+    为什么不用"先 SELECT 再 UPDATE"：两个副本同时读到 used=limit-1 时会各放行一次，
+    实际超发。这里改成单条 UPSERT + 条件 WHERE：数据库替我们做比较与自增，
+    只有 rowcount=1 才算真正占到额度。
+    """
     limit = config.matches_per_day if kind == "matches" else config.renders_per_day
     if limit <= 0:
         raise AuthError("该操作已被禁用", status=403)
 
-    conn = sqlite3.connect(str(db_path))
+    # 列名只可能来自这两个常量，不用 f-string 拼 SQL。
+    if kind == "matches":
+        statement = (
+            "INSERT INTO quotas (token_name, day, matches) VALUES (?,?,1) "
+            "ON CONFLICT(token_name, day) DO UPDATE SET matches = matches + 1 "
+            "WHERE quotas.matches < ?"
+        )
+    else:
+        statement = (
+            "INSERT INTO quotas (token_name, day, renders) VALUES (?,?,1) "
+            "ON CONFLICT(token_name, day) DO UPDATE SET renders = renders + 1 "
+            "WHERE quotas.renders < ?"
+        )
+
+    conn = sqlite3.connect(str(db_path), timeout=10)
     try:
         conn.executescript(SCHEMA)
-        day = _today()
-        row = conn.execute(
-            "SELECT matches, renders FROM quotas WHERE token_name = ? AND day = ?",
-            (principal.name, day),
-        ).fetchone()
-        used = 0 if row is None else (row[0] if kind == "matches" else row[1])
-        if used >= limit:
-            raise AuthError(f"今日 {kind} 配额已用尽（{used}/{limit}）", status=429)
-
-        # 列名只可能来自这两个常量；不用 f-string 拼 SQL，避免扫描器与
-        # 后续改动引入注入面。
-        if kind == "matches":
-            conn.execute(
-                "INSERT INTO quotas (token_name, day, matches) VALUES (?,?,1) "
-                "ON CONFLICT(token_name, day) DO UPDATE SET matches = matches + 1",
-                (principal.name, day),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO quotas (token_name, day, renders) VALUES (?,?,1) "
-                "ON CONFLICT(token_name, day) DO UPDATE SET renders = renders + 1",
-                (principal.name, day),
-            )
+        cursor = conn.execute(statement, (principal.name, _today(), limit))
         conn.commit()
+        if cursor.rowcount == 0:
+            used = _used(conn, principal, kind)
+            raise AuthError(f"今日 {kind} 配额已用尽（{used}/{limit}）", status=429)
     finally:
         conn.close()
+
+
+def _used(conn: sqlite3.Connection, principal: Principal, kind: str) -> int:
+    row = conn.execute(
+        "SELECT matches, renders FROM quotas WHERE token_name = ? AND day = ?",
+        (principal.name, _today()),
+    ).fetchone()
+    if row is None:
+        return 0
+    return int(row[0] if kind == "matches" else row[1])
 
 
 # ---------- 票据（SSE / 媒体） ----------

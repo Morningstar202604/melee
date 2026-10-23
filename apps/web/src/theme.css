@@ -4,6 +4,8 @@
   --a:#22D3EE; --b:#F5A524; --live:#EF4444; --ok:#34D399; --bad:#F87171;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+/* 键盘焦点可见：三个辅助页（赛季/战报/导播）共用 */
+:focus-visible{outline:2px solid var(--a);outline-offset:2px;border-radius:4px}
 body{background:var(--bg);color:var(--txt);font-family:"Inter","Segoe UI","PingFang SC",system-ui,sans-serif;font-size:14px}
 a{color:var(--a);text-decoration:none}
 .topbar{height:48px;display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid #161A24;background:#080A0F}
