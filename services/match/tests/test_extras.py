@@ -395,3 +395,83 @@ def test_player_spec_rejects_bad_script_and_delay():
         PlayerSpec(id="A", script=["x" * 201])
     with pytest.raises(ValidationError):
         PlayerSpec(id="A", delayMs=99_999)
+
+
+# ---------- Redis 路径用 fakeredis 覆盖（不需要真 Redis） ----------
+
+def test_redis_broadcaster_with_fakeredis():
+    import asyncio
+    import time
+
+    import fakeredis
+    import redis
+
+    from services.match.broadcast import RedisBroadcaster
+
+    server = fakeredis.FakeServer()
+    original = redis.Redis.from_url
+    redis.Redis.from_url = classmethod(
+        lambda cls, url, **kwargs: fakeredis.FakeRedis(server=server, decode_responses=kwargs.get("decode_responses", False))
+    )
+    try:
+        publisher = RedisBroadcaster("redis://fake", channel_prefix="melee:test:")
+        subscriber = RedisBroadcaster("redis://fake", channel_prefix="melee:test:")
+        sub = subscriber.subscribe("m1")
+        time.sleep(0.3)
+        publisher.publish("m1", {"seq": 5, "type": "x"})
+        event = asyncio.run(sub.get(timeout_s=2))
+        sub.close()
+        publisher.close()
+        subscriber.close()
+    finally:
+        redis.Redis.from_url = original
+    assert event == {"seq": 5, "type": "x"}
+
+
+def test_redis_broadcaster_skips_malformed_messages(monkeypatch):
+    """Redis 里出现非 JSON 消息时，监听线程要跳过而不是崩掉。"""
+    import fakeredis
+    import redis
+
+    from services.match.broadcast import RedisBroadcaster
+
+    server = fakeredis.FakeServer()
+    original = redis.Redis.from_url
+    redis.Redis.from_url = classmethod(
+        lambda cls, url, **kwargs: fakeredis.FakeRedis(server=server, decode_responses=kwargs.get("decode_responses", False))
+    )
+    try:
+        broadcaster = RedisBroadcaster("redis://fake", channel_prefix="t:")
+        broadcaster._client.publish("t:m1", "not-json")
+        broadcaster.publish("m1", {"seq": 9, "type": "ok"})
+        import time
+
+        time.sleep(0.4)
+        assert broadcaster._thread.is_alive()
+        broadcaster.close()
+    finally:
+        redis.Redis.from_url = original
+
+
+def test_secrets_main_generates_key_and_help(capsys, monkeypatch):
+    from services.match import secrets as secrets_module
+
+    monkeypatch.setattr("sys.argv", ["secrets", "--gen"])
+    assert secrets_module.main() == 0
+    out = capsys.readouterr().out
+    assert "MELEE_SECRET_KEY" in out
+    assert len(out.splitlines()[0]) >= 40  # Fernet key
+
+    monkeypatch.setattr("sys.argv", ["secrets"])
+    assert secrets_module.main() == 1
+
+
+def test_fingerprint_stable_across_process(monkeypatch):
+    """指纹只用于对账，必须稳定且不可逆。"""
+    from services.match.secrets import fingerprint
+
+    assert fingerprint("") == "-"
+    a = fingerprint("sk-abc")
+    b = fingerprint("sk-abc")
+    assert a == b and len(a) == 8
+    assert "sk-abc" not in a

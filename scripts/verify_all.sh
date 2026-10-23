@@ -8,8 +8,8 @@ cd "$(dirname "$0")/.."
 echo "== 1/8 pytest =="
 python -m pytest
 
-echo "== 2/8 coverage (>=80) =="
-python -m pytest --cov=services.match --cov-branch --cov-report=term --cov-fail-under=80 -q
+echo "== 2/8 coverage (>=85) =="
+python -m pytest --cov=services.match --cov-branch --cov-report=term --cov-fail-under=85 -q
 
 echo "== 3/8 ruff =="
 python -m ruff check .

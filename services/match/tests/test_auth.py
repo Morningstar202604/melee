@@ -449,3 +449,91 @@ def test_quota_is_atomic_under_concurrency(tmp_path):
 
     assert len(ok) == 5, f"放行了 {len(ok)} 次，应该恰好 5 次"
     assert len(denied) == 15
+
+
+# ---------- 变异测试补充：杀掉"看起来等价其实不等价"的变异 ----------
+
+def test_quota_config_defaults_are_the_product_limits():
+    """默认额度是产品约定：每天 20 场、10 次渲染。"""
+    config = QuotaConfig()
+    assert config.matches_per_day == 20
+    assert config.renders_per_day == 10
+
+
+def test_quota_writes_the_right_column(tmp_path):
+    """'matches' 与 'renders' 必须写到各自的列，不能串。"""
+    db = tmp_path / "q.db"
+    principal = Principal("alice", True)
+    config = QuotaConfig(mode="token", matches_per_day=5, renders_per_day=5)
+    check_and_consume(db, principal, "matches", config)
+    check_and_consume(db, principal, "renders", config)
+    check_and_consume(db, principal, "renders", config)
+
+    conn = sqlite3.connect(db)
+    try:
+        matches, renders = conn.execute(
+            "SELECT matches, renders FROM quotas WHERE token_name='alice'"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert matches == 1
+    assert renders == 2
+
+
+def test_used_returns_zero_for_unknown_principal(tmp_path):
+    from services.match.auth import _used
+
+    conn = sqlite3.connect(tmp_path / "q.db")
+    try:
+        conn.executescript(auth.SCHEMA)
+        assert _used(conn, Principal("nobody", True), "matches") == 0
+        assert _used(conn, Principal("nobody", True), "renders") == 0
+    finally:
+        conn.close()
+
+
+def test_sse_ticket_rejects_media_ticket(monkeypatch):
+    """两种票据用途不能混用：媒体票据不能当 SSE 票据。"""
+    from services.match.auth import issue_media_ticket, issue_ticket, redeem_ticket
+
+    monkeypatch.setenv("MELEE_TICKET_SECRET", "用途隔离测试密钥")
+    from services.match.settings import reset_settings
+
+    reset_settings()
+    media = issue_media_ticket(Principal("alice", True), "m1")
+    sse = issue_ticket(Principal("alice", True))
+    assert redeem_ticket(media) is None
+    assert redeem_ticket(sse) is not None
+
+
+def test_media_ticket_rejects_sse_ticket(monkeypatch):
+    from services.match.auth import issue_media_ticket, issue_ticket, redeem_media_ticket
+
+    monkeypatch.setenv("MELEE_TICKET_SECRET", "用途隔离测试密钥2")
+    from services.match.settings import reset_settings
+
+    reset_settings()
+    sse = issue_ticket(Principal("alice", True))
+    assert redeem_media_ticket(sse, "m1") is None
+
+
+def test_ticket_at_exact_expiry_is_rejected(monkeypatch):
+    """边界：exp 已到当前时间时必须判过期（exp<=now），不能靠"再等一会"才失效。
+
+    这是 `<` 与 `<=` 的可观测差异。itsdangerous 自己也会按签名时间戳校验
+    max_age，所以这里用真实时钟 + ttl_s=0。
+    """
+    from services.match.auth import issue_media_ticket, issue_ticket, redeem_media_ticket, redeem_ticket
+
+    monkeypatch.setenv("MELEE_TICKET_SECRET", "边界测试密钥")
+    from services.match.settings import reset_settings
+
+    reset_settings()
+
+    # ttl=0：exp 恰好是签发时刻；读票时已经过了签发时刻 → 必须拒绝
+    assert redeem_ticket(issue_ticket(Principal("alice", True), ttl_s=0)) is None
+    assert redeem_media_ticket(issue_media_ticket(Principal("alice", True), "m1", ttl_s=0), "m1") is None
+
+    # 对照组：有效期内仍然可用
+    assert redeem_ticket(issue_ticket(Principal("alice", True), ttl_s=30)) is not None
+    assert redeem_media_ticket(issue_media_ticket(Principal("alice", True), "m1", ttl_s=30), "m1") is not None

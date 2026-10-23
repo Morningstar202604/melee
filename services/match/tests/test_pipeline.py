@@ -344,3 +344,56 @@ def test_scheduler_runs_job_and_records_errors(tmp_path, monkeypatch):
     assert calls == ["s1", "s2"]
     assert scheduler.last_error == "赛季坏了"
     assert scheduler.ticks == 1
+
+
+def test_render_clip_without_ffmpeg_raises(tmp_path):
+    from services.match.clips import Clip
+    from services.match.render import render_clip
+
+    clip = Clip(kind="x", title="t", detail="d", startSeq=0, endSeq=0, events=[], durationMs=100)
+    with pytest.raises(RuntimeError, match="ffmpeg"):
+        render_clip(clip, tmp_path / "x.mp4", ffmpeg="")
+
+
+def test_render_clips_batch_renders_each(tmp_path, monkeypatch):
+    """批量渲染：每段都调用一次，文件名带序号和 kind。"""
+    from services.match.clips import Clip
+    from services.match import render as render_module
+
+    calls = []
+
+    def fake_render(clip, out_path, **_kwargs):
+        calls.append(Path(out_path).name)
+        out_path = Path(out_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"x")
+        return render_module.RenderResult(path=out_path, frames=1, duration_ms=100, bytes=1)
+
+    monkeypatch.setattr(render_module, "render_clip", fake_render)
+    clips = [
+        Clip(kind="guess", title="a", detail="", startSeq=0, endSeq=2, events=[], durationMs=100),
+        Clip(kind="end", title="b", detail="", startSeq=3, endSeq=5, events=[], durationMs=100),
+    ]
+    render_module.render_clips(clips, tmp_path, prefix="clip")
+    assert calls == ["clip-01-guess.mp4", "clip-02-end.mp4"]
+
+
+def test_frame_renders_codename_and_board_events():
+    """帧绘制不能因为缺字段抛异常：三种赛制的关键事件都要能画。"""
+    from services.match.render import build_context, draw_frame
+
+    events = [
+        {"seq": 0, "matchId": "m", "type": "match.created", "at": "2026-01-01T00:00:00Z",
+         "payload": {"game": "codenames", "players": ["A", "B", "C", "D"], "seed": 1}},
+        {"seq": 1, "matchId": "m", "type": "state.changed", "at": "2026-01-01T00:00:01Z",
+         "payload": {"publicState": {"remaining": {"red": 8, "blue": 7}, "board": [], "turn": "red",
+                                      "phase": "hint", "hint": None, "turnIndex": 1, "history": [
+                                          {"by": "A", "kind": "hint", "value": "海 2"}]}}},
+        {"seq": 2, "matchId": "m", "type": "match.ended", "at": "2026-01-01T00:00:02Z",
+         "payload": {"winner": "red", "reason": "翻完全部己方词", "finalState": {}}},
+    ]
+    context = build_context(events)
+    assert context["gameKind"] == "codenames"
+    for event in events:
+        image = draw_frame(event, context={**context, "index": 0})
+        assert image.size == (1600, 900)

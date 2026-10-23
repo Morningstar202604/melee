@@ -259,3 +259,32 @@ def test_legal_moves_exclude_taken_cells():
     result = game.apply(state, "A", Move("guess", first))
     state = result.next_state
     assert first not in game.legal_moves(state, "B")
+
+
+def test_probe_reports_failure_for_unknown_env():
+    """探测脚本遇到不存在的环境要返回 ok=False + 原因，而不是抛异常。"""
+    from services.match.engine import textarena_probe
+
+    if not adapter.is_available():
+        pytest.skip("未安装 textarena")
+    outcome = textarena_probe.probe("NoSuchGame-v0")
+    assert outcome["ok"] is False
+    assert outcome["reason"].startswith("make 失败")
+
+
+def test_probe_first_number_handles_strings_and_tuples():
+    from services.match.engine.textarena_probe import _first_number
+
+    assert _first_number("Available Moves: '[3]'") == "3"
+    assert _first_number([(0, "Available Moves: '[7]'", None)]) == "7"
+    assert _first_number([]) is None
+    assert _first_number("没有编号") is None
+
+
+def test_probe_main_on_unknown_env_returns_zero(tmp_path):
+    """main 对不可用环境只报告，不返回非零（它是诊断工具）。"""
+    from services.match.engine import textarena_probe
+
+    if not adapter.is_available():
+        pytest.skip("未安装 textarena")
+    assert textarena_probe.main(["probe", "NoSuchGame-v0"]) == 0

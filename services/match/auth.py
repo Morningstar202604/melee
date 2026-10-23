@@ -180,7 +180,8 @@ def redeem_ticket(ticket: str, *, max_age: float = 60.0) -> Principal | None:
         return None
     if not isinstance(data, dict) or data.get("k") != "sse":
         return None
-    if float(data.get("exp", 0)) < time.time():
+    # 到期时刻本身即视为过期（< 会让 exp==now 仍然有效）
+    if float(data.get("exp", 0)) <= time.time():
         return None
     return Principal(name=str(data.get("n", "")), authenticated=True)
 
@@ -200,7 +201,8 @@ def redeem_media_ticket(ticket: str, match_id: str, *, max_age: float = 600.0) -
         return None
     if not isinstance(data, dict) or data.get("k") != "media" or data.get("m") != match_id:
         return None
-    if float(data.get("exp", 0)) < time.time():
+    # 到期时刻本身即视为过期（< 会让 exp==now 仍然有效）
+    if float(data.get("exp", 0)) <= time.time():
         return None
     return Principal(name=str(data.get("n", "")), authenticated=True)
 

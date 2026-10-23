@@ -188,3 +188,43 @@ def test_board_prompt_lists_legal_moves():
     for move in ("[0]", "[2]", "[4]"):
         assert move in system
     assert "只能从下面列出的可行动作里选" in system
+
+
+def test_codenames_prompt_branches():
+    """代号的两套提示词（队长给线索 / 队员猜词）都要能生成。"""
+    agent = LLMAgent("A", LLMConfig(base_url="http://x/v1", api_key="k", model="m"))
+    captain_obs = {
+        "you": "A", "team": "red", "isCaptain": True, "phase": "hint",
+        "words": ["灯塔", "海洋"], "publicBoard": [{"word": "灯塔", "revealed": False, "color": None}],
+        "secretColors": ["red", "blue"],
+    }
+    hint_messages = agent.build_messages(captain_obs, ["hint:<线索词> <数量>"])
+    assert "队长" in hint_messages[0]["content"]
+    assert "hint:" in hint_messages[0]["content"]
+
+    agent_obs = {
+        "you": "C", "team": "red", "isCaptain": False, "phase": "guess",
+        "words": ["灯塔", "海洋"], "publicBoard": [{"word": "灯塔", "revealed": False, "color": None}],
+        "hint": {"word": "海边", "count": 1},
+    }
+    guess_messages = agent.build_messages(agent_obs, ["pick:灯塔"])
+    assert "队员" in guess_messages[0]["content"]
+    assert "海边" in guess_messages[1]["content"]
+
+
+def test_streaming_without_thought_callback_falls_back_to_blocking(monkeypatch):
+    """stream=True 但没给 on_thought 时走非流式路径，不能崩。"""
+    with FakeOpenAI() as server:
+        server.replies = [{"content": '{"kind":"ask","value":"category=建筑"}'}]
+        agent = LLMAgent("A", LLMConfig(base_url=server.base_url, api_key="k", model="m",
+                                        stream=True, timeout_s=5))
+        output = agent.act({"aspects": {"category": ["建筑"]}, "you": "A", "opponent": "B"}, [], None)
+    assert output.move.value == "category=建筑"
+
+
+def test_empty_content_is_reported_as_raw():
+    with FakeOpenAI() as server:
+        server.replies = [{"content": ""}]
+        agent = LLMAgent("A", LLMConfig(base_url=server.base_url, api_key="k", model="m", timeout_s=5))
+        output = agent.act({"aspects": {}, "you": "A", "opponent": "B"}, [], None)
+    assert "[empty-content]" in output.raw

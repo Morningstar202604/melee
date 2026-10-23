@@ -177,3 +177,61 @@ def test_recap_counts_are_zero_for_empty_stream():
     summary = build_recap([])
     assert summary["turns"] == 0 and summary["asks"] == 0 and summary["guesses"] == 0
     assert summary["winner"] is None
+
+
+def test_highlight_boundaries_are_exact():
+    """阈值是产品规则：>=4 才算大范围收窄，==1 才算收敛，==0 才算白问。"""
+    import tempfile
+    from pathlib import Path
+
+    from services.match.eventlog import EventLog
+
+    def make(effects):
+        events = [
+            {"seq": 0, "matchId": "m", "type": "match.created", "at": "2026-01-01T00:00:00Z",
+             "payload": {"game": "twenty-questions", "players": ["A", "B"], "seed": 1}},
+            {"seq": 1, "matchId": "m", "type": "action.applied", "at": "2026-01-01T00:00:01Z",
+             "player": "A", "payload": {"action": {"kind": "ask", "value": "x"}, "effects": effects}},
+        ]
+        return events
+
+    # narrowed=3 不算大扫除
+    assert not any(h.kind == "big_sweep" for h in find_highlights(make([
+        {"kind": "answer", "value": "place=海边", "answer": "yes", "narrowed": 3, "remainingPublic": 5}]), limit=10))
+    # narrowed=4 才算
+    assert any(h.kind == "big_sweep" for h in find_highlights(make([
+        {"kind": "answer", "value": "place=海边", "answer": "yes", "narrowed": 4, "remainingPublic": 5}]), limit=10))
+    # remaining=2 不算收敛到一
+    assert not any(h.kind == "narrowed_to_one" for h in find_highlights(make([
+        {"kind": "answer", "value": "place=海边", "answer": "yes", "narrowed": 1, "remainingPublic": 2}]), limit=10))
+    # narrowed=1 不算白问
+    assert not any(h.kind == "wasted_question" for h in find_highlights(make([
+        {"kind": "answer", "value": "place=海边", "answer": "yes", "narrowed": 1, "remainingPublic": 2}]), limit=10))
+
+
+def test_highlight_limit_default_is_three():
+    """默认只给三个瞬间：多了会稀释重点。"""
+    events = []
+    for index in range(10):
+        events.append({"seq": index, "matchId": "m", "type": "action.applied",
+                       "at": "2026-01-01T00:00:01Z", "player": "A",
+                       "payload": {"action": {"kind": "guess", "value": str(index)},
+                                   "effects": [{"kind": "guess", "value": str(index), "correct": True}]}})
+    assert len(find_highlights(events)) == 3
+    assert len(find_highlights(events, limit=10)) == 10
+
+
+def test_answer_highlight_mark_text():
+    """答案是否在解说里必须与 effect 一致（是/否不能反）。"""
+    yes = find_highlights([{"seq": 1, "matchId": "m", "type": "action.applied",
+                            "at": "2026-01-01T00:00:00Z", "player": "A",
+                            "payload": {"action": {"kind": "ask", "value": "x"},
+                                        "effects": [{"kind": "answer", "value": "place=海边",
+                                                     "answer": "yes", "narrowed": 5, "remainingPublic": 3}]}}], limit=5)
+    no = find_highlights([{"seq": 1, "matchId": "m", "type": "action.applied",
+                           "at": "2026-01-01T00:00:00Z", "player": "A",
+                           "payload": {"action": {"kind": "ask", "value": "x"},
+                                       "effects": [{"kind": "answer", "value": "place=海边",
+                                                    "answer": "no", "narrowed": 5, "remainingPublic": 3}]}}], limit=5)
+    assert any("答是" in h.detail for h in yes)
+    assert any("答否" in h.detail for h in no)

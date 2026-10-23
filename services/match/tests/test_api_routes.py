@@ -246,3 +246,52 @@ def test_error_handlers_return_json_not_html(client):
     response = client.get("/no-such-route")
     assert response.status_code == 404
     assert "application/json" in response.headers["content-type"]
+
+
+def test_rate_limit_returns_429_with_retry_after(client):
+    """建场接口 10/分钟：第 11 次必须 429 且带 Retry-After。"""
+    from services.match import ratelimit
+
+    ratelimit.reset_limiter()
+    for _ in range(10):
+        client.post("/matches", json={"game": "twenty-questions",
+                                     "players": [{"id": "A"}, {"id": "B"}],
+                                     "inlineWorker": False})
+    response = client.post("/matches", json={"game": "twenty-questions",
+                                             "players": [{"id": "A"}, {"id": "B"}],
+                                             "inlineWorker": False})
+    assert response.status_code == 429
+    assert response.headers.get("retry-after") == "60"
+
+
+def test_quota_exhausted_returns_429(client, monkeypatch):
+    monkeypatch.setenv("MELEE_QUOTA_MATCHES", "1")
+    from services.match.settings import reset_settings
+
+    reset_settings()
+    first = client.post("/matches", json={"game": "twenty-questions",
+                                          "players": [{"id": "A"}, {"id": "B"}],
+                                          "inlineWorker": False})
+    assert first.status_code == 201
+    second = client.post("/matches", json={"game": "twenty-questions",
+                                           "players": [{"id": "A"}, {"id": "B"}],
+                                           "inlineWorker": False})
+    assert second.status_code == 429
+    assert "配额" in second.text
+
+
+def test_invalid_game_and_player_count(client):
+    bad_game = client.post("/matches", json={"game": "chess", "players": [{"id": "A"}, {"id": "B"}]})
+    assert bad_game.status_code == 400
+    assert "暂不支持" in bad_game.text
+
+    bad_count = client.post("/matches", json={"game": "codenames", "players": [{"id": "A"}, {"id": "B"}]})
+    assert bad_count.status_code == 400
+    assert "名选手" in bad_count.text
+
+
+def test_duplicate_player_ids_rejected(client):
+    response = client.post("/matches", json={"game": "twenty-questions",
+                                             "players": [{"id": "A"}, {"id": "A"}]})
+    assert response.status_code == 400
+    assert "唯一" in response.text

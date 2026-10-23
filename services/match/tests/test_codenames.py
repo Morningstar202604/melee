@@ -374,3 +374,26 @@ def test_board_always_has_exactly_25_words():
         state = game.init(seed=seed, players=list("ABCD"), config={})
         assert len(state["words"]) == 25
         assert len(set(state["words"])) == 25
+
+
+def test_own_word_highlight_requires_color_match():
+    """翻中己方词才有 own_word；翻中对方词不该记成己方。"""
+    from services.match.recap import find_highlights
+
+    def reveal(color, team):
+        return [{"seq": 1, "matchId": "m", "type": "action.applied", "at": "2026-01-01T00:00:00Z",
+                 "player": "C",
+                 "payload": {"action": {"kind": "guess", "value": "pick:灯塔"},
+                             "effects": [{"kind": "reveal", "word": "灯塔", "color": color, "team": team}]}}]
+
+    assert any(h.kind == "own_word" for h in find_highlights(reveal("red", "red"), limit=5))
+    assert not any(h.kind == "own_word" for h in find_highlights(reveal("blue", "red"), limit=5))
+
+
+def test_current_player_respects_phase_and_team():
+    """轮到谁：线索阶段是队长，猜词阶段是队员；换队后跟着换。"""
+    game, state = start()
+    assert game.current_player(state) == "A"  # 红队队长
+    r1 = game.apply(state, "A", Move("guess", "hint:海 1"))
+    state = r1.next_state
+    assert game.current_player(state) == "C"  # 红队队员
