@@ -39,12 +39,12 @@ jobs:
             | python -c "import json,sys;print(json.load(sys.stdin)['matchId'])")
           # 等比赛真的跑完：recap 的 problems 为空 JSON 数组（紧凑格式）。
           for i in $(seq 1 60); do
-            if curl -fsS "http://127.0.0.1:8099/matches/$MATCH_ID/recap" | grep -q '"problems":[]'; then
+            if curl -fsS "http://127.0.0.1:8099/matches/$MATCH_ID/recap" | grep -qF '"problems":[]'; then
               break
             fi
             sleep 1
           done
-          curl -fsS "http://127.0.0.1:8099/matches/$MATCH_ID/recap" | grep -q '"problems":[]'
+          curl -fsS "http://127.0.0.1:8099/matches/$MATCH_ID/recap" | grep -qF '"problems":[]'
           curl -fsS "http://127.0.0.1:8099/matches/$MATCH_ID/card.png" -o /tmp/card.png
           python -c "import sys;d=open('/tmp/card.png','rb').read(8);sys.exit(0 if d==b'\x89PNG\r\n\x1a\n' else 1)"
           curl -fsS "http://127.0.0.1:8099/share/$MATCH_ID" | grep -q "og:image"
