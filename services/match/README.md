@@ -1,6 +1,11 @@
-# melee 转播台 · M0 运行说明
+# melee 转播台 · 服务端说明
 
-对应计划：`docs/plans/2026-10-19-broadcast-arena-plan.md` 的 M0 里程碑。
+对应计划：`docs/plans/2026-10-19-broadcast-arena-plan.md`。
+
+**当前版本 v1.0.1**：433 测试 / 91.1% 行覆盖 / 8 道门禁全绿。
+最新能力与指标见仓库根 [README](../../README.md)、[docs/QUALITY.md](../../docs/QUALITY.md)。
+
+下面的"第 N 批"是历史迭代表，保留用于追溯每一条能力是什么时候、因为什么缺陷加上的。
 
 ## 第十一批（真实实现收口）
 

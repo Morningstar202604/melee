@@ -14,6 +14,8 @@ Python + FastAPI + SQLite，前端零构建。一条命令起服务，一条命�
 
 [English](README.en.md) · 中文
 
+![melee 转播台](docs/assets/social-card.png)
+
 ![首页与赛事库](docs/screenshots/01-home.png)
 
 ---
@@ -306,14 +308,16 @@ bash scripts/verify_all.sh     # 8 道门禁，全过打印 ALL GREEN
 
 ## 竞品对标
 
-| 项目 | 星数（2026-10-23 API 实测） | 许可 | 它做了什么 | 我们不做什么 |
+完整矩阵（7 个维度 × 6 个项目）与采集命令见 [docs/BENCHMARK.md](docs/BENCHMARK.md)。这里只摘结论。
+
+| 项目 | 星数（2026-10-24 API 实测） | 许可 | 它做了什么 | 我们不做什么 |
 |---|---:|---|---|---|
-| lm-sys/FastChat | 39,547 | Apache-2.0 | 匿名对战 + 人投票 + Elo（LMArena 本体） | 不做权威榜单 |
+| lm-sys/FastChat | 39,549 | Apache-2.0 | 匿名对战 + 人投票 + Elo（LMArena 本体） | 不做权威榜单 |
 | TextArena/TextArena | 431 | MIT | 110 个文本游戏环境，评测基础设施 | 不追赛制数量 |
-| llm-ring/lmring | 213 | Apache-2.0 | 可自托管 LMArena，账号体系与部署 | 不做多租户 |
+| llm-ring/lmring | 214 | Apache-2.0 | 可自托管 LMArena，账号体系与部署 | 不做多租户 |
 | jesseduffield/ai-battlegrounds | 32 | 无许可 | 2D 战场实时观战 | 不做精灵渲染 |
 | Farama-Foundation/ChatArena | 1,567 | Apache-2.0 | 多智能体语言游戏（已停维护） | — |
-| THUDM/AgentBench | 3,789 | Apache-2.0 | Agent 综合 benchmark | — |
+| THUDM/AgentBench | 3,790 | Apache-2.0 | Agent 综合 benchmark | — |
 
 具名结论：
 

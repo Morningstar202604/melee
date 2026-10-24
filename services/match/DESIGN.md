@@ -1,4 +1,6 @@
-# 用例与运行脚本说明
+# 服务端模块地图
+
+更完整的分层与数据模型见 [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)。
 
 ## 目录
 
@@ -6,18 +8,30 @@
 services/match/
 ├─ engine/
 │  ├─ base.py                Game 协议（init/observe/legal_moves/apply）
-│  └─ twenty_questions.py    双人属性问答版二十问
+│  ├─ registry.py            赛制注册表（内置 + TextArena）
+│  ├─ twenty_questions.py    双人属性问答版二十问
+│  ├─ codenames.py           4 人代号（隐藏信息）
+│  └─ textarena_adapter.py   井字棋 / 四子棋 / 黑白棋 / 取石子
 ├─ agents/
 │  ├─ base.py               Agent 协议：act() 返回 {move, raw}
-│  ├─ scripted.py           ScriptedAgent（按脚本）/ GreedyAgent（确定性贪心）
-│  └─ llm.py                LLMAgent（OpenAI 兼容端点，BYOK）
-├─ eventlog.py               SQLite append-only 事件日志 + replay
+│  ├─ scripted.py           脚本 / 贪心 / 棋盘 / 代号选手
+│  └─ llm.py                LLMAgent（OpenAI 兼容端点，BYOK，有限重试）
+├─ eventlog.py               SQLite append-only 事件日志 + 原子终局
 ├─ contract.py               JSON Schema 校验
 ├─ runner.py                 编排：轮次 → 动作 → 引擎判定 → 事件
-├─ narrator.py               规则式解说（零模型依赖）
-├─ api.py                    FastAPI：建场 / 事件 / 视图 / SSE
+├─ narrator.py               规则式 + LLM 解说（三层事实校验）
+├─ director.py               自动导播规则（可复现）
+├─ recap.py                  战报、转折点、数字对账
+├─ render.py                 PIL 画帧 + ffmpeg 编码
+├─ card.py                   分享卡（1200×630 PNG）
+├─ archive.py                赛事库与全站统计
+├─ control.py                人工切镜
+├─ workqueue.py              租约队列（owner 校验 + 回收）
+├─ worker.py                 任务执行器（轮询自愈 + 续租）
+├─ schedule.py / scheduler.py 赛季推进与定时
+├─ api.py                    FastAPI：建场 / 事件 / SSE / 归档 / 分享 / 赛季
 ├─ demo.py                   命令行跑一局，打印时间线
-└─ tests/                    pytest
+└─ tests/                    433 条 pytest
 ```
 
 ## 引擎规则（twenty-questions）

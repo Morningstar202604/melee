@@ -10,6 +10,12 @@
   `recap` 的 `problems` 是紧凑 JSON，`grep` 需用 `-F` 否则 `[]` 被当作字符类。
 - 产品行为无变化。
 
+### 文档
+
+- 新增 `docs/BENCHMARK.md`：7 维度 × 6 项目的完整对标矩阵与采集命令。
+- 新增 `docs/assets/social-card.png`（1280×640）与生成脚本 `scripts/make_social_card.py`。
+- `apps/web/README.md`、`services/match/README.md`、`services/match/DESIGN.md` 同步到五页结构与当前模块。
+
 ## [1.0.0] — 2026-10-24
 
 v1.0 的目标是把项目从"能演示"推到"能对外展示"：补齐观众入口、分享、统计与运维缺口，

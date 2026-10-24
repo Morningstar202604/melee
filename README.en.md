@@ -10,6 +10,8 @@ Python + FastAPI + SQLite with a zero-build frontend. One command to run, one to
 [![Tests](https://img.shields.io/badge/tests-433%20passed-brightgreen)](services/match/tests)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
+![melee](docs/assets/social-card.png)
+
 ![Home](docs/screenshots/01-home.png)
 
 ## Why this exists
