@@ -359,7 +359,7 @@ python scripts/record_walkthrough.py  # 重录演示视频
 
 | 平台 | 地址 | CI |
 |---|---|---|
-| GitHub（主） | https://github.com/badhope/melee | GitHub Actions：test + docker |
+| GitHub（主） | https://github.com/badhope/melee · [v1.0.1](https://github.com/badhope/melee/releases/tag/v1.0.1) | GitHub Actions：test + docker（latest `66da36f` 全绿） |
 | GitHub | https://github.com/X33834/melee | GitHub Actions：test + docker |
 | GitHub | https://github.com/Morningstar202604/melee | GitHub Actions：test + docker |
 | Gitee | https://gitee.com/badhope/melee | 同仓 `.github/workflows/ci.yml` |
