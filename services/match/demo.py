@@ -53,24 +53,9 @@ def main() -> int:
     print(f"种子 {args.seed} · 共 {len(events)} 条事件 · {result.turns} 回合")
     print("-" * 72)
     for event in events:
-        kind = event["type"]
-        payload = event["payload"]
-        who = event.get("player", "")
-        if kind == "action.applied":
-            action = payload["action"]
-            effects = []
-            for eff in payload["effects"]:
-                if eff["kind"] == "answer":
-                    mark = "是" if eff["answer"] == "yes" else "否"
-                    effects.append(f"{eff['aspect']}={eff['value']} → {mark}（排除 {eff['narrowed']}）")
-                elif eff["kind"] == "guess":
-                    effects.append(f"报答案 {eff['value']} → {'中' if eff['correct'] else '错'}")
-            print(f"[{event['seq']:>2}] {who} {action['kind']:<5} {'; '.join(effects)}")
-        elif kind == "narration.line":
-            print(f"     └ 解说：{payload['text']}")
-        elif kind == "match.ended":
-            print("-" * 72)
-            print(f"结束：胜者 {payload['winner']} · {payload['reason']}")
+        text = _line_of(event)
+        if text:
+            print(text)
 
     print()
     print("视图（由事件折叠得出）：", json.dumps(
@@ -79,6 +64,28 @@ def main() -> int:
     ))
     print(f"落库：{Path(args.db).resolve()}")
     return 0
+
+
+def _line_of(event: dict) -> str:
+    kind = event["type"]
+    payload = event["payload"]
+    who = event.get("player", "")
+    if kind == "action.applied":
+        action = payload["action"]
+        effects = "; ".join(_effect_text(eff) for eff in payload["effects"] if eff["kind"] in ("answer", "guess"))
+        return f"[{event['seq']:>2}] {who} {action['kind']:<5} {effects}"
+    if kind == "narration.line":
+        return f"     └ 解说：{payload['text']}"
+    if kind == "match.ended":
+        return f"{'-' * 72}\n结束：胜者 {payload['winner']} · {payload['reason']}"
+    return ""
+
+
+def _effect_text(eff: dict) -> str:
+    if eff["kind"] == "answer":
+        mark = "是" if eff["answer"] == "yes" else "否"
+        return f"{eff['aspect']}={eff['value']} → {mark}（排除 {eff['narrowed']}）"
+    return f"报答案 {eff['value']} → {'中' if eff['correct'] else '错'}"
 
 
 if __name__ == "__main__":

@@ -3,66 +3,128 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>melee · 赛季</title>
+<title>赛季 · melee 转播台</title>
 <link rel="stylesheet" href="./src/theme.css">
 <style>
-.board{display:grid;grid-template-columns:1fr 320px;gap:14px;margin-top:16px}
-@media (max-width:820px){.board{grid-template-columns:1fr}}
-.rank{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #161B25}
+.board{display:grid;grid-template-columns:1.5fr .9fr;gap:16px;margin-top:16px}
+@media (max-width:900px){.board{grid-template-columns:1fr}}
+.rank{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line-soft)}
 .rank:last-child{border-bottom:none}
-.thead{display:flex;gap:12px;font-size:10px;letter-spacing:.1em;color:var(--faint);text-transform:uppercase;padding-bottom:8px;border-bottom:1px solid #161B25}
+.rank .no{width:26px;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+.rank .no.top{color:var(--b);font-weight:800}
+.rank .nm{flex:1;color:#E8EAF2;font-weight:600;font-size:13.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank .bar{width:110px;height:5px;border-radius:3px;background:#161B25;overflow:hidden;flex:none}
+.rank .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--a),#67E8F9)}
+.rank .w{width:30px;text-align:right;color:var(--ok);font-variant-numeric:tabular-nums}
+.rank .l{width:30px;text-align:right;color:var(--bad);font-variant-numeric:tabular-nums}
+.rank .r{width:58px;text-align:right;color:var(--dim);font-variant-numeric:tabular-nums;font-size:12.5px}
+.thead{display:flex;gap:12px;font-size:10px;letter-spacing:.1em;color:var(--faint);text-transform:uppercase;padding-bottom:8px;border-bottom:1px solid var(--line-soft)}
 .thead span:nth-child(1){width:26px}
 .thead span:nth-child(2){flex:1}
-.thead span:nth-child(3),.thead span:nth-child(4){width:34px;text-align:right}
-.thead span:nth-child(5){width:64px;text-align:right}
-.rank .no{width:26px;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
-.rank .nm{flex:1;color:#E8EAF2;font-weight:600;font-size:13.5px}
-.rank .w{width:34px;text-align:right;color:var(--ok);font-variant-numeric:tabular-nums}
-.rank .l{width:34px;text-align:right;color:var(--bad);font-variant-numeric:tabular-nums}
-.rank .r{width:64px;text-align:right;color:var(--dim);font-variant-numeric:tabular-nums}
-.fixture{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #12161F;font-size:12.5px;color:var(--dim)}
+.thead span:nth-child(3){width:110px;flex:none}
+.thead span:nth-child(4),.thead span:nth-child(5){width:30px;text-align:right}
+.thead span:nth-child(6){width:58px;text-align:right}
+.fixture{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #12161F;font-size:12.5px;color:var(--dim);border-radius:6px}
+.fixture:hover{background:#0E121A}
 .fixture:last-child{border-bottom:none}
-.fixture .rd{width:44px;color:var(--faint);font-size:11px}
-.error{color:var(--bad);font-size:13px;margin-top:10px}
+.fixture .rd{width:38px;color:var(--faint);font-size:11px;flex:none}
+.fixture .vs{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fixture .when{font-size:11px;color:var(--faint);flex:none}
+.fixture.played{opacity:.55}
+.season-list{display:flex;flex-direction:column;gap:8px}
+.season-item{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;border:1px solid var(--line);
+  background:#0C1017;cursor:pointer;transition:border-color .15s;text-align:left}
+.season-item:hover{border-color:#35405A}
+.season-item.on{border-color:var(--a);box-shadow:inset 2px 0 0 var(--a)}
+.season-item .n{font-size:13.5px;font-weight:650;color:var(--txt)}
+.season-item .m{font-size:11px;color:var(--faint);margin-top:2px}
+.season-item .p{margin-left:auto;font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
+.progress{height:4px;border-radius:2px;background:#161B25;overflow:hidden;margin-top:8px}
+.progress i{display:block;height:100%;background:var(--a)}
+.rival{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line-soft);font-size:12.5px;color:var(--dim)}
+.rival:last-child{border-bottom:none}
+.rival .score{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--txt)}
 </style>
 </head>
 <body>
-<div class="topbar">
-  <div class="brand">MELEE <span>/</span> 赛季</div>
-  <nav class="nav">
-    <a href="./index.html">观战</a>
-    <a href="./season.html" class="on">赛季</a>
-    <a href="./recap.html">战报</a>
-    <a href="./director.html">导播</a>
-  </nav>
-</div>
-
+<main id="main">
 <div class="wrap">
-  <h1 id="title">赛季</h1>
-  <p class="muted" id="subtitle">加载中…</p>
-  <div class="card" id="nextUp" style="display:none;margin-top:12px">
+  <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">
+    <div>
+      <div class="muted" style="letter-spacing:.2em;font-size:10.5px">SEASON</div>
+      <h1 id="title" style="margin-top:6px">赛季</h1>
+      <p class="muted" id="subtitle" style="margin-top:4px">加载中…</p>
+    </div>
+    <span style="margin-left:auto"></span>
+    <button class="btn" id="btnNewSeason" type="button">新建赛季</button>
+    <button class="btn primary" id="btnRun" type="button" disabled>推进赛程</button>
+  </div>
+
+  <div class="card" id="nextUp" style="display:none;margin-top:14px;padding:13px 16px">
     <span class="muted">即将开赛</span>
     <b id="nextUpText" style="margin-left:10px"></b>
   </div>
 
   <div class="board">
-    <div class="card">
-      <h2 style="margin-top:0">积分榜</h2>
-      <div class="thead"><span>#</span><span>选手</span><span>胜</span><span>负</span><span>积分</span></div>
-      <div id="standings"><div class="muted">加载中…</div></div>
+    <div>
+      <div class="card pad">
+        <h2 style="margin-top:0">积分榜</h2>
+        <div class="thead"><span>#</span><span>选手</span><span></span><span>胜</span><span>负</span><span>积分</span></div>
+        <div id="standings"><div class="muted">加载中…</div></div>
+      </div>
+      <div class="card pad" style="margin-top:16px">
+        <h2 style="margin-top:0">赛程</h2>
+        <div id="fixtures" style="max-height:380px;overflow:auto"><div class="muted">加载中…</div></div>
+      </div>
     </div>
     <div>
-      <div class="card" style="margin-bottom:14px">
+      <div class="card pad">
+        <h2 style="margin-top:0">全部赛季</h2>
+        <div class="season-list" id="seasonList"><div class="muted">加载中…</div></div>
+      </div>
+      <div class="card pad" style="margin-top:16px">
         <h2 style="margin-top:0">宿敌</h2>
         <div id="rivalries"><div class="muted">暂无（需交手 2 场以上）</div></div>
       </div>
-      <div class="card">
-        <h2 style="margin-top:0">赛程</h2>
-        <div id="fixtures" style="max-height:320px;overflow:auto"><div class="muted">加载中…</div></div>
-      </div>
     </div>
   </div>
-  <div class="error" id="error"></div>
+
+  <div id="error" class="notice warn" style="display:none;margin-top:16px"></div>
+  <div class="footer-slot"></div>
+</div>
+</main>
+
+<div class="modal" id="seasonModal" role="dialog" aria-modal="true" aria-labelledby="seasonModalTitle">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2 id="seasonModalTitle">新建赛季</h2>
+      <button class="x" id="seasonClose" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="sheet-body">
+      <div class="grid-2">
+        <div class="field"><label for="sName">赛季名称</label><input class="input" id="sName" placeholder="2026 秋季赛" maxlength="120"></div>
+        <div class="field"><label for="sId">赛季 ID</label><input class="input" id="sId" placeholder="autumn-2026" maxlength="64"></div>
+      </div>
+      <div class="field">
+        <label for="sGame">赛制</label>
+        <select class="input" id="sGame"></select>
+        <span class="hint">赛季内所有对局使用同一赛制，积分才可比。</span>
+      </div>
+      <div class="field">
+        <label for="sPlayers">选手（每行一个）</label>
+        <textarea class="input" id="sPlayers" rows="5" style="height:auto;padding:9px 11px;resize:vertical" placeholder="甲&#10;乙&#10;丙&#10;丁"></textarea>
+      </div>
+      <div class="grid-2">
+        <div class="field"><label for="sStart">开赛时间（可选）</label><input class="input" id="sStart" type="datetime-local"></div>
+        <div class="field"><label for="sInterval">轮次间隔（分钟）</label><input class="input" id="sInterval" type="number" value="30" min="1" max="1440"></div>
+      </div>
+      <div class="notice">不给开赛时间就只排对阵，可随时手动推进。</div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn" id="seasonCancel" type="button">取消</button>
+      <button class="btn primary" id="seasonCreate" type="button">创建赛季</button>
+    </div>
+  </div>
 </div>
 
 <script type="module" src="./src/season.js"></script>

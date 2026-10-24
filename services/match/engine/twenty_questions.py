@@ -156,76 +156,86 @@ class TwentyQuestions:
             return MoveResult(legal=False, reason=f"现在轮到 {current}", retryable=False)
 
         next_state = copy.deepcopy(state)
+        handler = {
+            "ask": self._apply_ask,
+            "guess": self._apply_guess,
+            "forfeit": self._apply_forfeit,
+        }.get(move.kind)
+        if handler is None:
+            return MoveResult(legal=False, reason=f"未知动作类型 {move.kind}", retryable=True)
+        return handler(next_state, player, move)
+
+    def _apply_ask(self, next_state: dict[str, Any], player: PlayerId, move: Move) -> MoveResult:
+        aspect, _, value = move.value.partition("=")
+        if aspect not in ASPECTS:
+            return MoveResult(legal=False, reason=f"未知属性 {aspect}", retryable=True)
+        if value not in ASPECTS[aspect]:
+            return MoveResult(legal=False, reason=f"属性 {aspect} 没有取值 {value}", retryable=True)
+
         effects: list[AppliedEffect] = []
+        before = len(_candidates(next_state))
+        target_row = next(row for row in CATALOG if row["name"] == next_state["target"])
+        answer = "yes" if _matches(target_row, aspect, value) else "no"
+        next_state["history"].append(
+            {"by": player, "kind": "ask", "aspect": aspect, "value": value, "answer": answer}
+        )
+        next_state["turnIndex"] += 1
 
-        if move.kind == "ask":
-            aspect, _, value = move.value.partition("=")
-            if aspect not in ASPECTS:
-                return MoveResult(legal=False, reason=f"未知属性 {aspect}", retryable=True)
-            if value not in ASPECTS[aspect]:
-                return MoveResult(legal=False, reason=f"属性 {aspect} 没有取值 {value}", retryable=True)
-
-            target_row = next(row for row in CATALOG if row["name"] == next_state["target"])
-            answer = "yes" if _matches(target_row, aspect, value) else "no"
-            entry = {"by": player, "kind": "ask", "aspect": aspect, "value": value, "answer": answer}
-            next_state["history"].append(entry)
-            next_state["turnIndex"] += 1
-
-            before = len(_candidates(state))
-            after = len(_candidates(next_state))
-            effects.append(
-                AppliedEffect(
-                    kind="answer",
-                    detail={"aspect": aspect, "value": value, "answer": answer, "narrowed": before - after},
-                )
+        after = len(_candidates(next_state))
+        effects.append(
+            AppliedEffect(
+                kind="answer",
+                detail={"aspect": aspect, "value": value, "answer": answer, "narrowed": before - after},
             )
+        )
 
-            if next_state["turnIndex"] >= next_state["maxQuestions"]:
-                next_state["finished"] = True
-                remaining = _candidates(next_state)
-                next_state["winner"] = player if len(remaining) == 1 else None
-                next_state["endReason"] = (
-                    "问满上限，最后一问收敛到唯一答案" if len(remaining) == 1 else "问满上限，仍未收敛"
-                )
-                effects.append(AppliedEffect(kind="end", detail={"reason": next_state["endReason"]}))
-
-            return MoveResult(
-                legal=True,
-                next_state=next_state,
-                effects=effects,
-                public_state=self.public_state(next_state),
-            )
-
-        if move.kind == "guess":
-            guess = move.value.strip()
-            correct = guess == next_state["target"]
-            entry = {"by": player, "kind": "guess", "value": guess, "answer": "win" if correct else "wrong"}
-            next_state["history"].append(entry)
+        if next_state["turnIndex"] >= next_state["maxQuestions"]:
             next_state["finished"] = True
-            next_state["winner"] = player if correct else next(p for p in next_state["players"] if p != player)
-            next_state["endReason"] = "猜中" if correct else "猜错，直接判负"
-            effects.append(
-                AppliedEffect(kind="guess", detail={"value": guess, "correct": correct})
+            remaining = _candidates(next_state)
+            next_state["winner"] = player if len(remaining) == 1 else None
+            next_state["endReason"] = (
+                "问满上限，最后一问收敛到唯一答案" if len(remaining) == 1 else "问满上限，仍未收敛"
             )
             effects.append(AppliedEffect(kind="end", detail={"reason": next_state["endReason"]}))
-            return MoveResult(
-                legal=True,
-                next_state=next_state,
-                effects=effects,
-                public_state=self.public_state(next_state),
-            )
 
-        if move.kind == "forfeit":
-            next_state["finished"] = True
-            next_state["winner"] = next(p for p in next_state["players"] if p != player)
-            next_state["endReason"] = "弃权"
-            effects.append(AppliedEffect(kind="forfeit", detail={"by": player}))
-            effects.append(AppliedEffect(kind="end", detail={"reason": "弃权"}))
-            return MoveResult(
-                legal=True,
-                next_state=next_state,
-                effects=effects,
-                public_state=self.public_state(next_state),
-            )
+        return MoveResult(
+            legal=True,
+            next_state=next_state,
+            effects=effects,
+            public_state=self.public_state(next_state),
+        )
 
-        return MoveResult(legal=False, reason=f"未知动作类型 {move.kind}", retryable=True)
+    def _apply_guess(self, next_state: dict[str, Any], player: PlayerId, move: Move) -> MoveResult:
+        guess = move.value.strip()
+        correct = guess == next_state["target"]
+        next_state["history"].append(
+            {"by": player, "kind": "guess", "value": guess, "answer": "win" if correct else "wrong"}
+        )
+        next_state["finished"] = True
+        next_state["winner"] = player if correct else next(p for p in next_state["players"] if p != player)
+        next_state["endReason"] = "猜中" if correct else "猜错，直接判负"
+        effects = [
+            AppliedEffect(kind="guess", detail={"value": guess, "correct": correct}),
+            AppliedEffect(kind="end", detail={"reason": next_state["endReason"]}),
+        ]
+        return MoveResult(
+            legal=True,
+            next_state=next_state,
+            effects=effects,
+            public_state=self.public_state(next_state),
+        )
+
+    def _apply_forfeit(self, next_state: dict[str, Any], player: PlayerId, move: Move) -> MoveResult:
+        next_state["finished"] = True
+        next_state["winner"] = next(p for p in next_state["players"] if p != player)
+        next_state["endReason"] = "弃权"
+        effects = [
+            AppliedEffect(kind="forfeit", detail={"by": player}),
+            AppliedEffect(kind="end", detail={"reason": "弃权"}),
+        ]
+        return MoveResult(
+            legal=True,
+            next_state=next_state,
+            effects=effects,
+            public_state=self.public_state(next_state),
+        )

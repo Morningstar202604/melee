@@ -1,25 +1,39 @@
 # 截图与录屏
 
-全部由 Playwright 驱动真实 Chromium 在真实服务上截取（单端口 `scripts/serve.py`，1470×900 与 390×844 两种视口）。截图里的比赛都是真跑出来的，不是静态稿。
+全部由 Playwright 驱动真实 Chromium，在真实服务、真实比赛数据上截取。没有静态稿、没有占位数字。
 
-| 文件 | 页面 | 说明 |
-|---|---|---|
-| `01-lobby.png` | 观战页（空状态） | 未选比赛时的引导 |
-| `02-twenty-questions.png` | 二十问直播 | 候选收窄、内心戏、解说、切镜 |
-| `03-codenames.png` | 代号直播 | 5×5 词阵、队别/阶段/线索、4 张选手卡 |
-| `04-tic-tac-toe.png` | 井字棋 | 3×3 棋盘、逐手记录 |
-| `05-nim.png` | 取石子 | 三堆堆条 |
-| `06-recap.png` | 战报页 | 一句话战报、统计、三个瞬间 |
-| `07-season.png` | 赛季页 | 积分榜、宿敌、赛程与倒计时 |
-| `08-director.png` | 导播台 | 选台、镜头、人工切镜、实时事件 |
-| `09-mobile.png` | 观战页（390×844） | 纵向堆叠布局 |
-| `10-replay.png` | 回放态 | 琥珀色时间轴与「回放中」标记 |
-| `../video/walkthrough.mp4` | 全流程录屏 | 直播 → 回放 → 赛季 → 导播 → 代号，55 秒 |
+| 文件 | 页面 | 视口 | 说明 |
+|---|---|---|---|
+| `01-home.png` | 首页 / 赛事库 | 1600×1000 | 直播条、赛事库筛选、六赛制入口、14 天活动、胜者榜 |
+| `02-live.png` | 观战（直播） | 1600×1000 | 直播中的二十问，选手卡与解说同步 |
+| `03-twenty-questions.png` | 观战（回放） | 1600×1000 | 拖动时间轴后进入回放，琥珀色标记 |
+| `04-codenames.png` | 观战（代号） | 1600×1000 | 5×5 词阵、队别/阶段/线索、4 张选手卡 |
+| `05-tic-tac-toe.png` | 观战（井字棋） | 1600×1000 | 3×3 棋盘与逐步记录 |
+| `06-nim.png` | 观战（取石子） | 1600×1000 | 三堆堆条 |
+| `07-othello.png` | 观战（黑白棋） | 1600×1000 | 8×8 棋盘 |
+| `08-recap.png` | 战报 | 1600×1000 | 一句话战报、四个数字、三个瞬间、选手数据、事实校验 |
+| `09-season.png` | 赛季 | 1600×1000 | 积分榜、赛程、宿敌、倒计时、推进赛程 |
+| `10-director.png` | 导播台 | 1600×1000 | 选台、五种镜头、人工切镜、实时事件 |
+| `11-mobile-home.png` | 首页（移动端） | 390×844 | 纵向堆叠 |
+| `12-mobile-watch.png` | 观战（移动端） | 390×844 | 无横向溢出，控制条换行 |
 
-复现命令：
+## 复现
 
 ```bash
-MELEE_DB=/tmp/demo.db MELEE_QUOTA_MATCHES=500 python scripts/serve.py --port 8099
-cd apps/web && python -m http.server 8088
-python /tmp/shots.py   # 截图脚本见仓库 docs/screenshots/README 的说明
+# 1. 起服务（单端口，前端与 API 同一个进程）
+MELEE_DB=/tmp/melee-demo.db python scripts/serve.py --port 8123
+
+# 2. 灌演示数据（六赛制各一场 + 一个带排期的赛季）
+python scripts/seed_demo.py --api http://127.0.0.1:8123
+
+# 3. 截图（脚本内部会再补几场，让"最近 14 天"有数据）
+python scripts/capture_gallery.py --api http://127.0.0.1:8123
 ```
+
+脚本把任何 JS 异常当作失败：出现 `pageerror` 或 `console.error` 时退出码非零，
+所以这些截图同时是一次前端冒烟测试。
+
+## 录屏
+
+`docs/video/walkthrough.mp4` 由 `scripts/record_walkthrough.py` 驱动同一个真实服务录制，
+流程：首页 → 开一局 → 直播观战 → 拖时间轴回放 → 回到直播 → 战报 → 赛季 → 导播台。

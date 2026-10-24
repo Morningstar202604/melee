@@ -147,6 +147,7 @@ def claim(db_path: str | Path, owner: str, kinds: Iterable[str], *, lease_s: flo
         conn.commit()
         record = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
         return _row_to_job(record)
+    # aqg: top-level boundary
     except Exception:
         conn.rollback()
         raise
@@ -154,32 +155,55 @@ def claim(db_path: str | Path, owner: str, kinds: Iterable[str], *, lease_s: flo
         conn.close()
 
 
-def complete(db_path: str | Path, job_id: str) -> None:
+def complete(db_path: str | Path, job_id: str, *, owner: str | None = None) -> bool:
+    """标记完成。给了 owner 就只允许当前持有者改：失租者不能把别人的任务写成 done。"""
     conn = connect(db_path)
     try:
-        conn.execute(
-            "UPDATE jobs SET status = ?, lease_owner = NULL, lease_until = NULL, updated_at = ? WHERE job_id = ?",
-            (DONE, time.time(), job_id),
-        )
+        if owner is None:
+            cursor = conn.execute(
+                "UPDATE jobs SET status = ?, lease_owner = NULL, lease_until = NULL, updated_at = ? "
+                "WHERE job_id = ?",
+                (DONE, time.time(), job_id),
+            )
+        else:
+            cursor = conn.execute(
+                "UPDATE jobs SET status = ?, lease_owner = NULL, lease_until = NULL, updated_at = ? "
+                "WHERE job_id = ? AND lease_owner = ?",
+                (DONE, time.time(), job_id, owner),
+            )
         conn.commit()
+        return cursor.rowcount > 0
     finally:
         conn.close()
 
 
-def fail(db_path: str | Path, job_id: str, error: str) -> str:
-    """失败后要么回到 pending 等重试，要么彻底 failed。返回新状态。"""
+def fail(db_path: str | Path, job_id: str, error: str, *, owner: str | None = None) -> str:
+    """失败后要么回到 pending 等重试，要么彻底 failed。返回新状态。
+
+    给了 owner 时只处理自己仍在租约中的任务：失租者的失败上报不能把
+    别人正在跑的任务打回 pending，导致第三次重复执行。
+    """
     conn = connect(db_path)
     try:
         row = conn.execute("SELECT attempts, max_attempts FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
         if row is None:
             return FAILED
         status = FAILED if row["attempts"] >= row["max_attempts"] else PENDING
-        conn.execute(
-            "UPDATE jobs SET status = ?, last_error = ?, lease_owner = NULL, lease_until = NULL, updated_at = ? "
-            "WHERE job_id = ?",
-            (status, error[:500], time.time(), job_id),
-        )
+        if owner is None:
+            cursor = conn.execute(
+                "UPDATE jobs SET status = ?, last_error = ?, lease_owner = NULL, lease_until = NULL, updated_at = ? "
+                "WHERE job_id = ?",
+                (status, error[:500], time.time(), job_id),
+            )
+        else:
+            cursor = conn.execute(
+                "UPDATE jobs SET status = ?, last_error = ?, lease_owner = NULL, lease_until = NULL, updated_at = ? "
+                "WHERE job_id = ? AND lease_owner = ?",
+                (status, error[:500], time.time(), job_id, owner),
+            )
         conn.commit()
+        if cursor.rowcount == 0:
+            return RUNNING
         return status
     finally:
         conn.close()
@@ -220,6 +244,27 @@ def _row_to_job(row: sqlite3.Row) -> Job:
     )
 
 
+def reap(db_path: str | Path) -> int:
+    """把"重试次数已用完、租约又过期"的 running 任务标记为 failed。
+
+    没有这个回收器时，`claim` 的 `attempts < max_attempts` 条件会让这类任务
+    永久停在 running：/jobs 永远显示运行中，而实际上没有任何 worker 会再领它。
+    """
+    now = time.time()
+    conn = connect(db_path)
+    try:
+        cursor = conn.execute(
+            "UPDATE jobs SET status = ?, last_error = COALESCE(last_error, 'worker 租约过期且重试次数已用完'), "
+            "lease_owner = NULL, lease_until = NULL, updated_at = ? "
+            "WHERE status = ? AND attempts >= max_attempts AND lease_until IS NOT NULL AND lease_until < ?",
+            (FAILED, now, RUNNING, now),
+        )
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()
+
+
 def renew(db_path: str | Path, job_id: str, owner: str, lease_s: float) -> bool:
     """续租：长任务（一局比赛可能跑好几分钟）必须定期延长租约。
 
@@ -229,12 +274,21 @@ def renew(db_path: str | Path, job_id: str, owner: str, lease_s: float) -> bool:
     """
     conn = connect(db_path)
     try:
-        cursor = conn.execute(
-            "UPDATE jobs SET lease_until = ?, updated_at = ? "
-            "WHERE job_id = ? AND lease_owner = ? AND status = ?",
-            (time.time() + lease_s, time.time(), job_id, owner, RUNNING),
-        )
-        conn.commit()
-        return cursor.rowcount > 0
+        for attempt in range(3):
+            try:
+                cursor = conn.execute(
+                    "UPDATE jobs SET lease_until = ?, updated_at = ? "
+                    "WHERE job_id = ? AND lease_owner = ? AND status = ?",
+                    (time.time() + lease_s, time.time(), job_id, owner, RUNNING),
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+            except sqlite3.OperationalError as exc:
+                # 续租线程不能因为一次锁冲突就死掉：租约一过期，
+                # 第二个副本会把同一场重跑一遍。
+                if "locked" not in str(exc).lower() or attempt == 2:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+        return False
     finally:
         conn.close()

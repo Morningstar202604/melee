@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 import time
@@ -112,8 +113,10 @@ class EventLog:
         return cls(conn=conn, match_id=match_id, _next=int(row[0]), on_event=publish_event)
 
     def create_match(self, game: str, seed: int, players: list[str]) -> None:
+        # INSERT OR IGNORE：重跑同一场时不能整行替换。
+        # OR REPLACE 会把 ended_at / created_at 抹成 NULL，已结束的比赛会变回"直播中"。
         self.conn.execute(
-            "INSERT OR REPLACE INTO matches (match_id, game, seed, players, created_at) VALUES (?,?,?,?,?)",
+            "INSERT OR IGNORE INTO matches (match_id, game, seed, players, created_at) VALUES (?,?,?,?,?)",
             (self.match_id, game, seed, json.dumps(players, ensure_ascii=False), _now()),
         )
         self.conn.commit()
@@ -145,34 +148,109 @@ class EventLog:
         with self.lock:
             # 多个连接（API、worker、导播台）会同时写同一场比赛：
             # 各自的 _next 可能撞号，必须撞了重读再写，而不是抛给调用方。
-            for attempt in range(8):
-                event["seq"] = self._next
-                try:
-                    self.conn.execute(
-                        "INSERT INTO events (match_id, seq, type, player, at, payload) VALUES (?,?,?,?,?,?)",
-                        (self.match_id, event["seq"], event_type, player, event["at"], payload_json),
-                    )
-                    self.conn.commit()
-                    self._next += 1
-                    break
-                except sqlite3.IntegrityError:
-                    row = self.conn.execute(
-                        "SELECT COALESCE(MAX(seq) + 1, 0) FROM events WHERE match_id = ?",
-                        (self.match_id,),
-                    ).fetchone()
-                    self._next = int(row[0])
-                except sqlite3.OperationalError as exc:
-                    if "locked" not in str(exc).lower() or attempt == 7:
-                        raise
-                    time.sleep(0.02 * (attempt + 1))
-            else:
-                raise EventLogError(f"写入事件失败：{self.match_id} 连续 8 次序号冲突")
+            self._insert_with_retry(event, payload_json)
         if self.on_event is not None:
-            self.on_event(event)
+            # 广播是通知，不是事实：Redis 抖动不能让事件写入失败，
+            # 否则一次 Redis 重启会让正在跑的比赛整局作废。
+            try:
+                self.on_event(event)
+            # aqg: top-level boundary
+            except Exception as exc:  # noqa: BLE001 - 广播必须可降级  # aqg: top-level boundary
+                logging.getLogger("melee.eventlog").warning("事件广播失败（已忽略）：%s", exc)
         return event
 
+    def _insert_with_retry(self, event: dict[str, Any], payload_json: str) -> None:
+        for attempt in range(8):
+            event["seq"] = self._next
+            try:
+                self.conn.execute(
+                    "INSERT INTO events (match_id, seq, type, player, at, payload) VALUES (?,?,?,?,?,?)",
+                    (
+                        self.match_id,
+                        event["seq"],
+                        event["type"],
+                        event.get("player"),
+                        event["at"],
+                        payload_json,
+                    ),
+                )
+                self.conn.commit()
+                self._next += 1
+                return
+            except sqlite3.IntegrityError:
+                self._next = self._max_seq()
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc).lower() or attempt == 7:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
+        raise EventLogError(f"写入事件失败：{self.match_id} 连续 8 次序号冲突")
+
+    def _max_seq(self) -> int:
+        row = self.conn.execute(
+            "SELECT COALESCE(MAX(seq) + 1, 0) FROM events WHERE match_id = ?",
+            (self.match_id,),
+        ).fetchone()
+        return int(row[0])
+
+    def append_terminal(self, payload: dict[str, Any]) -> bool:
+        """原子地追加唯一的 match.ended。返回是否真的写入。
+
+        先查后写跨连接存在竞态（租约过期时两个 worker 同时收尾），
+        这里用 BEGIN IMMEDIATE 把"查 + 插 + 标记结束"放进一个事务。
+        """
+        payload_json = json.dumps(payload, ensure_ascii=False)
+        with self.lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                exists = self.conn.execute(
+                    "SELECT 1 FROM events WHERE match_id = ? AND type = 'match.ended' LIMIT 1",
+                    (self.match_id,),
+                ).fetchone()
+                if exists is not None:
+                    self.conn.rollback()
+                    return False
+                # 事务内重读 seq：别的连接可能在我们上次读之后又追加了事件，
+                # 用陈旧的 self._next 会撞主键。
+                row = self.conn.execute(
+                    "SELECT COALESCE(MAX(seq) + 1, 0) FROM events WHERE match_id = ?",
+                    (self.match_id,),
+                ).fetchone()
+                self._next = int(row[0])
+                event: dict[str, Any] = {
+                    "seq": self._next,
+                    "matchId": self.match_id,
+                    "type": "match.ended",
+                    "at": _now(),
+                    "payload": payload,
+                }
+                self.conn.execute(
+                    "INSERT INTO events (match_id, seq, type, player, at, payload) VALUES (?,?,?,?,?,?)",
+                    (self.match_id, event["seq"], "match.ended", None, event["at"], payload_json),
+                )
+                self.conn.execute(
+                    "UPDATE matches SET ended_at = COALESCE(ended_at, ?) WHERE match_id = ?",
+                    (_now(), self.match_id),
+                )
+                self.conn.commit()
+            # aqg: top-level boundary
+            except Exception:
+                self.conn.rollback()
+                raise
+            self._next += 1
+        if self.on_event is not None:
+            try:
+                self.on_event(event)
+            # aqg: top-level boundary
+            except Exception as exc:  # noqa: BLE001 - 同 append  # aqg: top-level boundary
+                logging.getLogger("melee.eventlog").warning("终局事件广播失败（已忽略）：%s", exc)
+        return True
+
     def mark_ended(self) -> None:
-        self.conn.execute("UPDATE matches SET ended_at = ? WHERE match_id = ?", (_now(), self.match_id))
+        """幂等：已标记过就保留第一次的时间，避免重试把结束时间往后推。"""
+        self.conn.execute(
+            "UPDATE matches SET ended_at = COALESCE(ended_at, ?) WHERE match_id = ?",
+            (_now(), self.match_id),
+        )
         self.conn.commit()
 
     def read(self, after: int = -1) -> list[dict[str, Any]]:

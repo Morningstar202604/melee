@@ -67,9 +67,7 @@ def _highlights_of(event: dict[str, Any]) -> list[Highlight]:
     """单条事件产生的所有高光；没有就返回空列表。"""
     kind, payload = event["type"], event["payload"]
     if kind == "match.ended":
-        winner = payload.get("winner")
-        title = f"{_TEAM_LABELS.get(winner, winner)} 获胜" if winner else "无人获胜"
-        return [_hl(event, "end", title, str(payload.get("reason", "")), 60)]
+        return [_end_highlight(event, payload)]
     if kind == "action.rejected":
         return [_hl(event, "rejected", f"{event.get('player')} 动作被判犯规", payload["reason"], 30)]
     if kind != "action.applied":
@@ -78,18 +76,41 @@ def _highlights_of(event: dict[str, Any]) -> list[Highlight]:
     player = event.get("player", "")
     out: list[Highlight] = []
     for effect in payload["effects"]:
-        effect_kind = effect["kind"]
-        if effect_kind == "answer":
-            out += _answer_highlights(event, effect, player)
-        elif effect_kind == "guess":
-            correct = effect.get("correct")
-            out.append(_hl(event, "guess", f"{player} 报出「{effect.get('value')}」",
-                           "猜中，比赛结束。" if correct else "猜错，直接判负。", 100 if correct else 90))
-        elif effect_kind == "forfeit":
-            out.append(_hl(event, "forfeit", f"{player} 弃权", "连续无法给出合法动作。", 70))
-        elif effect_kind == "reveal":
-            out += _reveal_highlights(event, effect, player)
+        handler = _EFFECT_HIGHLIGHTS.get(effect["kind"])
+        if handler is not None:
+            out += handler(event, effect, player)
     return out
+
+
+def _end_highlight(event: dict[str, Any], payload: dict[str, Any]) -> Highlight:
+    winner = payload.get("winner")
+    title = f"{_TEAM_LABELS.get(winner, winner)} 获胜" if winner else "无人获胜"
+    return _hl(event, "end", title, str(payload.get("reason", "")), 60)
+
+
+def _guess_highlight(event: dict[str, Any], effect: dict[str, Any], player: str) -> list[Highlight]:
+    correct = effect.get("correct")
+    return [
+        _hl(
+            event,
+            "guess",
+            f"{player} 报出「{effect.get('value')}」",
+            "猜中，比赛结束。" if correct else "猜错，直接判负。",
+            100 if correct else 90,
+        )
+    ]
+
+
+def _forfeit_highlight(event: dict[str, Any], effect: dict[str, Any], player: str) -> list[Highlight]:
+    return [_hl(event, "forfeit", f"{player} 弃权", "连续无法给出合法动作。", 70)]
+
+
+_EFFECT_HIGHLIGHTS = {
+    "answer": _answer_highlights,
+    "guess": _guess_highlight,
+    "forfeit": _forfeit_highlight,
+    "reveal": _reveal_highlights,
+}
 
 
 def find_highlights(events: list[dict[str, Any]], limit: int = 3) -> list[Highlight]:
@@ -159,27 +180,70 @@ def _last_guess_hit(guesses: list[dict[str, Any]]) -> bool:
     return bool(effects) and bool(effects[0].get("correct"))
 
 
+@dataclass
+class _Streams:
+    """按事件类型切好的几摞，后面数数只跟这些打交道。"""
+
+    created: dict[str, Any] | None
+    ended: dict[str, Any] | None
+    applied: list[dict[str, Any]]
+    rejected: list[dict[str, Any]]
+    thoughts: list[dict[str, Any]]
+    asks: list[dict[str, Any]]
+    guesses: list[dict[str, Any]]
+    forfeits: list[dict[str, Any]]
+
+    @property
+    def players(self) -> list[str]:
+        """参赛名单以 match.created 为准。
+
+        只从 action.applied 推导会在"全程没走出合法动作、直接弃权"的比赛里
+        丢掉胜者，导致战报自检误报"胜者不在参赛名单里"（真实模型联调时复现）。
+        """
+        from_created = (self.created or {}).get("payload", {}).get("players") or []
+        applied = {e["player"] for e in self.applied if e.get("player")}
+        return sorted(set(from_created) | applied)
+
+
+def _slice(events: list[dict[str, Any]]) -> _Streams:
+    by_type = _group_by_type(events)
+    applied = by_type.get("action.applied", [])
+    return _Streams(
+        created=_first(by_type.get("match.created")),
+        ended=_first(by_type.get("match.ended")),
+        applied=applied,
+        rejected=by_type.get("action.rejected", []),
+        thoughts=by_type.get("thought.delta", []),
+        asks=_by_kind(applied, "ask"),
+        guesses=_by_kind(applied, "guess"),
+        forfeits=_by_kind(applied, "forfeit"),
+    )
+
+
+def _group_by_type(events: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for event in events:
+        grouped.setdefault(event["type"], []).append(event)
+    return grouped
+
+
+def _first(items: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    return items[0] if items else None
+
+
 def _collect(events: list[dict[str, Any]]) -> _Counts:
-    end = next((e for e in events if e["type"] == "match.ended"), None)
-    created = next((e for e in events if e["type"] == "match.created"), None)
-    applied = [e for e in events if e["type"] == "action.applied"]
-    rejected = [e for e in events if e["type"] == "action.rejected"]
-    thoughts = [e for e in events if e["type"] == "thought.delta"]
-
-    asks, guesses, forfeits = (_by_kind(applied, "ask"), _by_kind(applied, "guess"), _by_kind(applied, "forfeit"))
-    players = sorted({e["player"] for e in applied if e.get("player")})
-
+    s = _slice(events)
     return _Counts(
-        game=(created or {}).get("payload", {}).get("game", ""),
-        winner=end["payload"]["winner"] if end else None,
-        reason=end["payload"]["reason"] if end else "",
-        turns=len(applied) - len(forfeits),
-        asks=len(asks),
-        guesses=len(guesses),
-        rejected=len(rejected),
-        per_player=_per_player(players, asks, guesses, rejected, thoughts),
-        last_guess_correct=_last_guess_hit(guesses),
-        last_forfeit_by=forfeits[-1].get("player") if forfeits else None,
+        game=(s.created or {}).get("payload", {}).get("game", ""),
+        winner=s.ended["payload"]["winner"] if s.ended else None,
+        reason=s.ended["payload"]["reason"] if s.ended else "",
+        turns=len(s.applied) - len(s.forfeits),
+        asks=len(s.asks),
+        guesses=len(s.guesses),
+        rejected=len(s.rejected),
+        per_player=_per_player(s.players, s.asks, s.guesses, s.rejected, s.thoughts),
+        last_guess_correct=_last_guess_hit(s.guesses),
+        last_forfeit_by=s.forfeits[-1].get("player") if s.forfeits else None,
     )
 
 
@@ -238,10 +302,11 @@ def build_recap(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _event_counts(events: list[dict[str, Any]]) -> dict[str, int]:
     applied = [e for e in events if e["type"] == "action.applied"]
+    kind_of = [e["payload"]["action"]["kind"] for e in applied]
     return {
-        "turns": sum(1 for e in applied if e["payload"]["action"]["kind"] != "forfeit"),
-        "asks": sum(1 for e in applied if e["payload"]["action"]["kind"] == "ask"),
-        "guesses": sum(1 for e in applied if e["payload"]["action"]["kind"] == "guess"),
+        "turns": sum(1 for kind in kind_of if kind != "forfeit"),
+        "asks": kind_of.count("ask"),
+        "guesses": kind_of.count("guess"),
         "rejected": sum(1 for e in events if e["type"] == "action.rejected"),
     }
 

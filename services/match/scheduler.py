@@ -19,7 +19,7 @@ from typing import Any, Callable
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from .schedule import SeasonRun, run_season
+from .schedule import SeasonBusyError, SeasonRun, run_season
 
 logger = logging.getLogger("melee.schedule")
 
@@ -99,6 +99,9 @@ class SeasonScheduler:
                     db_path=self.db_path,
                     max_fixtures=self.config.per_tick,
                 )
+            except SeasonBusyError:
+                # 别的副本正在推进：这一轮跳过，不算错误。
+                continue
             except Exception as exc:  # noqa: BLE001 - 调度线程不能因为一场失败而死
                 self.last_error = str(exc)
                 logger.exception("赛季 %s 推进失败：%s", season_id, exc)

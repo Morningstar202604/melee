@@ -1,21 +1,12 @@
 // SSE 客户端：只负责把事件交出去，不掺任何状态逻辑。
 // Last-Event-ID 由浏览器自动带上，断线重连不会漏帧也不会重复。
-
-let authToken = ''
-
-export function setToken(token) {
-  authToken = token || ''
-}
-
-function authHeaders() {
-  return authToken ? { Authorization: `Bearer ${authToken}` } : {}
-}
+import { authHeaders, token } from './api.js'
 
 export async function connectEvents(matchId, { onEvent, onOpen, onError, baseUrl = '' } = {}) {
   // EventSource 不能带请求头：token 模式下先换一张 60 秒票据，
-  // 票据只出现在 URL 里，且一次即废、很快过期，不会像 token 那样长期泄漏。
+  // 票据只出现在 URL 里、一次即废、很快过期，不会像 token 那样长期泄漏。
   let ticket = ''
-  if (authToken) {
+  if (token()) {
     try {
       const response = await fetch(`${baseUrl}/auth/ticket`, { method: 'POST', headers: authHeaders() })
       if (response.ok) ticket = (await response.json()).ticket || ''
@@ -49,25 +40,13 @@ export async function fetchMatch(matchId, { baseUrl = '' } = {}) {
   return response.json()
 }
 
-export async function fetchRecap(matchId, { baseUrl = '' } = {}) {
-  const response = await fetch(`${baseUrl}/matches/${encodeURIComponent(matchId)}/recap`, { headers: authHeaders() })
-  if (!response.ok) throw new Error(`拉取战报失败：${response.status}`)
-  return response.json()
-}
-
 export async function createMatch(body, { baseUrl = '' } = {}) {
   const response = await fetch(`${baseUrl}/matches`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   })
   if (!response.ok) throw new Error(`建场失败：${response.status} ${await response.text()}`)
-  return response.json()
-}
-
-export async function fetchState(matchId, { baseUrl = '' } = {}) {
-  const response = await fetch(`${baseUrl}/matches/${encodeURIComponent(matchId)}/state`, { headers: authHeaders() })
-  if (!response.ok) throw new Error(`拉取状态失败：${response.status}`)
   return response.json()
 }
 
@@ -82,7 +61,7 @@ export async function renderClips(matchId, { baseUrl = '', limit = 3, perEventMs
 }
 
 export async function fetchMediaTicket(matchId, { baseUrl = '' } = {}) {
-  if (!authToken) return ''
+  if (!token()) return ''
   try {
     const response = await fetch(`${baseUrl}/matches/${encodeURIComponent(matchId)}/media-ticket`, {
       method: 'POST',

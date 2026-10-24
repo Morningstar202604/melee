@@ -46,46 +46,9 @@ class RuleNarrator:
         game_id: str = "twenty-questions",
     ) -> str:
         for effect in effects:
-            detail = effect.detail
-            if effect.kind == "guess":
-                if detail.get("correct"):
-                    return f"{player} 直接报出 {detail['value']}，猜中。"
-                return f"{player} 报了 {detail['value']}，猜错，直接判负。"
-            if effect.kind == "answer":
-                narrowed = detail.get("narrowed", 0)
-                answer = "是" if detail.get("answer") == "yes" else "否"
-                if narrowed > 0:
-                    return (
-                        f"{player} 问「{detail.get('value')}」，答{answer}，"
-                        f"排除 {narrowed} 个候选，只剩 {public_state.get('remainingPublic')} 个。"
-                    )
-                return f"{player} 问「{detail.get('value')}」，答{answer}，这一问没有缩小范围。"
-            if effect.kind == "forfeit":
-                return f"{player} 无法给出合法动作，弃权。"
-
-            # ---- 棋类（TextArena 适配器发的 action 效果）----
-            if effect.kind == "action":
-                action = str(detail.get("action", ""))
-                step = public_state.get("turnIndex")
-                step_text = f"第 {step} 步" if step else "这一步"
-                return f"{player} 在{step_text}落子 {action}。"
-
-            # ---- 代号（Codenames）----
-            if effect.kind == "hint":
-                return (
-                    f"{player} 给出线索「{detail.get('word')}」"
-                    f"，指向 {detail.get('count')} 个词。"
-                )
-            if effect.kind == "reveal":
-                word = detail.get("word")
-                color = detail.get("color")
-                team = detail.get("team")
-                label = _TEAM_LABEL.get(color, color)
-                if color == "assassin":
-                    return f"{_TEAM_LABEL.get(team, team)}翻到刺客「{word}」，直接出局。"
-                if color == team:
-                    return f"{_TEAM_LABEL.get(team, team)}翻中「{word}」，继续。"
-                return f"{_TEAM_LABEL.get(team, team)}踩到{label}的「{word}」，换手。"
+            text = _line_for_effect(effect, player, public_state)
+            if text:
+                return text
         return ""
 
     def situation(
@@ -115,6 +78,53 @@ class RuleNarrator:
 
 
 _TEAM_LABEL = {"red": "红队", "blue": "蓝队", "neutral": "中立", "assassin": "刺客"}
+
+
+def _line_for_effect(effect: AppliedEffect, player: str, public_state: dict[str, Any]) -> str:
+    """把一条效果翻成解说词；没有对应模板就返回空串。"""
+    detail = effect.detail
+    if effect.kind == "guess":
+        if detail.get("correct"):
+            return f"{player} 直接报出 {detail['value']}，猜中。"
+        return f"{player} 报了 {detail['value']}，猜错，直接判负。"
+    if effect.kind == "answer":
+        return _answer_line(detail, player, public_state)
+    if effect.kind == "forfeit":
+        return f"{player} 无法给出合法动作，弃权。"
+    if effect.kind == "action":
+        # ---- 棋类（TextArena 适配器发的 action 效果）----
+        action = str(detail.get("action", ""))
+        step = public_state.get("turnIndex")
+        step_text = f"第 {step} 步" if step else "这一步"
+        return f"{player} 在{step_text}落子 {action}。"
+    if effect.kind == "hint":
+        return f"{player} 给出线索「{detail.get('word')}」，指向 {detail.get('count')} 个词。"
+    if effect.kind == "reveal":
+        return _reveal_line(detail)
+    return ""
+
+
+def _answer_line(detail: dict[str, Any], player: str, public_state: dict[str, Any]) -> str:
+    narrowed = detail.get("narrowed", 0)
+    answer = "是" if detail.get("answer") == "yes" else "否"
+    if narrowed > 0:
+        return (
+            f"{player} 问「{detail.get('value')}」，答{answer}，"
+            f"排除 {narrowed} 个候选，只剩 {public_state.get('remainingPublic')} 个。"
+        )
+    return f"{player} 问「{detail.get('value')}」，答{answer}，这一问没有缩小范围。"
+
+
+def _reveal_line(detail: dict[str, Any]) -> str:
+    word = detail.get("word")
+    color = detail.get("color")
+    team = detail.get("team")
+    team_label = _TEAM_LABEL.get(team, team)
+    if color == "assassin":
+        return f"{team_label}翻到刺客「{word}」，直接出局。"
+    if color == team:
+        return f"{team_label}翻中「{word}」，继续。"
+    return f"{team_label}踩到{_TEAM_LABEL.get(color, color)}的「{word}」，换手。"
 
 
 def narrator_from_env(client: Any | None = None) -> Any:
@@ -278,45 +288,61 @@ def _numbers_ok(text: str, facts: dict[str, Any]) -> bool:
     return True
 
 
-def _semantics_ok(text: str, facts: dict[str, Any]) -> bool:
-    answer = _answer_of(facts)
-    player = facts.get("player")
-    action = facts.get("action") or {}
-    kind = action.get("kind")
+_YES_WORDS = ("是", "对", "命中", "正确")
+_NO_WORDS = ("否", "不是", "没有", "未")
+_ASK_WORDS = ("问", "提问")
+_GUESS_WORDS = ("报出", "报答案", "猜")
 
-    # 1) 回答方向：句中同时提到"是/否"时，必须与真实答案一致。
-    if answer in ("yes", "no"):
-        says_yes = any(word in text for word in ("是", "对", "命中", "正确"))
-        says_no = any(word in text for word in ("否", "不是", "没有", "未"))
-        # "是不是"这类问句不算判断，先排除
-        says_yes = says_yes and "是不是" not in text
-        if says_yes and says_no:
-            return False
-        if answer == "yes" and says_no and not says_yes:
-            return False
-        if answer == "no" and says_yes and not says_no:
-            return False
 
-    # 2) 角色：句中出现的选手名必须是这一手的执行者。
+def _answer_direction_ok(text: str, answer: str | None) -> bool:
+    """句中同时提到"是/否"时，必须与真实答案一致。"""
+    if answer not in ("yes", "no"):
+        return True
+    says_yes, says_no = _polarity_of(text)
+    if says_yes and says_no:
+        return False
+    if answer == "yes" and says_no:
+        return False
+    if answer == "no" and says_yes:
+        return False
+    return True
+
+
+def _polarity_of(text: str) -> tuple[bool, bool]:
+    says_yes = any(word in text for word in _YES_WORDS)
+    says_no = any(word in text for word in _NO_WORDS)
+    # "是不是"这类问句不算判断，先排除
+    return says_yes and "是不是" not in text, says_no
+
+
+def _role_ok(text: str, player: str | None) -> bool:
+    """句中出现的选手名必须是这一手的执行者。"""
     for other in ("A", "B"):
         if other == player:
             continue
         if _mentions_player(text, other):
             return False
-
-    # 3) 动作类型：报答案的一手不能写成"问"，提问的一手不能写成"报答案"。
-    asks_words = ("问", "提问")
-    guess_words = ("报出", "报答案", "猜")
-    if kind == "guess" and any(word in text for word in asks_words) and not any(
-        word in text for word in guess_words
-    ):
-        return False
-    if kind == "ask" and any(word in text for word in guess_words) and not any(
-        word in text for word in asks_words
-    ):
-        return False
-
     return True
+
+
+def _action_kind_ok(text: str, kind: str | None) -> bool:
+    """报答案的一手不能写成"问"，提问的一手不能写成"报答案"。"""
+    asks = any(word in text for word in _ASK_WORDS)
+    guesses = any(word in text for word in _GUESS_WORDS)
+    if kind == "guess" and asks and not guesses:
+        return False
+    if kind == "ask" and guesses and not asks:
+        return False
+    return True
+
+
+def _semantics_ok(text: str, facts: dict[str, Any]) -> bool:
+    action = facts.get("action") or {}
+    return (
+        _answer_direction_ok(text, _answer_of(facts))
+        and _role_ok(text, facts.get("player"))
+        and _action_kind_ok(text, action.get("kind"))
+    )
 
 
 def _mentions_player(text: str, player: str) -> bool:

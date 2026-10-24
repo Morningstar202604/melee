@@ -1,32 +1,24 @@
-// 渲染用 lit-html（8KB，无构建）：模板自动转义，不再手写 innerHTML + escapeHtml。
-import { html, render as litRender } from '../vendor/lit-html.js'
-import { connectEvents, fetchMatch, createMatch, renderClips, clipUrl, setToken, fetchMediaTicket } from './sse.js'
+// 观战页：事件流 → 视图状态 → DOM。直播与回放共用同一个 reduce(events)。
+import { html } from '../vendor/lit-html.js'
+import { paint as litRender } from './paint.js'
+import {
+  api, configure, el, gameMeta, propagateQuery, toast, apiBase,
+} from './api.js'
+import { connectEvents, fetchMatch, createMatch, renderClips, clipUrl, fetchMediaTicket } from './sse.js'
 import { createView, reduce, replayView, latestThoughtOf, currentCue } from './view.js'
 
 const params = new URLSearchParams(location.search)
-const API = params.get('api') || ''
-const token = params.get('token') || ''
-// 导航栏会把 token 带过来；不在这里注册，token 模式下观战页永远 401。
-if (token) setToken(token)
+configure()
+propagateQuery()
+const API = apiBase()
 const MATCH_KEY = 'melee.currentMatch'
 
 const TEAM_LABELS = { red: '红队', blue: '蓝队', neutral: '中立', assassin: '刺客' }
 const prettyTeam = (value) => TEAM_LABELS[value] || value
 
-const GAME_LABELS = {
-  'twenty-questions': '二十问',
-  'tic-tac-toe': '井字棋',
-  'connect-four': '四子棋',
-  othello: '黑白棋',
-  nim: '取石子',
-  codenames: '代号',
-}
-
-const el = (id) => document.getElementById(id)
-
 let view = createView()
 let events = []
-let cursor = events.length
+let cursor = 0
 let mode = 'live'
 let speed = 1
 let playing = true
@@ -35,30 +27,31 @@ let frame = null
 let endTimer = null
 let dismissedEnd = false
 let currentMatchId = null
+let presenceTimer = null
 
 function fitStage() {
   const frameEl = el('frame')
   const stage = el('stage')
-  // 窄屏走纵向堆叠，不需要也不应该缩放。
   if (window.matchMedia('(max-width: 900px)').matches) {
+    // 内联的 1600×900 会盖掉 CSS 的 width:100%，从桌面缩到手机时必须清掉，
+    // 否则舞台保持桌面尺寸、控制器被 overflow:hidden 裁掉。
     stage.style.transform = ''
     stage.style.marginLeft = ''
     stage.style.marginTop = ''
+    stage.style.width = ''
+    stage.style.height = ''
     return
   }
   const availableW = frameEl.clientWidth
   const availableH = frameEl.clientHeight
-  // 窄屏优先满足宽度：舞台整体缩小，而不是被裁掉右侧。
   const scale = Math.min(availableW / 1600, availableH / 900) * 0.985
-
-  // transform 不改变布局盒：显式把舞台盒收窄到缩放后的尺寸，
-  // 再用 margin 抵消 transform-origin 造成的偏移，才能真正居中。
   stage.style.transform = `scale(${scale})`
   stage.style.transformOrigin = 'top left'
   stage.style.width = '1600px'
   stage.style.height = '900px'
   stage.style.marginLeft = `${Math.max(0, (availableW - 1600 * scale) / 2)}px`
-  stage.style.marginTop = '8px'
+  // 垂直也居中：只做水平居中会在宽屏下留一条大黑边。
+  stage.style.marginTop = `${Math.max(0, (availableH - 900 * scale) / 2)}px`
 }
 
 function render() {
@@ -69,28 +62,39 @@ function render() {
   const total = Math.max(shown.maxQuestions, 1)
   const remain = shown.remaining ?? total
   el('bar').style.width = `${Math.max(0, Math.min(100, (remain / total) * 100))}%`
-  el('tlCount').textContent = `${events.length} 条`
 
   const cue = currentCue(shown)
   el('cue').textContent = cue ? `${cue.shot} · ${cue.trigger}` : '未切镜'
 
+  const idle = !shown.players || !shown.players.length
+  el('stage').classList.toggle('idle', idle)
+  if (!currentMatchId) {
+    el('liveLabel').textContent = '待命'
+    el('liveLabel').className = 'ended'
+  }
   renderSides(shown)
-  renderArena(shown)
+  if (!idle) renderArena(shown)
   renderTimeline()
   renderStatus(shown)
 
-  el('liveLabel').textContent = shown.status === 'ended' ? '已结束' : mode === 'replay' ? '回放' : 'LIVE'
-  el('liveLabel').className = shown.status === 'ended' ? 'ended' : mode === 'replay' ? 'replay' : ''
+  const hasMatch = Boolean(currentMatchId)
+  el('liveLabel').textContent = !hasMatch
+    ? '待命'
+    : shown.status === 'ended'
+      ? '已结束'
+      : mode === 'replay'
+        ? '回放'
+        : 'LIVE'
+  el('liveLabel').className = !hasMatch ? 'ended' : shown.status === 'ended' ? 'ended' : mode === 'replay' ? 'replay' : ''
+  el('liveDot').style.display = hasMatch && shown.status !== 'ended' ? '' : 'none'
 
   if (shown.status === 'ended' && !dismissedEnd && mode === 'live') {
     if (!endTimer) {
-      // 终局不立刻盖画面：先让观众看一眼最后一步。
       endTimer = setTimeout(() => {
         el('winner').textContent = prettyTeam(shown.winner) || '无人获胜'
         el('endreason').textContent = String(shown.endReason || '')
-          .replace(/red/g, '红队')
-          .replace(/blue/g, '蓝队')
         el('endcard').classList.add('on')
+        el('endcard').focus()
       }, 1200)
     }
   } else if (shown.status !== 'ended' || dismissedEnd || mode !== 'live') {
@@ -141,9 +145,20 @@ function playerCard(player, index, shown) {
   </div>`
 }
 
-// 按选手数量动态分配到左右两栏，2 人时一人一边，4 人时 2v2。
 function renderSides(shown) {
-  const players = shown.players && shown.players.length ? shown.players : ['A', 'B']
+  if (!shown.players || !shown.players.length) {
+    litRender(
+      html`<div class="card" style="--tone:#22D3EE;align-items:center;justify-content:center;text-align:center">
+        <div class="pname" style="font-size:15px;color:#8A93A5">还没有选择比赛</div>
+        <div class="muted" style="margin-top:8px;line-height:1.7">从首页的赛事库挑一场，<br>或点顶部「新开一局」。</div>
+        <a class="btn" href="index.html" style="margin-top:14px">去赛事库</a>
+      </div>`,
+      el('sideLeft'),
+    )
+    litRender(html``, el('sideRight'))
+    return
+  }
+  const players = shown.players
   const half = Math.ceil(players.length / 2)
   litRender(html`${players.slice(0, half).map((p, i) => playerCard(p, i, shown))}`, el('sideLeft'))
   litRender(html`${players.slice(half).map((p, i) => playerCard(p, i + half, shown))}`, el('sideRight'))
@@ -151,20 +166,15 @@ function renderSides(shown) {
 
 function renderArena(shown) {
   const isQuiz = shown.gameKind === 'twenty-questions'
-  el('gameLabel').textContent = 'TRANSMISSION · ' + (GAME_LABELS[shown.gameKind] || shown.gameKind)
+  el('gameLabel').textContent = 'TRANSMISSION · ' + (gameMeta(shown.gameKind).label || shown.gameKind)
 
-  // 顶栏的"第 N 手 / 上限 M 手"只对二十问成立；棋类改显示事件数。
   litRender(
     isQuiz
       ? html`第 <b id="qnum">${shown.turnIndex}</b> 手 / 上限 <b id="maxq">${shown.maxQuestions}</b> 手`
       : html`第 <b id="qnum">${shown.turnIndex ?? 0}</b> 步`,
     el('turnPill'),
   )
-  // 只有二十问有"候选数"这个指标；棋类/代号不显示，避免和左侧赛制名重复。
-  litRender(
-    isQuiz ? html`候选 <b id="remain">${shown.remaining ?? '—'}</b>` : html``,
-    el('remainPill'),
-  )
+  litRender(isQuiz ? html`候选 <b id="remain">${shown.remaining ?? '—'}</b>` : html``, el('remainPill'))
   el('remainPill').style.display = isQuiz ? '' : 'none'
   const title = el('panelTitle')
   const meta = el('panelMeta')
@@ -175,13 +185,12 @@ function renderArena(shown) {
     return renderHistory(shown)
   }
   title.textContent = '当前局面'
-  meta.textContent = GAME_LABELS[shown.gameKind] || shown.gameKind
+  meta.textContent = gameMeta(shown.gameKind).label
   if (shown.gameKind === 'codenames') return renderCodenames(shown)
   if (shown.gameKind === 'nim') return renderPiles(shown)
   renderBoard(shown)
 }
 
-// 取石子：三堆石子用横条长度表示，一眼看出哪堆还能拿。
 function renderPiles(shown) {
   const piles = shown.gameState && shown.gameState.piles
   if (!Array.isArray(piles)) return litRender(html`<div class="empty">等待局面状态…</div>`, el('historyList'))
@@ -196,7 +205,6 @@ function renderPiles(shown) {
   )
 }
 
-// 代号：5×5 词阵。只显示已翻开的颜色，未翻开的保持中性。
 function renderCodenames(shown) {
   const board = shown.gameState && shown.gameState.board
   if (!Array.isArray(board)) return litRender(html`<div class="empty">等待棋盘状态…</div>`, el('historyList'))
@@ -233,10 +241,11 @@ function renderBoard(shown) {
 
 function renderHistory(shown) {
   const recent = shown.history.slice(-6)
+  const label = (by) => (shown.players.includes(by) ? by : by)
   litRender(
     recent.length
       ? html`${recent.map(
-          (item) => html`<div class="hrow"><b class="${item.by === 'A' ? 'a' : 'b'}">${item.by}</b>
+          (item) => html`<div class="hrow"><b class="a">${label(item.by)}</b>
             <span>${item.value}</span><i class="${item.answer === 'yes' ? 'y' : 'n'}">${item.answer === 'yes' ? '是' : '否'}</i></div>`,
         )}`
       : html`<div class="empty">等待第一次提问</div>`,
@@ -247,12 +256,14 @@ function renderHistory(shown) {
 function renderTimeline() {
   const fill = el('tlFill')
   const total = Math.max(events.length, 1)
-  const position = mode === 'live' ? total : cursor
+  // 没有比赛时显示 0 / 0，而不是用"至少 1"骗出一个可拖的时间轴。
+  const position = events.length === 0 ? 0 : mode === 'live' ? total : cursor
   fill.style.width = `${(position / total) * 100}%`
   el('scrub').max = String(total)
   el('scrub').value = String(position)
-  el('tlCount').textContent = `${position} / ${total}`
+  el('tlCount').textContent = `${position} / ${events.length}`
   el('replayBadge').style.display = mode === 'replay' ? 'inline-flex' : 'none'
+  el('scrub').disabled = events.length === 0
 }
 
 function renderStatus(shown) {
@@ -268,7 +279,6 @@ function renderStatus(shown) {
 
 function appendEvent(event) {
   // 快照已经拉过一遍全量，SSE 又从 seq 0 推一遍；不按 seq 去重就会翻倍。
-  // 这是实测出来的：同一局比赛，选手卡的记录会重复 8 次。
   if (events.length && event.seq <= events[events.length - 1].seq) return
 
   events = events.concat(event)
@@ -279,25 +289,87 @@ function appendEvent(event) {
   }
 }
 
+let attachToken = 0
+
 async function attach(matchId) {
+  // 切台可能并发：后发起的请求必须先完成才算数，否则慢的旧请求会覆盖新画面。
+  const token = ++attachToken
   localStorage.setItem(MATCH_KEY, matchId)
   currentMatchId = matchId
   el('matchId').textContent = matchId
+  el('btnRecapEnd').href = `recap.html?match=${encodeURIComponent(matchId)}`
+  dismissedEnd = false
+  // 切台必须回到直播态：上一场的"暂停/回放"状态带过来会让新场永远停在回放。
+  mode = 'live'
+  playing = true
+  speed = Number(el('speed').value || 1)
+  el('btnPause').textContent = '暂停'
+  clearTimeout(endTimer)
+  endTimer = null
   closeStream?.()
+  closeStream = null
 
-  const snapshot = await fetchMatch(matchId, { baseUrl: API })
+  let snapshot
+  try {
+    snapshot = await fetchMatch(matchId, { baseUrl: API })
+  } catch (error) {
+    if (token === attachToken) {
+      el('conn').textContent = '加载失败'
+      el('conn').className = 'conn bad'
+      currentMatchId = null
+      events = []
+      view = createView()
+      cursor = 0
+      mode = 'live'
+      playing = true
+      el('stage').classList.add('idle')
+      el('matchId').textContent = '—'
+      el('connectError').textContent = `拉取失败：${String(error.message || error)}`
+      litRender(
+        html`<div class="card" style="--tone:#F87171;align-items:center;justify-content:center;text-align:center">
+          <div class="pname" style="font-size:15px;color:#F87171">这场没加载出来</div>
+          <div class="muted" style="margin-top:8px;line-height:1.7">${String(error.message || error)}</div>
+          <div style="display:flex;gap:8px;margin-top:14px">
+            <a class="btn" href="index.html">去赛事库</a>
+            <button class="btn" type="button" id="retryLoad">重试</button>
+          </div>
+        </div>`,
+        el('sideLeft'),
+      )
+      litRender(html``, el('sideRight'))
+      el('retryLoad').onclick = () => attach(matchId).catch(() => {})
+      el('liveLabel').textContent = '加载失败'
+      el('liveLabel').className = 'ended'
+    }
+    throw error
+  }
+  if (token !== attachToken) return
   events = snapshot.events
   view = replayView(events)
   cursor = events.length
   render()
 
-  // connectEvents 是 async（token 模式要先换票据），必须等它返回真正的
-  // close 函数；直接赋值会得到一个 Promise，下一次 attach 调用就报
-  // "closeStream is not a function"。
+  if (view.status === 'ended') {
+    // 已结束的比赛不需要长连接：接上 SSE 只会立刻被服务端关闭，然后无限重连。
+    el('conn').textContent = '已结束'
+    el('conn').className = 'conn'
+    startPresence(matchId)
+    return
+  }
+
   closeStream = await connectEvents(matchId, {
     baseUrl: API,
-    onEvent: (event) => appendEvent(event),
+    onEvent: (event) => {
+      appendEvent(event)
+      if (event.type === 'match.ended') {
+        closeStream?.()
+        closeStream = null
+        el('conn').textContent = '已结束'
+        el('conn').className = 'conn'
+      }
+    },
     onError: () => {
+      if (view.status === 'ended') return
       el('conn').textContent = '重连中'
       el('conn').className = 'conn warn'
     },
@@ -306,6 +378,29 @@ async function attach(matchId) {
       el('conn').className = 'conn ok'
     },
   })
+  startPresence(matchId)
+}
+
+function startPresence(matchId) {
+  clearInterval(presenceTimer)
+  const poll = async () => {
+    try {
+      const data = await api.presence(matchId)
+      el('viewerCount').textContent = String(data.viewers ?? 0)
+    } catch {
+      /* 人数是展示项，失败不打扰观众 */
+    }
+  }
+  poll()
+  presenceTimer = setInterval(() => {
+    if (!document.hidden) poll()
+  }, 8000)
+}
+
+function markIdle() {
+  el('conn').textContent = '待命'
+  el('conn').className = 'conn'
+  el('viewers').style.display = 'none'
 }
 
 function startPlaybackLoop() {
@@ -329,6 +424,7 @@ el('scrub').addEventListener('input', (e) => {
   mode = 'replay'
   playing = false
   cursor = Number(e.target.value)
+  el('btnPause').textContent = '继续'
   render()
 })
 
@@ -344,8 +440,6 @@ el('btnPause').addEventListener('click', () => {
 el('btnLive').addEventListener('click', () => {
   mode = 'live'
   playing = true
-  // 用户主动点"回到直播"就是"我不想再看终局卡"：记住这个决定，
-  // 否则已结束的比赛会每帧重新弹出终局卡，挡住整个舞台。
   dismissedEnd = true
   view = replayView(events)
   cursor = events.length
@@ -353,7 +447,6 @@ el('btnLive').addEventListener('click', () => {
   render()
 })
 
-// 终局卡支持点遮罩关闭（Esc 也可以），否则只能靠"从头回放"绕开。
 el('endcard').addEventListener('click', (event) => {
   if (event.target === el('endcard')) {
     dismissedEnd = true
@@ -371,11 +464,12 @@ function replayFromStart() {
   render()
 }
 
-// 键盘操作：观战页的高频动作不该只能用鼠标。
-// 输入框聚焦时不拦截，避免把数字打进搜索框却触发回放。
 document.addEventListener('keydown', (event) => {
-  const tag = (event.target && event.target.tagName) || ''
+  const target = event.target
+  const tag = (target && target.tagName) || ''
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
+  // 空格在按钮/链接上是浏览器原生的"激活"，不能被播放器抢走。
+  if (target && (target.tagName === 'BUTTON' || target.tagName === 'A' || target.isContentEditable)) return
   if (event.code === 'Space') {
     event.preventDefault()
     el('btnPause').click()
@@ -393,10 +487,11 @@ document.addEventListener('keydown', (event) => {
     render()
   } else if (event.key === 'l' || event.key === 'L') {
     el('btnLive').click()
+  } else if (event.key === 'f' || event.key === 'F') {
+    toggleTheater()
   } else if (event.key === 'Escape') {
     el('endcard').classList.remove('on')
     el('clipPanel').classList.remove('on')
-    el('btnLive').click()
   }
 })
 
@@ -410,6 +505,36 @@ el('speed').addEventListener('change', (e) => {
 el('btnRender').addEventListener('click', exportHighlights)
 el('btnRenderEnd').addEventListener('click', exportHighlights)
 el('clipClose').addEventListener('click', () => el('clipPanel').classList.remove('on'))
+el('btnTheater').addEventListener('click', () => toggleTheater())
+el('theaterExit').addEventListener('click', () => toggleTheater(false))
+
+function toggleTheater(force) {
+  const next = typeof force === 'boolean' ? force : !document.body.classList.contains('theater')
+  document.body.classList.toggle('theater', next)
+  el('theaterExit').style.display = next ? 'flex' : 'none'
+  el('btnTheater').textContent = next ? '退出剧场' : '剧场'
+  if (next) el('theaterExit').focus()
+  requestAnimationFrame(fitStage)
+}
+
+async function shareMatch() {
+  if (!currentMatchId) return
+  // 分端口部署时分享页在 API 站，不在静态站。
+  const origin = API ? new URL(API, location.href).origin : location.origin
+  const url = `${origin}/share/${currentMatchId}`
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: 'melee 比赛', url })
+      return
+    }
+    await navigator.clipboard.writeText(url)
+    toast('分享链接已复制')
+  } catch {
+    toast('复制失败，请手动复制：' + url, 'bad')
+  }
+}
+
+el('btnShare').addEventListener('click', shareMatch)
 
 async function exportHighlights() {
   const matchId = currentMatchId
@@ -432,7 +557,7 @@ async function exportHighlights() {
         (clip) => html`<div class="clip">
           <div class="c-title">${clip.title}</div>
           <div class="c-meta">${clip.kind} · ${(clip.durationMs / 1000).toFixed(1)}s · ${clip.frames} 帧</div>
-          <video controls preload="none" poster="" src="${clipUrl(matchId, clip.file, API, ticket)}"></video>
+          <video controls preload="none" src="${clipUrl(matchId, clip.file, API, ticket)}"></video>
         </div>`,
       )}`,
       body,
@@ -442,16 +567,27 @@ async function exportHighlights() {
   }
 }
 
+async function loadNextMatch() {
+  try {
+    const data = await api.archive({ limit: 8, status: 'ended' })
+    const next = data.items.find((item) => item.matchId !== currentMatchId)
+    if (!next) {
+      toast('没有其它已结束的比赛')
+      return
+    }
+    await attach(next.matchId)
+  } catch (error) {
+    toast(String(error.message || error), 'bad')
+  }
+}
+el('btnNext').addEventListener('click', loadNextMatch)
+
 // 赛制清单从服务端拉，避免前端写死。
 let GAMES = [{ gameId: 'twenty-questions', label: '二十问', players: [2, 2] }]
 
 async function loadGames() {
   try {
-    const response = await fetch(`${API}/games`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-    if (!response.ok) return
-    const data = await response.json()
+    const data = await api.games()
     if (Array.isArray(data.games) && data.games.length) {
       GAMES = data.games
       const picker = el('gamePick')
@@ -468,6 +604,7 @@ async function loadGames() {
 function playerIdsFor(gameId) {
   const spec = GAMES.find((g) => g.gameId === gameId)
   const count = spec ? spec.players[0] : 2
+  if (gameId === 'codenames') return ['红队队长', '蓝队队长', '红队队员', '蓝队队员'].slice(0, count)
   return ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].slice(0, count)
 }
 
@@ -502,8 +639,10 @@ el('btnOpen').addEventListener('click', async () => {
 })
 
 window.addEventListener('resize', fitStage)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) fitStage()
+})
 
-// 启动：优先用 URL 里的 match，其次用上次看过的
 const initial = params.get('match') || localStorage.getItem(MATCH_KEY)
 loadGames()
 fitStage()
@@ -512,10 +651,17 @@ startPlaybackLoop()
 if (initial) {
   attach(initial)
     .then(() => {
-      // ?export=1 直接触发导出，用于演示与截图验证
       if (params.get('export') === '1') exportHighlights()
     })
     .catch((error) => {
       el('connectError').textContent = String(error.message || error)
     })
+} else {
+  // 没有指定比赛时，自动接最近一场直播；没有直播就显示空状态，不伪造选手。
+  markIdle()
+  api.archive({ limit: 1, status: 'live' })
+    .then((data) => {
+      if (data.items.length) attach(data.items[0].matchId).catch(() => {})
+    })
+    .catch(() => {})
 }

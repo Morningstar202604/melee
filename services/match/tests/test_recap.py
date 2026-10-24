@@ -235,3 +235,26 @@ def test_answer_highlight_mark_text():
                                                     "answer": "no", "narrowed": 5, "remainingPublic": 3}]}}], limit=5)
     assert any("答是" in h.detail for h in yes)
     assert any("答否" in h.detail for h in no)
+
+
+def test_recap_accepts_winner_when_nobody_applied_an_action():
+    """全程没走出合法动作、直接弃权的比赛，胜者仍必须在参赛名单里。"""
+    events = [
+        {
+            "seq": 0,
+            "matchId": "m",
+            "type": "match.created",
+            "at": "2026-01-01T00:00:00Z",
+            "payload": {"game": "tic-tac-toe", "players": ["模型选手", "脚本选手"], "seed": 1},
+        },
+        {
+            "seq": 1,
+            "matchId": "m",
+            "type": "match.ended",
+            "at": "2026-01-01T00:00:01Z",
+            "payload": {"winner": "脚本选手", "reason": "弃权", "finalState": {}},
+        },
+    ]
+    recap = build_recap(events)
+    assert recap["problems"] == []
+    assert recap["perPlayer"]["脚本选手"]["asks"] == 0

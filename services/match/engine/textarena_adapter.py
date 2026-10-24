@@ -134,21 +134,25 @@ def _parse_available(observations: list[str]) -> list[str]:
     四子棋只给棋盘。只看最后一条观察——历史里的动作已经不可用了。
     """
     latest = [str(item) for item in observations[-1:]]
-    found: list[str] = []
-    for text in latest:
-        for match in _MOVE_HINT.finditer(text):
-            for item in _BRACKET.finditer(match.group(1)):
-                value = item.group(0)
-                if value not in found:
-                    found.append(value)
+    found = _dedupe(
+        bracket
+        for text in latest
+        for hint in _MOVE_HINT.finditer(text)
+        for bracket in _BRACKET.findall(hint.group(1))
+    )
     if found:
         return found
-    for text in latest:
-        for item in _BRACKET.finditer(text):
-            value = item.group(0)
-            if value not in found and re.fullmatch(r"\[[0-9\s,\.-]+\]", value):
-                found.append(value)
-    return found
+    return _dedupe(
+        bracket
+        for text in latest
+        for bracket in _BRACKET.findall(text)
+        if re.fullmatch(r"\[[0-9\s,\.-]+\]", bracket)
+    )
+
+
+def _dedupe(values: Any) -> list[str]:
+    """保序去重。"""
+    return list(dict.fromkeys(values))
 
 
 def _columns_from_board(observations: list[str], columns: int = 7) -> list[str]:
@@ -166,9 +170,18 @@ def _columns_from_board(observations: list[str], columns: int = 7) -> list[str]:
 
 
 def _nim_moves(game_state: dict[str, Any]) -> list[str]:
-    """取石子：每堆取 1 个。数量为 0 的堆跳过。"""
+    """取石子：枚举每堆可取的每一个数量。
+
+    旧实现只给"每堆取 1 个"，模型回 `[0 2]`（从第 0 堆取 2 个，规则允许）
+    时不在候选里，被当成格式犯规——真实模型联调时就是这么弃权的。
+    """
     piles = game_state.get("piles") or []
-    return [f"[{index} 1]" for index, count in enumerate(piles) if int(count or 0) > 0]
+    moves: list[str] = []
+    for index, count in enumerate(piles):
+        total = int(count or 0)
+        for take in range(1, total + 1):
+            moves.append(f"[{index} {take}]")
+    return moves
 
 
 def normalize_action(value: str) -> str | None:
@@ -227,6 +240,8 @@ class TextArenaGame:
             "endReason": "",
             "turnIndex": 0,
             "history": [],
+            # 开局的观察同样一次性：reset 后立刻抓，别等 observe()。
+            "observations": _observations(env),
         }
 
     def public_state(self, state: dict[str, Any]) -> dict[str, Any]:
@@ -243,9 +258,10 @@ class TextArenaGame:
     def observe(self, state: dict[str, Any], player: PlayerId) -> dict[str, Any]:
         """按当前局面重建一个玩家视角。
 
-        上游的观察依赖"当前轮到谁"，所以这里用一个临时 env 重放历史太重；
-        改为直接读 env 并取观察——但只有轮到的选手能拿到自己那份。
-        非当前玩家拿到的是局面摘要（不给对手的私密信息）。
+        上游的 `get_current_player_observation()` 是**一次性队列**：读一次就清空。
+        所以观察必须在拿到的那一刻缓存到 state 里，否则紧接着调用 `legal_moves()`
+        会读到空列表，退化成"格式提示"，模型看到的就是 `['一个格子编号，例如 [4]']`
+        ——真实模型联调时两次犯规弃权就是这么来的。
         """
         env = state["env"]
         players = state["players"]
@@ -256,11 +272,12 @@ class TextArenaGame:
         current = getattr(env.state, "current_player_id", None)
 
         if current == index:
+            observations = self._cached_observations(state)
             return {
                 "you": player,
                 "opponent": [p for p in players if p != player],
                 "isYourTurn": True,
-                "observations": _observations(env),
+                "observations": observations,
                 "gameState": copy.deepcopy(state["gameState"]),
             }
 
@@ -271,6 +288,14 @@ class TextArenaGame:
             "observations": [],
             "gameState": copy.deepcopy(state["gameState"]),
         }
+
+    @staticmethod
+    def _cached_observations(state: dict[str, Any]) -> list[str]:
+        """读一次、存一份。state 是每次 apply 后的新对象，缓存不会跨回合串味。"""
+        cached = state.get("observations")
+        if isinstance(cached, list) and cached:
+            return list(cached)
+        return _observations(state["env"])
 
     def current_player(self, state: dict[str, Any]) -> PlayerId | None:
         if state["finished"]:
@@ -296,7 +321,7 @@ class TextArenaGame:
         if current != player:
             return []
         env = state.get("env")
-        observations = _observations(env) if env is not None else []
+        observations = self._cached_observations(state) if env is not None else []
         moves = _parse_available(observations)
         if not moves and self.game_id == "connect-four":
             moves = _columns_from_board(observations)
@@ -316,8 +341,7 @@ class TextArenaGame:
             return MoveResult(legal=False, reason=f"现在轮到 {current}", retryable=False)
 
         if move.kind == "forfeit":
-            loser_index = state["players"].index(player)
-            next_state = {**state, "finished": True, "winner": state["players"][1 - loser_index] if len(state["players"]) == 2 else None, "endReason": "弃权"}
+            next_state = self._forfeit_state(state, player)
             return MoveResult(
                 legal=True,
                 next_state=next_state,
@@ -348,27 +372,21 @@ class TextArenaGame:
             return MoveResult(legal=False, reason="这个位置不合法", retryable=True)
 
         finished = after.done
-        winner = None
-        end_reason = ""
-        if finished:
-            winners = [pid for pid, reward in after.rewards.items() if reward > 0]
-            end_reason = "对局结束"
-            if len(winners) == 1 and 0 <= winners[0] < len(state["players"]):
-                winner = state["players"][winners[0]]
-                end_reason = f"{winner} 获胜"
-            elif after.rewards and all(reward == 0 for reward in after.rewards.values()):
-                end_reason = "平局"
+        winner, end_reason = _outcome(after, state["players"]) if finished else (None, "")
 
         next_state = {
             **state,
             "env": env,
             "gameState": after.game_state,
             "finished": finished,
-            "winner": winner if finished else None,
+            "winner": winner,
             "endReason": end_reason,
             "turnIndex": state.get("turnIndex", 0) + 1,
             "history": (state.get("history") or [])
             + [{"by": player, "kind": "move", "value": action}],
+            # 上游的新观察必须在这里抓一次并缓存：它是消费型队列，
+            # 等 observe() 时再读就已经空了。
+            "observations": [] if finished else _observations(env),
         }
 
         return MoveResult(
@@ -377,6 +395,23 @@ class TextArenaGame:
             effects=[AppliedEffect(kind="action", detail={"action": action})],
             public_state=self.public_state(next_state),
         )
+
+    @staticmethod
+    def _forfeit_state(state: dict[str, Any], player: PlayerId) -> dict[str, Any]:
+        loser_index = state["players"].index(player)
+        winner = state["players"][1 - loser_index] if len(state["players"]) == 2 else None
+        return {**state, "finished": True, "winner": winner, "endReason": "弃权"}
+
+
+def _outcome(after: Any, players: list[str]) -> tuple[str | None, str]:
+    """从上游结算里读出胜者与结束原因。"""
+    rewards = after.rewards or {}
+    winners = [pid for pid, reward in rewards.items() if reward > 0]
+    if len(winners) == 1 and 0 <= winners[0] < len(players):
+        return players[winners[0]], f"{players[winners[0]]} 获胜"
+    if rewards and all(reward == 0 for reward in rewards.values()):
+        return None, "平局"
+    return None, "对局结束"
 
 
 def build(game_id: str) -> TextArenaGame:

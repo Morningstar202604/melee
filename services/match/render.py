@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 from .clips import Clip
 
@@ -92,7 +92,30 @@ def render_clip(
     repeat = max(1, int(per_event_ms / 1000 * FPS))
     total_frames = len(clip.events) * repeat
 
-    cmd = [
+    process = subprocess.Popen(_ffmpeg_cmd(binary, out_path), stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    assert process.stdin is not None
+
+    # 局面必须用全场事件算：剪辑窗口是从中间截的，
+    # 只数窗口内的动作会把"已问 3 次"算成 1 次。
+    context = build_context(all_events if all_events is not None else clip.events)
+    context["total"] = len(clip.events)
+    _feed_frames(process.stdin, clip, context, repeat)
+
+    stderr = process.stderr.read().decode("utf-8", "ignore") if process.stderr else ""
+    code = process.wait()
+    if code != 0:
+        raise RuntimeError(f"ffmpeg 失败（{code}）：{stderr[:500]}")
+
+    return RenderResult(
+        path=out_path,
+        frames=total_frames,
+        duration_ms=int(total_frames / FPS * 1000),
+        bytes=out_path.stat().st_size if out_path.exists() else 0,
+    )
+
+
+def _ffmpeg_cmd(binary: str, out_path: Path) -> list[str]:
+    return [
         binary,
         "-y",
         "-loglevel",
@@ -113,13 +136,10 @@ def render_clip(
         str(FPS),
         str(out_path),
     ]
-    process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    assert process.stdin is not None
 
-    # 局面必须用全场事件算：剪辑窗口是从中间截的，
-    # 只数窗口内的动作会把"已问 3 次"算成 1 次。
-    context = build_context(all_events if all_events is not None else clip.events)
-    context["total"] = len(clip.events)
+
+def _feed_frames(stdin: Any, clip: Clip, context: dict[str, Any], repeat: int) -> None:
+    """把每帧重复 repeat 次推进编码器；编码器提前退出就停止。"""
     try:
         for index, event in enumerate(clip.events):
             frame = draw_frame(event, clip=clip, context={**context, "index": index})
@@ -127,22 +147,10 @@ def render_clip(
             frame.save(buffer, format="PNG")
             payload = buffer.getvalue()
             for _ in range(repeat):
-                process.stdin.write(payload)
-        process.stdin.close()
+                stdin.write(payload)
+        stdin.close()
     except BrokenPipeError:
         pass
-
-    stderr = process.stderr.read().decode("utf-8", "ignore") if process.stderr else ""
-    code = process.wait()
-    if code != 0:
-        raise RuntimeError(f"ffmpeg 失败（{code}）：{stderr[:500]}")
-
-    return RenderResult(
-        path=out_path,
-        frames=total_frames,
-        duration_ms=int(total_frames / FPS * 1000),
-        bytes=out_path.stat().st_size if out_path.exists() else 0,
-    )
 
 
 def render_clips(
@@ -219,62 +227,93 @@ def draw_frame(event: dict[str, Any], *, clip: Clip | None = None, context: dict
     return image
 
 
+@dataclass
+class _ContextState:
+    game_kind: str = ""
+    players: list[str] = field(default_factory=list)
+    remaining: int | None = None
+    team_remaining: dict[str, int] | None = None
+    asks: list[dict[str, Any]] = field(default_factory=list)
+    asks_by: dict[str, int] = field(default_factory=dict)
+    plays: list[dict[str, Any]] = field(default_factory=list)
+    winner: str | None = None
+
+    def feed(self, event: dict[str, Any]) -> None:
+        payload = event.get("payload") or {}
+        handler = {
+            "match.created": self._on_created,
+            "state.changed": self._on_state,
+            "action.applied": self._on_action,
+            "match.ended": self._on_ended,
+        }.get(event["type"])
+        if handler is not None:
+            handler(event, payload)
+
+    def _on_created(self, event: dict[str, Any], payload: dict[str, Any]) -> None:
+        self.game_kind = payload.get("game") or self.game_kind
+        self.players = list(payload.get("players") or self.players)
+
+    def _on_state(self, event: dict[str, Any], payload: dict[str, Any]) -> None:
+        pub = payload.get("publicState") or {}
+        self.remaining = pub.get("remainingPublic", self.remaining)
+        self.asks = pub.get("history") or self.asks
+        if isinstance(pub.get("remaining"), dict):
+            self.team_remaining = pub["remaining"]
+        history = pub.get("history") or []
+        if history:
+            self.plays = history
+
+    def _on_action(self, event: dict[str, Any], payload: dict[str, Any]) -> None:
+        player = event.get("player")
+        if not player:
+            return
+        self.asks_by[player] = self.asks_by.get(player, 0) + 1
+        if self.game_kind and self.game_kind not in _BOARD_GAMES:
+            return
+        action = payload.get("action") or {}
+        self.plays = self.plays + [
+            {"by": player, "kind": action.get("kind", "move"), "value": action.get("value", "")}
+        ]
+
+    def _on_ended(self, event: dict[str, Any], payload: dict[str, Any]) -> None:
+        self.winner = payload.get("winner")
+
+    def as_context(self, total: int) -> dict[str, Any]:
+        return {
+            "gameKind": self.game_kind or "twenty-questions",
+            "players": self.players or sorted(self.asks_by),
+            "remaining": self.remaining,
+            "teamRemaining": self.team_remaining,
+            "asks": self.asks,
+            "asksBy": self.asks_by,
+            "plays": self.plays,
+            "winner": self.winner,
+            "total": total,
+            "known": total,
+        }
+
+
+_BOARD_GAMES = {"tic-tac-toe", "connect-four", "othello", "nim"}
+
+
 def build_context(events: list[dict[str, Any]]) -> dict[str, Any]:
     """把剪辑窗口折叠成面板需要的几个数。
 
     三种赛制的"局面"长得不一样：二十问看候选数，代号看两队剩余与翻牌，
     棋类看步数与最后几手。这里一次算全，画的时候按 gameKind 取用。
     """
-    remaining = None
-    team_remaining: dict[str, int] | None = None
-    game_kind = ""
-    players: list[str] = []
-    asks: list[dict[str, Any]] = []
-    asks_by: dict[str, int] = {}
-    plays: list[dict[str, Any]] = []
-    winner = None
-
+    state = _ContextState()
     for event in events:
-        payload = event.get("payload") or {}
-        if event["type"] == "match.created":
-            game_kind = payload.get("game") or game_kind
-            players = list(payload.get("players") or players)
-        elif event["type"] == "state.changed":
-            pub = payload.get("publicState") or {}
-            remaining = pub.get("remainingPublic", remaining)
-            asks = pub.get("history") or asks
-            if isinstance(pub.get("remaining"), dict):
-                team_remaining = pub["remaining"]
-            history = pub.get("history") or []
-            if history:
-                plays = history
-        elif event["type"] == "action.applied":
-            player = event.get("player")
-            if player:
-                asks_by[player] = asks_by.get(player, 0) + 1
-                if not game_kind or game_kind in {"tic-tac-toe", "connect-four", "othello", "nim"}:
-                    action = payload.get("action") or {}
-                    plays = plays + [
-                        {"by": player, "kind": action.get("kind", "move"), "value": action.get("value", "")}
-                    ]
-        elif event["type"] == "match.ended":
-            winner = payload.get("winner")
+        state.feed(event)
+    return state.as_context(len(events))
 
-    if not players:
-        players = sorted(asks_by)
 
-    return {
-        "gameKind": game_kind or "twenty-questions",
-        "players": players,
-        "remaining": remaining,
-        "teamRemaining": team_remaining,
-        "asks": asks,
-        "asksBy": asks_by,
-        "plays": plays,
-        "winner": winner,
-        "total": len(events),
-        "known": len(events),
-    }
+def _row_ys(top: int, bottom: int, step: int = 44) -> Iterator[int]:
+    """面板里一行行的 y 坐标，到底部留 60px 边距就停。"""
+    y = top
+    while y <= bottom - 60:
+        yield y
+        y += step
 
 
 def _draw_panel(draw, context: dict[str, Any]) -> None:
@@ -289,6 +328,10 @@ def _draw_panel(draw, context: dict[str, Any]) -> None:
         _draw_board_panel(draw, context, left=left, top=top, right=right, bottom=bottom)
         return
 
+    _draw_candidates_panel(draw, context, left=left, top=top, right=right, bottom=bottom)
+
+
+def _draw_candidates_panel(draw, context: dict[str, Any], *, left: int, top: int, right: int, bottom: int) -> None:
     remaining = context.get("remaining")
     draw.text((left + 28, top + 22), "候选", font=_font(18), fill=FAINT)
     draw.text((left + 28, top + 48), str(remaining) if remaining is not None else "—",
@@ -302,16 +345,12 @@ def _draw_panel(draw, context: dict[str, Any]) -> None:
     draw.line([(left + 28, top + 118), (right - 28, top + 118)], fill=LINE, width=1)
     draw.text((left + 28, top + 132), "提问链", font=_font(18), fill=FAINT)
 
-    y = top + 168
-    for index, item in enumerate((context.get("asks") or [])[-6:], start=1):
-        if y > bottom - 60:
-            break
+    for y, item in zip(_row_ys(top + 168, bottom), (context.get("asks") or [])[-6:]):
         who = item.get("by", "")
         mark = "是" if item.get("answer") == "yes" else "否"
         color = OK if item.get("answer") == "yes" else BAD
         draw.text((left + 28, y), f"{who}  {item.get('value', '')}", font=_font(20), fill=TEXT)
         draw.text((right - 70, y), mark, font=_font(20), fill=color)
-        y += 44
 
 
 def _draw_codenames_panel(draw, context: dict[str, Any], *, left: int, top: int, right: int, bottom: int) -> None:
@@ -326,16 +365,12 @@ def _draw_codenames_panel(draw, context: dict[str, Any], *, left: int, top: int,
     draw.line([(left + 28, top + 118), (right - 28, top + 118)], fill=LINE, width=1)
     draw.text((left + 28, top + 132), "线索与翻牌", font=_font(18), fill=FAINT)
 
-    y = top + 168
-    for item in (context.get("plays") or [])[-6:]:
-        if y > bottom - 60:
-            break
+    for y, item in zip(_row_ys(top + 168, bottom), (context.get("plays") or [])[-6:]):
         kind = item.get("kind")
         color = OK if kind == "hint" else TEXT
         label = "线索" if kind == "hint" else "翻牌"
         draw.text((left + 28, y), f"{item.get('by', '')}  {label} {item.get('value', '')}",
                   font=_font(20), fill=color)
-        y += 44
 
 
 def _draw_board_panel(draw, context: dict[str, Any], *, left: int, top: int, right: int, bottom: int) -> None:
@@ -351,12 +386,8 @@ def _draw_board_panel(draw, context: dict[str, Any], *, left: int, top: int, rig
     draw.line([(left + 28, top + 118), (right - 28, top + 118)], fill=LINE, width=1)
     draw.text((left + 28, top + 132), "最近落子", font=_font(18), fill=FAINT)
 
-    y = top + 168
-    for item in plays[-6:]:
-        if y > bottom - 60:
-            break
+    for y, item in zip(_row_ys(top + 168, bottom), plays[-6:]):
         draw.text((left + 28, y), f"{item.get('by', '')}  {item.get('value', '')}", font=_font(20), fill=TEXT)
-        y += 44
 
 
 def _draw_ledger(draw, context: dict[str, Any], *, left: int, top: int, width: int) -> None:
@@ -372,15 +403,15 @@ def _draw_ledger(draw, context: dict[str, Any], *, left: int, top: int, width: i
         draw.rectangle([(x, top), (x + 6, top + 96)], fill=color)
         draw.text((x + 22, top - 4), player, font=_font(24), fill=color)
         draw.text((x + 22 + 40, top + 2), f"出手 {asks_by.get(player, 0)}", font=_font(16), fill=DIM)
+        _draw_recent_plays(draw, [i for i in plays if i.get("by") == player][-2:], x + 22, top + 40)
 
-        mine = [item for item in plays if item.get("by") == player][-2:]
-        y = top + 40
-        for item in mine:
-            text = str(item.get("value", ""))
-            if len(text) > 12:
-                text = text[:12] + "…"
-            draw.text((x + 22, y), text, font=_font(17), fill=DIM)
-            y += 28
+
+def _draw_recent_plays(draw, plays: list[dict[str, Any]], x: int, y0: int) -> None:
+    for offset, item in enumerate(plays):
+        text = str(item.get("value", ""))
+        if len(text) > 12:
+            text = text[:12] + "…"
+        draw.text((x, y0 + offset * 28), text, font=_font(17), fill=DIM)
 
 
 def _draw_progress(draw, context: dict[str, Any], event: dict[str, Any]) -> None:
@@ -392,48 +423,61 @@ def _draw_progress(draw, context: dict[str, Any], event: dict[str, Any]) -> None
     draw.text((60, 820), f"{event['type']}  ·  seq {event['seq']}", font=_font(18), fill=FAINT)
 
 
+_EFFECT_HEADLINES = {
+    "answer": lambda e: f"问 {e.get('value')}\n答 {'是' if e.get('answer') == 'yes' else '否'}",
+    "guess": lambda e: f"报出 {e.get('value')}",
+    "hint": lambda e: f"给线索 {e.get('word')} {e.get('count')}",
+    "reveal": lambda e: (
+        f"翻到刺客 {e.get('word')}" if e.get("color") == "assassin"
+        else f"翻 {e.get('value') or e.get('word')}（{e.get('color')}）"
+    ),
+    "action": lambda e: f"落子 {e.get('action')}",
+}
+
+
+def _effect_headline(effects: list[dict[str, Any]]) -> str | None:
+    for effect in effects:
+        formatter = _EFFECT_HEADLINES.get(str(effect.get("kind")))
+        if formatter is not None:
+            return formatter(effect)
+    return None
+
+
+def _state_headline(pub: dict[str, Any]) -> str:
+    if "remainingPublic" in pub:
+        return f"候选剩 {pub.get('remainingPublic')}"
+    teams = pub.get("remaining")
+    if isinstance(teams, dict):
+        return f"红队剩 {teams.get('red', '—')} · 蓝队剩 {teams.get('blue', '—')}"
+    return f"第 {pub.get('turnIndex', '—')} 步"
+
+
+_SIMPLE_HEADLINES = {
+    "action.proposed": lambda p, who: f"{who} {p.get('action', {}).get('kind')} {p.get('action', {}).get('value')}",
+    "action.rejected": lambda p, who: f"{who} 犯规：{p.get('reason')}",
+    "director.cue": lambda p, who: f"镜头 {p.get('shot')}",
+    "match.ended": lambda p, who: f"比赛结束\n{p.get('reason', '')}",
+    "state.changed": lambda p, who: _state_headline(p.get("publicState") or {}),
+}
+
+
 def _headline(kind: str, payload: dict[str, Any], player: str | None) -> str:
-    if kind == "action.proposed":
-        action = payload.get("action", {})
-        return f"{player} {action.get('kind')} {action.get('value')}"
+    if kind in ("narration.line", "thought.delta"):
+        return str(payload.get("text", ""))
     if kind == "action.applied":
-        action = payload.get("action", {})
-        effects = payload.get("effects") or []
-        for effect in effects:
-            if effect.get("kind") == "answer":
-                mark = "是" if effect.get("answer") == "yes" else "否"
-                return f"{player} 问 {effect.get('value')}\n答 {mark}"
-            if effect.get("kind") == "guess":
-                return f"{player} 报出 {effect.get('value')}"
-            if effect.get("kind") == "hint":
-                return f"{player} 给线索 {effect.get('word')} {effect.get('count')}"
-            if effect.get("kind") == "reveal":
-                color = effect.get("color")
-                if color == "assassin":
-                    return f"{player} 翻到刺客 {effect.get('word')}"
-                return f"{player} 翻 {effect.get('value') or effect.get('word')}（{color}）"
-            if effect.get("kind") == "action":
-                return f"{player} 落子 {effect.get('action')}"
-        return f"{player} {action.get('kind')} {action.get('value')}"
-    if kind == "action.rejected":
-        return f"{player} 犯规：{payload.get('reason')}"
-    if kind == "narration.line":
-        return str(payload.get("text", ""))
-    if kind == "thought.delta":
-        return str(payload.get("text", ""))
-    if kind == "director.cue":
-        return f"镜头 {payload.get('shot')}"
-    if kind == "match.ended":
-        return f"比赛结束\n{payload.get('reason', '')}"
-    if kind == "state.changed":
-        pub = payload.get("publicState") or {}
-        if "remainingPublic" in pub:
-            return f"候选剩 {pub.get('remainingPublic')}"
-        if isinstance(pub.get("remaining"), dict):
-            teams = pub["remaining"]
-            return f"红队剩 {teams.get('red', '—')} · 蓝队剩 {teams.get('blue', '—')}"
-        return f"第 {pub.get('turnIndex', '—')} 步"
+        return _applied_headline(payload, player)
+    formatter = _SIMPLE_HEADLINES.get(kind)
+    if formatter is not None:
+        return formatter(payload, player)
     return kind
+
+
+def _applied_headline(payload: dict[str, Any], player: str | None) -> str:
+    action = payload.get("action", {})
+    effect_text = _effect_headline(payload.get("effects") or [])
+    if effect_text:
+        return f"{player} {effect_text}"
+    return f"{player} {action.get('kind')} {action.get('value')}"
 
 
 def verify_renderable(clip: Clip) -> list[str]:

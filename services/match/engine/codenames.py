@@ -289,33 +289,7 @@ class Codenames:
             )
         ]
 
-        winner: str | None = None
-        reason = ""
-
-        if color == TEAM_ASSASSIN:
-            winner = TEAM_BLUE if team == TEAM_RED else TEAM_RED
-            reason = f"翻到刺客「{raw}」，{_CN[team]}立即判负"
-        elif color == team:
-            left = sum(
-                1
-                for i in range(GRID_SIZE)
-                if next_state["colors"][i] == team and not next_state["revealed"][i]
-            )
-            if left == 0:
-                winner = team
-                reason = f"{_CN[team]}翻完全部己方词"
-            else:
-                next_state["remainingGuesses"] -= 1
-                if next_state["remainingGuesses"] <= 0:
-                    next_state["turn"] = TEAM_BLUE if team == TEAM_RED else TEAM_RED
-                    next_state["phase"] = "hint"
-                    next_state["hint"] = None
-        else:
-            # 猜错：换手，回到对方的线索阶段
-            next_state["turn"] = TEAM_BLUE if team == TEAM_RED else TEAM_RED
-            next_state["phase"] = "hint"
-            next_state["hint"] = None
-
+        winner, reason = self._resolve_pick(next_state, color, team, raw)
         if winner is not None:
             next_state["finished"] = True
             next_state["winner"] = winner
@@ -327,3 +301,41 @@ class Codenames:
             effects=effects,
             public_state=self.public_state(next_state),
         )
+
+    @staticmethod
+    def _resolve_pick(
+        next_state: dict[str, Any], color: str, team: str, raw: str
+    ) -> tuple[str | None, str]:
+        if color == TEAM_ASSASSIN:
+            winner = TEAM_BLUE if team == TEAM_RED else TEAM_RED
+            return winner, f"翻到刺客「{raw}」，{_CN[team]}立即判负"
+        if color != team:
+            # 对手翻掉了你最后一个词，等于你的词全被翻开——该队直接获胜。
+            # 旧实现只换手，0 个剩余词的一方永远赢不了，最后只能靠 max_turns 收场。
+            if _own_left(next_state, color) == 0:
+                return color, f"{_CN[color]}的词已被翻完"
+            _pass_turn(next_state)
+            return None, ""
+
+        if _own_left(next_state, team) == 0:
+            return team, f"{_CN[team]}翻完全部己方词"
+
+        next_state["remainingGuesses"] -= 1
+        if next_state["remainingGuesses"] <= 0:
+            _pass_turn(next_state)
+        return None, ""
+
+
+def _pass_turn(next_state: dict[str, Any]) -> None:
+    """换手，回到对方的线索阶段。"""
+    next_state["turn"] = TEAM_BLUE if next_state["turn"] == TEAM_RED else TEAM_RED
+    next_state["phase"] = "hint"
+    next_state["hint"] = None
+
+
+def _own_left(next_state: dict[str, Any], team: str) -> int:
+    return sum(
+        1
+        for i in range(GRID_SIZE)
+        if next_state["colors"][i] == team and not next_state["revealed"][i]
+    )

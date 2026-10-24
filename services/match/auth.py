@@ -92,8 +92,15 @@ def _today() -> str:
     return time.strftime("%Y-%m-%d", time.gmtime())
 
 
-def check_and_consume(db_path: str | Path, principal: Principal, kind: str, config: QuotaConfig) -> None:
-    """原子地"检查 + 记一次用量"。kind 是 matches / renders。
+def check_and_consume(
+    db_path: str | Path,
+    principal: Principal,
+    kind: str,
+    config: QuotaConfig,
+    *,
+    amount: int = 1,
+) -> None:
+    """原子地"检查 + 记用量"。kind 是 matches / renders；amount 是本次要占几格。
 
     为什么不用"先 SELECT 再 UPDATE"：两个副本同时读到 used=limit-1 时会各放行一次，
     实际超发。这里改成单条 UPSERT + 条件 WHERE：数据库替我们做比较与自增，
@@ -104,23 +111,26 @@ def check_and_consume(db_path: str | Path, principal: Principal, kind: str, conf
         raise AuthError("该操作已被禁用", status=403)
 
     # 列名只可能来自这两个常量，不用 f-string 拼 SQL。
+    amount = max(1, int(amount))
+    if amount > limit:
+        raise AuthError(f"本次需要 {amount} 格额度，但每日上限只有 {limit}", status=429)
     if kind == "matches":
         statement = (
-            "INSERT INTO quotas (token_name, day, matches) VALUES (?,?,1) "
-            "ON CONFLICT(token_name, day) DO UPDATE SET matches = matches + 1 "
-            "WHERE quotas.matches < ?"
+            "INSERT INTO quotas (token_name, day, matches) VALUES (?,?,?) "
+            "ON CONFLICT(token_name, day) DO UPDATE SET matches = matches + ? "
+            "WHERE quotas.matches + ? <= ?"
         )
     else:
         statement = (
-            "INSERT INTO quotas (token_name, day, renders) VALUES (?,?,1) "
-            "ON CONFLICT(token_name, day) DO UPDATE SET renders = renders + 1 "
-            "WHERE quotas.renders < ?"
+            "INSERT INTO quotas (token_name, day, renders) VALUES (?,?,?) "
+            "ON CONFLICT(token_name, day) DO UPDATE SET renders = renders + ? "
+            "WHERE quotas.renders + ? <= ?"
         )
 
     conn = sqlite3.connect(str(db_path), timeout=10)
     try:
         conn.executescript(SCHEMA)
-        cursor = conn.execute(statement, (principal.name, _today(), limit))
+        cursor = conn.execute(statement, (principal.name, _today(), amount, amount, amount, limit))
         conn.commit()
         if cursor.rowcount == 0:
             used = _used(conn, principal, kind)

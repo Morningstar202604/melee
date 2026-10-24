@@ -63,54 +63,91 @@ class Director:
         finished: bool,
     ) -> Cue | None:
         for effect in effects:
-            detail = effect.detail
+            cue = self._cue_for_effect(effect, player, public_state, finished)
+            if cue is not None:
+                return cue
+        return None
 
-            if effect.kind == "guess":
-                if finished:
-                    return Cue(SHOT_SLOWMO, player, 1200, "最后一手，慢镜收尾")
-                return Cue(SHOT_REVEAL, player, 1600, "有人报答案，切揭晓")
+    def _cue_for_effect(
+        self,
+        effect: AppliedEffect,
+        player: str,
+        public_state: dict[str, Any],
+        finished: bool,
+    ) -> Cue | None:
+        handler = {
+            "guess": self._cue_guess,
+            "action": self._cue_action,
+            "hint": self._cue_hint,
+            "reveal": self._cue_reveal,
+            "answer": self._cue_answer,
+        }.get(effect.kind)
+        if handler is None:
+            return None
+        return handler(effect.detail, player, public_state, finished)
 
-            if effect.kind == "action":
-                # 棋类的落子：最后一手用慢镜，其余在换手前给一次特写。
-                if finished:
-                    return Cue(SHOT_SLOWMO, player, 1200, "最后一手，慢镜收尾")
-                step = int(public_state.get("turnIndex") or 0)
-                if step >= 8:
-                    return Cue(SHOT_CLOSE, player, 1000, f"第 {step} 步，切特写")
-                return None
+    @staticmethod
+    def _cue_guess(
+        detail: dict[str, Any], player: str, public_state: dict[str, Any], finished: bool
+    ) -> Cue | None:
+        if finished:
+            return Cue(SHOT_SLOWMO, player, 1200, "最后一手，慢镜收尾")
+        return Cue(SHOT_REVEAL, player, 1600, "有人报答案，切揭晓")
 
-            if effect.kind == "hint":
-                return Cue(SHOT_CLOSE, player, 1200, "队长给线索，切特写")
+    @staticmethod
+    def _cue_action(
+        detail: dict[str, Any], player: str, public_state: dict[str, Any], finished: bool
+    ) -> Cue | None:
+        # 棋类的落子：最后一手用慢镜，其余在换手前给一次特写。
+        if finished:
+            return Cue(SHOT_SLOWMO, player, 1200, "最后一手，慢镜收尾")
+        step = int(public_state.get("turnIndex") or 0)
+        if step >= 8:
+            return Cue(SHOT_CLOSE, player, 1000, f"第 {step} 步，切特写")
+        return None
 
-            if effect.kind == "reveal":
-                color = detail.get("color")
-                team = detail.get("team")
-                if color == "assassin":
-                    return Cue(SHOT_SLOWMO, player, 1600, "翻到刺客，慢镜收尾")
-                if finished:
-                    return Cue(SHOT_SLOWMO, player, 1400, "最后一翻，慢镜收尾")
-                if color == team:
-                    return Cue(SHOT_REVEAL, player, 1000, "翻中己方词，切揭晓")
-                return Cue(SHOT_CLOSE, player, 1000, "翻错换手，切特写")
+    @staticmethod
+    def _cue_hint(
+        detail: dict[str, Any], player: str, public_state: dict[str, Any], finished: bool
+    ) -> Cue | None:
+        return Cue(SHOT_CLOSE, player, 1200, "队长给线索，切特写")
 
-            if effect.kind == "answer":
-                answered_yes = detail.get("answer") == "yes"
-                narrowed = int(detail.get("narrowed", 0))
-                remaining = int(public_state.get("remainingPublic", 0) or 0)
+    @staticmethod
+    def _cue_reveal(
+        detail: dict[str, Any], player: str, public_state: dict[str, Any], finished: bool
+    ) -> Cue | None:
+        color = detail.get("color")
+        if color == "assassin":
+            return Cue(SHOT_SLOWMO, player, 1600, "翻到刺客，慢镜收尾")
+        if finished:
+            return Cue(SHOT_SLOWMO, player, 1400, "最后一翻，慢镜收尾")
+        if color == detail.get("team"):
+            return Cue(SHOT_REVEAL, player, 1000, "翻中己方词，切揭晓")
+        return Cue(SHOT_CLOSE, player, 1000, "翻错换手，切特写")
 
-                if remaining <= 1:
-                    return Cue(SHOT_REVEAL, player, 1600, f"候选收敛到 {remaining}，切揭晓")
-                if narrowed == 0:
-                    self._stalled[player] = self._stalled.get(player, 0) + 1
-                else:
-                    self._stalled[player] = 0
-                if self._stalled.get(player, 0) >= 2:
-                    return Cue(SHOT_CLOSE, player, 1400, f"{player} 连续两问没有缩小范围，切特写")
-                if remaining <= self.tension_remaining:
-                    return Cue(SHOT_CLOSE, player, 1200, f"只剩 {remaining} 个候选，切特写")
-                if not answered_yes and narrowed >= 4:
-                    return Cue(SHOT_CLOSE, player, 1000, f"一次排除 {narrowed} 个候选，切特写")
+    def _cue_answer(
+        self,
+        detail: dict[str, Any],
+        player: str,
+        public_state: dict[str, Any],
+        finished: bool,
+    ) -> Cue | None:
+        answered_yes = detail.get("answer") == "yes"
+        narrowed = int(detail.get("narrowed", 0))
+        remaining = int(public_state.get("remainingPublic", 0) or 0)
 
+        if remaining <= 1:
+            return Cue(SHOT_REVEAL, player, 1600, f"候选收敛到 {remaining}，切揭晓")
+        if narrowed == 0:
+            self._stalled[player] = self._stalled.get(player, 0) + 1
+        else:
+            self._stalled[player] = 0
+        if self._stalled.get(player, 0) >= 2:
+            return Cue(SHOT_CLOSE, player, 1400, f"{player} 连续两问没有缩小范围，切特写")
+        if remaining <= self.tension_remaining:
+            return Cue(SHOT_CLOSE, player, 1200, f"只剩 {remaining} 个候选，切特写")
+        if not answered_yes and narrowed >= 4:
+            return Cue(SHOT_CLOSE, player, 1000, f"一次排除 {narrowed} 个候选，切特写")
         return None
 
     def cue_for_thought(self, player: str, text: str) -> Cue | None:
@@ -149,24 +186,28 @@ def apply_director(events: list[dict[str, Any]], director: Director | None = Non
         elif kind == "action.applied":
             pending = event
         elif kind == "state.changed" and pending is not None:
-            public_state = event["payload"]["publicState"]
-            # 终局只看公开状态，不能从动作类型推断：棋类与代号的动作都是 guess，
-            # 按类型判断会把每一步都当成最后一手。
-            finished = bool(public_state.get("finished"))
-            effects = [
-                AppliedEffect(kind=e["kind"], detail={k: v for k, v in e.items() if k != "kind"})
-                for e in pending["payload"]["effects"]
-            ]
-            cue = director.cue_for(
-                player=pending["player"],
-                effects=effects,
-                public_state=public_state,
-                finished=finished,
-            )
+            cue = _state_cue(director, pending, event)
             if cue is not None:
                 out.append(_cue_event(event, cue))
             pending = None
     return out
+
+
+def _state_cue(
+    director: Director, applied: dict[str, Any], changed: dict[str, Any]
+) -> Cue | None:
+    public_state = changed["payload"]["publicState"]
+    # 终局只看公开状态，不能从动作类型推断：棋类与代号的动作都是 guess，
+    # 按类型判断会把每一步都当成最后一手。
+    return director.cue_for(
+        player=applied["player"],
+        effects=[
+            AppliedEffect(kind=e["kind"], detail={k: v for k, v in e.items() if k != "kind"})
+            for e in applied["payload"]["effects"]
+        ],
+        public_state=public_state,
+        finished=bool(public_state.get("finished")),
+    )
 
 
 def _cue_event(anchor: dict[str, Any], cue: Cue) -> dict[str, Any]:

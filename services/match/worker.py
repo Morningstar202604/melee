@@ -27,7 +27,7 @@ from .engine.twenty_questions import CATALOG
 from .eventlog import EventLog, read_match
 from .narrator import narrator_from_env
 from .render import find_ffmpeg, render_clip
-from .runner import Runner
+from .runner import Runner, ensure_terminal
 from .season import load, persist
 import sqlite3
 
@@ -103,6 +103,37 @@ def run_match_job(db_path: str | Path, payload: dict[str, Any]) -> None:
     raw_specs = open_specs(payload.get("specs") or {}, cipher_from_env())
     specs = [PlayerSpec(**spec) for spec in raw_specs]
 
+    game, state = _prepare(db_path, payload, match_id, players)
+
+    log = EventLog.open(db_path, match_id)
+    # 重试时从已有进度继续：重放已落库的动作，再接着跑。
+    resume = _resume_state(db_path, match_id)
+    if resume.state is not None:
+        state = resume.state
+        game = resume.game
+    agents = build_agents(specs, game.game_id) if specs else _default_agents(players, game.game_id)
+    if resume.events and state.get("finished"):
+        # 已经跑完的只补记分，不再重跑；但终局事件可能因崩溃缺失，
+        # 必须补上，否则这一场会永远停在"直播中"。
+        ensure_terminal(log, game, state)
+    else:
+        Runner(
+            game, log, agents, narrator=narrator_from_env(), director=Director(), resume=resume.events
+        ).play(state)
+    log.close()
+
+    if payload.get("seasonId"):
+        _record_season(db_path, payload["seasonId"], match_id, players)
+
+
+@dataclass
+class _Snapshot:
+    state: dict[str, Any] | None = None
+    game: Any = None
+    events: bool = False
+
+
+def _prepare(db_path: str | Path, payload: dict[str, Any], match_id: str, players: list[str]) -> tuple[Any, dict[str, Any]]:
     game_id = payload.get("game") or "twenty-questions"
     game = game_registry.get(game_id)
     # 只有二十问认 maxQuestions；别的赛制传了也白传，还可能触发 KeyError。
@@ -114,44 +145,46 @@ def run_match_job(db_path: str | Path, payload: dict[str, Any]) -> None:
     if not log.read():
         log.create_match(game=game.game_id, seed=payload["seed"], players=players)
     log.close()
+    return game, state
 
-    # 重试时从已有进度继续：重放已落库的动作，再接着跑。
-    from .eventlog import EventLog as _Log
-    from .rehydrate import rehydrate
 
-    resume = False
+def _resume_state(db_path: str | Path, match_id: str) -> _Snapshot:
+    """重放已有日志；只有"没有日志"才算新局。
+
+    之前 `except Exception: return _Snapshot()` 会把"日志损坏"也当成新局，
+    于是从 seq N 再写一整局，追加第二条 match.created，整场再也无法 rehydrate。
+    """
+    from .rehydrate import RehydrateError, rehydrate
+    from .eventlog import read_match
+
+    try:
+        existing = read_match(db_path, match_id)
+    # aqg: top-level boundary
+    except Exception:  # noqa: BLE001 - 表还没建：新库
+        return _Snapshot()
+    if not existing:
+        return _Snapshot()
     try:
         resumed = rehydrate(db_path, match_id)
-        state = resumed.state
-        game = resumed.game
-        resume = bool(resumed.events)
-    except Exception:  # noqa: BLE001 - 还没有日志时正常走新局
-        pass
+    except RehydrateError as exc:
+        # 有日志但不能重放：这是数据损坏，必须让任务失败并留下 last_error，
+        # 而不是静默重开一局把日志写得更烂。
+        raise RuntimeError(f"日志无法重放，任务中止：{exc}") from exc
+    return _Snapshot(state=resumed.state, game=resumed.game, events=True)
 
-    log = _Log.open(db_path, match_id)
-    agents = build_agents(specs, game_id) if specs else _default_agents(players, game_id)
-    if resume and state.get("finished"):
-        # 已经跑完了，只补记分，不再重跑。
-        log.close()
-    else:
-        Runner(
-            game, log, agents, narrator=narrator_from_env(), director=Director(), resume=resume
-        ).play(state)
-        log.close()
 
-    season_id = payload.get("seasonId")
-    if season_id:
-        winner = _winner_of(db_path, match_id)
-        reason = _reason_of(db_path, match_id)
-        conn = sqlite3.connect(str(db_path))
-        try:
-            season = load(conn, season_id)
-            # record 对同一 matchId 是覆盖语义，重试不会重复计分。
-            if len(players) == 2:
-                season.record(match_id, players[0], players[1], winner, reason)
-            persist(conn, season)
-        finally:
-            conn.close()
+def _record_season(db_path: str | Path, season_id: str, match_id: str, players: list[str]) -> None:
+    winner = _winner_of(db_path, match_id)
+    reason = _reason_of(db_path, match_id)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        season = load(conn, season_id)
+        # record 对同一 matchId 是覆盖语义，重试不会重复计分。
+        if len(players) == 2:
+            season.record(match_id, players[0], players[1], winner, reason)
+        persist(conn, season)
+    finally:
+        conn.close()
 
 
 def render_job(db_path: str | Path, payload: dict[str, Any]) -> None:
@@ -260,13 +293,26 @@ class Worker:
             self._thread.join(timeout=3)
 
     def _loop(self) -> None:
+        """轮询循环：任何异常都不能让线程退出。
+
+        之前 `claim()` 撞上 `database is locked` 会让 4 个线程全部死掉，
+        进程还在、/health 还 200，但再也没有任务被执行——这种"假活"最危险。
+        """
         while not self._stop.is_set():
-            job = self.run_once()
+            try:
+                job = self.run_once()
+            # aqg: top-level boundary
+            except Exception as exc:  # noqa: BLE001 - 轮询线程必须自愈  # aqg: top-level boundary
+                self.last_error = str(exc)
+                logger.warning("worker 轮询异常，1s 后继续：%s", exc)
+                self._stop.wait(max(1.0, self.config.interval_s))
+                continue
             if job is None:
                 self._stop.wait(self.config.interval_s)
 
     def run_once(self) -> workqueue.Job | None:
         """领一个任务并执行。返回领到的任务（没有则 None）。"""
+        workqueue.reap(self.db_path)
         job = workqueue.claim(self.db_path, self.owner, self.config.kinds, lease_s=self.config.lease_s)
         if job is None:
             return None
@@ -280,7 +326,15 @@ class Worker:
             # 下限 0.2s 是为了让短租约（测试/小任务）也能生效。
             interval = max(0.2, self.config.lease_s / 3)
             while not stop_renew.wait(interval):
-                if not workqueue.renew(self.db_path, job.job_id, self.owner, self.config.lease_s):
+                try:
+                    still_mine = workqueue.renew(
+                        self.db_path, job.job_id, self.owner, self.config.lease_s
+                    )
+                # aqg: top-level boundary
+                except Exception as exc:  # noqa: BLE001 - 一次锁冲突不该让续租线程退出  # aqg: top-level boundary
+                    logger.warning("续租失败（%s），下个周期重试", exc)
+                    continue
+                if not still_mine:
                     logger.warning("任务 %s 租约已被接手，当前执行继续但不再续租", job.job_id)
                     return
 
@@ -292,14 +346,16 @@ class Worker:
             if handler is None:
                 raise RuntimeError(f"未知任务类型：{job.kind}")
             handler(self.db_path, job.payload)
+        # aqg: top-level boundary
         except Exception as exc:  # noqa: BLE001 - 任务失败要落库，不能杀死轮询
             self.failed += 1
             self.last_error = str(exc)
-            status = workqueue.fail(self.db_path, job.job_id, str(exc))
+            status = workqueue.fail(self.db_path, job.job_id, str(exc), owner=self.owner)
             logger.warning("任务 %s 失败（%s）：%s", job.job_id, status, exc)
         else:
             self.processed += 1
-            workqueue.complete(self.db_path, job.job_id)
+            if not workqueue.complete(self.db_path, job.job_id, owner=self.owner):
+                logger.warning("任务 %s 完成时租约已不属于本 worker，跳过状态更新", job.job_id)
         finally:
             stop_renew.set()
         return job

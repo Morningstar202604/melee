@@ -288,3 +288,48 @@ def test_probe_main_on_unknown_env_returns_zero(tmp_path):
     if not adapter.is_available():
         pytest.skip("未安装 textarena")
     assert textarena_probe.main(["probe", "NoSuchGame-v0"]) == 0
+
+
+def test_observe_does_not_consume_legal_moves():
+    """上游的观察是一次性队列：observe() 之后 legal_moves 仍必须可用。
+
+    真实模型联调时踩过：observe() 把观察读空，legal_moves 退化成格式提示，
+    模型两次犯规弃权，看起来像"模型不会玩"。
+    """
+    from services.match.engine import textarena_adapter as ta
+
+    for game_id in ("tic-tac-toe", "connect-four", "othello", "nim"):
+        game = ta.build(game_id)
+        state = game.init(seed=3, players=["A", "B"], config={})
+        before = game.legal_moves(state, "A")
+        observation = game.observe(state, "A")
+        after = game.legal_moves(state, "A")
+        assert observation["observations"], f"{game_id} 观察为空"
+        assert before == after, f"{game_id} observe 之后 legal_moves 变了：{before} → {after}"
+        assert all(item.startswith("[") for item in after), f"{game_id} 退化成了格式提示：{after}"
+
+
+def test_legal_moves_survive_a_turn():
+    """落子后的新状态也必须带可用动作（缓存由 apply 写回）。"""
+    from services.match.engine import textarena_adapter as ta
+    from services.match.engine.base import Move
+
+    game = ta.build("tic-tac-toe")
+    state = game.init(seed=3, players=["A", "B"], config={})
+    legal = game.legal_moves(state, "A")
+    result = game.apply(state, "A", Move(kind="guess", value=legal[0]))
+    assert result.legal
+    next_legal = game.legal_moves(result.next_state, "B")
+    assert len(next_legal) == 8, next_legal
+    assert all(item.startswith("[") for item in next_legal)
+
+
+def test_nim_enumerates_every_take():
+    """取石子必须枚举"每堆取 1..n"，否则模型回 [0 2] 会被判非法。"""
+    from services.match.engine import textarena_adapter as ta
+
+    game = ta.build("nim")
+    state = game.init(seed=1, players=["A", "B"], config={})
+    moves = game.legal_moves(state, "A")
+    assert "[0 2]" in moves
+    assert "[0 1]" in moves and "[2 5]" in moves

@@ -52,6 +52,26 @@ def test_unparseable_becomes_illegal_not_guessed():
     assert move.kind == "ask" and move.value == ""
 
 
+def test_bare_legal_action_is_accepted_verbatim():
+    """模型只回 `[4]` 时，这是合法动作本身，不是"猜"。
+
+    真实模型联调（glm-5.3-flash 走 OpenAI 兼容端点）实测会这样回；
+    旧实现一律当格式犯规，两步就弃权。
+    """
+    move = parse_action("[4]", ["[4]", "[5]"])
+    assert move == Move("guess", "[4]")
+
+
+def test_bare_text_outside_legal_moves_still_rejected():
+    move = parse_action("[9]", ["[4]", "[5]"])
+    assert move.value == ""
+
+
+def test_bare_action_does_not_apply_to_sentence():
+    move = parse_action("[4] 我觉得这里好", ["[4]"])
+    assert move.value == ""
+
+
 def test_unknown_kind_becomes_illegal():
     move = parse_action('{"kind":"attack","value":"x"}', [])
     assert move.value == ""
@@ -228,3 +248,52 @@ def test_empty_content_is_reported_as_raw():
         agent = LLMAgent("A", LLMConfig(base_url=server.base_url, api_key="k", model="m", timeout_s=5))
         output = agent.act({"aspects": {}, "you": "A", "opponent": "B"}, [], None)
     assert "[empty-content]" in output.raw
+
+
+def test_retries_on_429_then_succeeds(monkeypatch):
+    """429 是常态（免费额度），不该第一步就记犯规。"""
+    import httpx
+
+    calls = {"n": 0}
+    real_post = httpx.Client.post
+
+    def fake_post(self, url, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            request = httpx.Request("POST", url)
+            return httpx.Response(429, request=request, text='{"detail":"rate limited"}')
+        return real_post(self, url, **kwargs)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    with FakeOpenAI() as server:
+        agent = make_agent(server)
+        agent.config.max_retries = 1
+        agent.config.retry_backoff_s = 0
+        _game, _state, obs = observation()
+        output = agent.act(obs, [])
+        # FakeOpenAI 默认回 {"kind":"guess","value":"灯塔"}；这里只验证"重试后拿到了响应"。
+        assert output.raw and not output.raw.startswith("[http-")
+        assert calls["n"] == 2
+
+
+def test_gives_up_after_retry_budget(monkeypatch):
+    """持续 5xx 时最多重试到上限，然后把失败如实写成一条 raw。"""
+    import httpx
+
+    calls = {"n": 0}
+
+    def always_500(self, url, **kwargs):
+        calls["n"] += 1
+        request = httpx.Request("POST", url)
+        return httpx.Response(500, request=request, text="upstream error")
+
+    monkeypatch.setattr(httpx.Client, "post", always_500)
+    with FakeOpenAI() as server:
+        agent = make_agent(server)
+        agent.config.max_retries = 2
+        agent.config.retry_backoff_s = 0
+        _game, _state, obs = observation()
+        output = agent.act(obs, [])
+        assert output.move.value == ""
+        assert output.raw.startswith("[http-500]")
+        assert calls["n"] == 3

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import threading
 from typing import Any, Callable, Protocol
 
@@ -72,6 +73,15 @@ class MemoryBroadcaster:
             entries = self._subscribers.get(match_id, [])
             self._subscribers[match_id] = [item for item in entries if item[1] is not queue]
 
+    def viewer_count(self, match_id: str) -> int:
+        """真实订阅数。观赛人数只能来自这里，不允许编造。"""
+        with self._lock:
+            return len(self._subscribers.get(match_id, ()))
+
+    def total_viewers(self) -> int:
+        with self._lock:
+            return sum(len(items) for items in self._subscribers.values())
+
 
 class MemorySubscription:
     def __init__(self, owner: MemoryBroadcaster, match_id: str, queue: asyncio.Queue) -> None:
@@ -112,7 +122,11 @@ class RedisBroadcaster:
         return f"{self._prefix}{match_id}"
 
     def publish(self, match_id: str, event: dict[str, Any]) -> None:
-        self._client.publish(self._channel(match_id), json.dumps(event, ensure_ascii=False))
+        try:
+            self._client.publish(self._channel(match_id), json.dumps(event, ensure_ascii=False))
+        # aqg: top-level boundary
+        except Exception as exc:  # noqa: BLE001 - Redis 抖动不能让事件写入失败  # aqg: top-level boundary
+            logging.getLogger("melee.broadcast").warning("Redis 发布失败（已忽略）：%s", exc)
 
     def _listen(self) -> None:
         pubsub = self._client.pubsub(ignore_subscribe_messages=True)
@@ -126,7 +140,12 @@ class RedisBroadcaster:
                 event = json.loads(message["data"])
             except (TypeError, ValueError):
                 continue
-            self._pending.setdefault(match_id, {})[event["seq"]] = event
+            # _pending 只保留最近 200 条/场：它原本只写不读，长跑会无限增长。
+            bucket = self._pending.setdefault(match_id, {})
+            bucket[event["seq"]] = event
+            if len(bucket) > 200:
+                for stale in sorted(bucket)[:-200]:
+                    bucket.pop(stale, None)
             for callback in list(self._watchers.get(match_id, ())):
                 callback(event)
 
@@ -135,6 +154,13 @@ class RedisBroadcaster:
 
     def on_event(self, match_id: str, callback: Callable[[dict[str, Any]], None]) -> None:
         self._watchers.setdefault(match_id, []).append(callback)
+
+    def viewer_count(self, match_id: str) -> int:
+        """本进程内该场的订阅数。跨副本总数在 /presence 里标明是单进程值。"""
+        return len(self._watchers.get(match_id, ()))
+
+    def total_viewers(self) -> int:
+        return sum(len(items) for items in self._watchers.values())
 
     def close(self) -> None:
         self._stop.set()
@@ -169,6 +195,7 @@ class RedisSubscription:
             watchers.remove(self._collect)
 
 
+
 def make_broadcaster(kind: str = "memory", *, redis_url: str | None = None) -> Broadcaster:
     if kind == "redis":
         if not redis_url:
@@ -199,6 +226,7 @@ def global_broadcaster() -> Broadcaster:
             url = cfg.redis_url or None
             try:
                 _GLOBAL = make_broadcaster(kind, redis_url=url)
+            # aqg: top-level boundary
             except Exception:  # noqa: BLE001 - 广播是增强，不是启动前提
                 _GLOBAL = MemoryBroadcaster()
     return _GLOBAL

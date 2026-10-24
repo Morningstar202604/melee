@@ -65,6 +65,24 @@ python -m services.match.worker --db /data/match.db
 | 配额 | `quotas` 表共享，单语句条件更新，多副本不会超发 |
 | 凭据 | `MELEE_SECRET_KEY` 必须各副本一致，否则队列里的密文在别的副本解不开 |
 
+## D. 分享与对外展示
+
+分享卡与分享页依赖 `request.base_url` 生成绝对 URL。反代后面部署时：
+
+```bash
+MELEE_CORS_ORIGINS=https://melee.example.com python scripts/serve.py --host 127.0.0.1 --port 8099
+```
+
+并确保反代不覆盖 `Host`（Caddy 默认透传，nginx 需要 `proxy_set_header Host $host;`）。
+否则 `og:image` 会指向内网地址，社交平台的预览图会裂。
+
+验证：
+
+```bash
+curl -s https://melee.example.com/share/<matchId> | grep 'og:image'
+# 期望：og:image 是 https://melee.example.com/matches/<matchId>/card.png
+```
+
 ## 备份与恢复
 
 SQLite 在线备份（不锁库）：

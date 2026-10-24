@@ -44,6 +44,15 @@ def rehydrate(db_path: str | Path, match_id: str) -> Rehydrated:
     if not events:
         raise RehydrateError(f"日志里没有这场比赛：{match_id}")
 
+    game, state = _initial_state(events, match_id)
+    for event in events:
+        if event["type"] == "action.applied":
+            state = _replay_action(game, state, event)
+
+    return Rehydrated(match_id=match_id, game=game, state=state, events=events)
+
+
+def _initial_state(events: list[dict[str, Any]], match_id: str) -> tuple[Any, dict[str, Any]]:
     created = next((e for e in events if e["type"] == "match.created"), None)
     if created is None:
         raise RehydrateError(f"{match_id} 缺少 match.created，无法确定种子与选手")
@@ -60,22 +69,17 @@ def rehydrate(db_path: str | Path, match_id: str) -> Rehydrated:
         players=list(payload["players"]),
         config=payload.get("config") or {},
     )
+    return game, state
 
-    for event in events:
-        if event["type"] != "action.applied":
-            continue
-        action = event["payload"]["action"]
-        move = Move(kind=action["kind"], value=action["value"])
-        result = game.apply(state, event.get("player"), move)
-        if not result.legal or result.next_state is None:
-            # 历史上被拒绝的动作不会出现在 action.applied 里；
-            # 真出现说明日志与引擎不一致，宁可报错也不要静默跳过。
-            raise RehydrateError(
-                f"第 {event['seq']} 条动作无法重放：{result.reason}"
-            )
-        state = result.next_state
 
-    return Rehydrated(match_id=match_id, game=game, state=state, events=events)
+def _replay_action(game: Any, state: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
+    action = event["payload"]["action"]
+    result = game.apply(state, event.get("player"), Move(kind=action["kind"], value=action["value"]))
+    if not result.legal or result.next_state is None:
+        # 历史上被拒绝的动作不会出现在 action.applied 里；
+        # 真出现说明日志与引擎不一致，宁可报错也不要静默跳过。
+        raise RehydrateError(f"第 {event['seq']} 条动作无法重放：{result.reason}")
+    return result.next_state
 
 
 def known_matches(db_path: str | Path) -> list[str]:

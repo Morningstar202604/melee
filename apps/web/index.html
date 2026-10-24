@@ -3,358 +3,197 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>melee · 转播台</title>
+<title>melee · 把 AI 对抗做成节目</title>
+<meta name="description" content="六种确定性赛制、实时直播、可拖动回放、自动+人工导播、事实校验战报、服务端渲染高光。自托管，零构建前端。">
+<meta property="og:title" content="melee · 把 AI 对抗做成节目">
+<meta property="og:description" content="六种确定性赛制、实时直播、可拖动回放、自动与人工导播。">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="./src/theme.css">
 <style>
-:root{
-  --bg:#07090D; --panel:#11141B; --line:#232838;
-  --txt:#E8EAF2; --dim:#9AA3B5; --faint:#5C6478;
-  --a:#22D3EE; --b:#F5A524; --live:#EF4444; --ok:#34D399; --bad:#F87171;
-}
-*{box-sizing:border-box;margin:0;padding:0}
-/* 键盘焦点必须可见：默认 outline:none 会让纯键盘用户失去位置感 */
-:focus-visible{outline:2px solid var(--a);outline-offset:2px;border-radius:4px}
-button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--a);outline-offset:2px}
-html,body{height:100%;background:#05070A;color:var(--txt);
-  font-family:"Inter","Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;overflow:hidden}
-
-#topbar{height:48px;flex:none;display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid #161A24;background:#080A0F;font-size:12.5px;overflow:hidden}
-#topbar .brand{white-space:nowrap}
-#topbar .nav{display:flex;gap:2px;margin-left:6px;flex:none}
-#topbar .nav a{padding:5px 10px;border-radius:6px;color:#5C6478;font-size:12px;text-decoration:none;white-space:nowrap}
-#topbar .nav a:hover{background:#0E1219;color:#9AA3B5}
-#topbar .nav a.on{background:#151A24;color:#fff}
-#topbar .field{display:flex;align-items:center;gap:6px;flex:none;height:48px}
-#topbar .brand{font-weight:700;letter-spacing:.14em;font-size:13px}
-#topbar .brand span{color:var(--a)}
-#topbar .field{display:flex;align-items:center;gap:6px;color:var(--faint)}
-#topbar input{background:#0D1118;border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:0 9px;font-size:12px;width:190px;height:30px;line-height:30px;font-family:inherit}
-#topbar button{background:#151A24;border:1px solid var(--line);color:#C4CBDA;border-radius:6px;padding:0 12px;height:30px;line-height:30px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
-#topbar button:hover{background:#1D2532;color:#fff}
-#topbar .spacer{margin-left:auto}
-.conn{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--faint)}
-.conn.ok{color:var(--ok);border-color:#1d4a3a;background:#12211c}
-.conn.warn{color:var(--b);border-color:#4a3a1d;background:#211d12}
-#matchId{font-family:Consolas,monospace;color:var(--dim);font-size:11.5px}
-#connectError{color:var(--bad);font-size:11.5px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-#frame{position:fixed;inset:48px 0 0 0;display:block;background:#05070A;overflow:hidden}
-#stage{display:block}
-#stage{width:1600px;height:900px;flex:none;position:relative;overflow:hidden;transform-origin:center center;
-  background:radial-gradient(120% 90% at 50% 0%,#0E131C 0%,#080A0E 62%,#06080B 100%);
-  display:flex;flex-direction:column;padding:18px 24px;border-radius:6px}
-
-.topline{display:flex;align-items:center;gap:14px;height:38px;flex:none}
-.topline .season{font-size:10.5px;letter-spacing:.16em;color:var(--faint);text-transform:uppercase}
-.pill{display:flex;align-items:center;gap:7px;padding:4px 12px;border-radius:999px;border:1px solid var(--line);background:#0C1017;font-size:12px;color:var(--dim)}
-.pill b{color:#fff;font-variant-numeric:tabular-nums}
-.live{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.14em;color:var(--live)}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--live);animation:pulse 1.8s ease-in-out infinite}
-@media (prefers-reduced-motion: reduce){
-  *{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
-}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
-.live .ended{color:var(--faint)}
-.live .replay{color:var(--b)}
-.right{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:11.5px;color:var(--faint)}
-
-.main{display:grid;grid-template-columns:minmax(200px,300px) 1fr minmax(200px,300px);gap:14px;flex:1;min-height:0;margin-top:12px}
-.side{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto}
-.side .card{flex:1 1 0;min-height:0}
-
-.card{background:linear-gradient(180deg,#10141C,#0B0E14);border:1px solid var(--line);border-radius:12px;
-  padding:14px 15px;display:flex;flex-direction:column;min-height:0;position:relative;overflow:hidden;transition:box-shadow .3s}
-.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--tone)}
-.card.active{box-shadow:0 0 0 1px var(--tone),0 0 30px -12px var(--tone)}
-.phead{display:flex;align-items:center;gap:10px}
-.avatar{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;
-  font-size:16px;font-weight:700;color:#080A0E;background:var(--tone)}
-.pname{font-size:18px;font-weight:650}
-.pmodel{font-size:10.5px;color:var(--faint);margin-top:2px}
-.status{margin-left:auto;font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
-.status.think{color:var(--tone);border-color:var(--tone)}
-.big{display:flex;align-items:flex-end;gap:10px;margin:12px 0 4px}
-.big .n{font-size:40px;font-weight:750;line-height:.9;font-variant-numeric:tabular-nums}
-.big .l{font-size:10px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase;padding-bottom:4px}
-.label{font-size:9.5px;letter-spacing:.16em;color:var(--faint);text-transform:uppercase;margin:11px 0 6px;display:flex;align-items:center;gap:7px}
-.label::after{content:"";flex:1;height:1px;background:#181D28}
-.thought{font-size:12.5px;line-height:1.6;color:#A9B2C4;background:#0A0D13;border:1px solid #171C26;
-  border-radius:8px;padding:8px 10px;min-height:60px;max-height:88px;overflow:auto;flex:none}
-.ledger{flex:1;overflow:auto;min-height:0}
-.qrow{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;font-size:12px;color:#B8C0D0}
-.qrow:hover{background:#0E121A}
-.qrow .idx{font-size:9.5px;color:#39414F;width:16px;flex:none}
-.qrow .q{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ans{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;flex:none}
-.ans.y{color:var(--ok);background:rgba(52,211,153,.1)}
-.ans.n{color:var(--bad);background:rgba(248,113,113,.1)}
-.empty{font-size:11.5px;color:#333A48;padding:8px 4px}
-
-.center{display:flex;flex-direction:column;gap:11px;min-height:0}
-.secret{border:1px solid #2A3242;border-radius:12px;background:linear-gradient(120deg,#141A26,#0D1118);padding:12px 18px;flex:none}
-.secret .k{font-size:9px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase}
-.secret .v{font-size:24px;font-weight:700;margin-top:4px}
-.field{flex:1;border:1px solid var(--line);border-radius:12px;background:#0A0D13;padding:12px 14px;display:flex;flex-direction:column;min-height:0}
-.field .head{display:flex;align-items:center;gap:10px;margin-bottom:9px;flex:none}
-.field .head .t{font-size:9.5px;letter-spacing:.16em;color:var(--faint);text-transform:uppercase}
-.field .head .n{font-size:12px;color:var(--dim)}
-.field .head .n b{color:#fff;font-size:14px;font-variant-numeric:tabular-nums}
-.bar{flex:1;height:3px;background:#161B25;border-radius:2px;overflow:hidden;margin-left:6px}
-.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--a),#7DD3FC);transition:width .5s}
-.history{flex:1;overflow:auto;min-height:0;display:flex;flex-direction:column}
-.history .board,.history .cnGrid,.history .piles{margin-top:auto;margin-bottom:auto}
-.hrow{display:flex;align-items:center;gap:9px;padding:6px 7px;border-bottom:1px solid #12161F;font-size:12px;color:#AEB6C6}
-.hrow:last-child{border-bottom:none}
-.hrow b{font-size:10.5px;width:14px}
-.hrow b.a{color:var(--a)}
-.hrow b.b{color:var(--b)}
-.hrow span{flex:1}
-.hrow i{font-style:normal;font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:4px}
-.hrow i.y{color:var(--ok);background:rgba(52,211,153,.1)}
-.hrow i.n{color:var(--bad);background:rgba(248,113,113,.1)}
-.cnHead{display:flex;align-items:center;gap:10px;padding:8px 10px 0;font-size:12px;color:var(--dim);flex-wrap:wrap}
-.cnHead .cnTurn{font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid #4a1d1d;background:#211212;color:#F87171}
-.cnHead .cnTurn.blue{border-color:#1d3a4a;background:#121a21;color:#60A5FA}
-.cnHead .cnHint{color:var(--txt)}
-.cnHead .cnLeft{margin-left:auto;color:var(--faint);font-variant-numeric:tabular-nums}
-.cnGrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:6px 8px 10px;min-height:0}
-.cnCell{aspect-ratio:2.35;display:flex;align-items:center;justify-content:center;border-radius:8px;
-  border:1px solid #1C2230;background:#0E121A;color:#B8C0D0;font-size:13.5px;font-weight:600;text-align:center;padding:2px}
-.board{display:flex;flex-direction:column;gap:4px;align-items:center;justify-content:center;padding:10px}
-.piles{display:flex;flex-direction:column;gap:14px;padding:22px 28px;width:100%}
-.pile{display:flex;align-items:center;gap:14px}
-.pile .pno{width:52px;font-size:12px;color:#7C8698;letter-spacing:.06em}
-.pile .pbar{flex:1;height:16px;border-radius:8px;background:#0E121A;border:1px solid #1C2230;overflow:hidden}
-.pile .pbar i{display:block;height:100%;background:linear-gradient(90deg,var(--a),#7DD3FC)}
-.pile .pnum{width:32px;text-align:right;font-size:16px;font-weight:700;color:#E8EAF2;font-variant-numeric:tabular-nums}
-.brow{display:flex;gap:4px}
-.cell{width:44px;height:44px;display:flex;align-items:center;justify-content:center;
-  background:#0E121A;border:1px solid #1C2230;border-radius:6px;font-size:20px;color:#E8EAF2;font-weight:600}
-.statusbox{flex:none;border:1px solid var(--line);border-radius:10px;background:#0B0E14;padding:10px 14px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-.statusbox div{font-size:9.5px;color:var(--faint);letter-spacing:.06em}
-.statusbox b{display:block;font-size:13px;color:#D6DBE6;margin-top:3px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-.narration{border:1px solid #1E2534;border-radius:10px;background:linear-gradient(90deg,#0D1118,#0A0D12);
-  display:flex;align-items:center;gap:14px;padding:0 18px;height:62px;flex:none;margin-top:10px}
-.narration .tag{font-size:9px;letter-spacing:.22em;color:#4A5365;text-transform:uppercase;border-right:1px solid #222A38;padding-right:14px;height:22px;display:flex;align-items:center;flex:none}
-.narration .text{font-size:17px;color:#D6DBE6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-.tlrow{height:44px;display:flex;align-items:center;gap:12px;flex:none;margin-top:8px}
-.tl{position:relative;flex:1;height:24px;display:flex;align-items:center}
-.tl .track{position:absolute;left:0;right:0;height:3px;background:#161B25;border-radius:2px}
-.tl .fill{position:absolute;left:0;height:3px;background:linear-gradient(90deg,#22D3EE,#67E8F9);border-radius:2px;transition:width .2s linear}
-.tl input{position:absolute;left:0;width:100%;height:24px;opacity:0;cursor:pointer;margin:0}
-.tlcount{font-size:10.5px;color:#39414F;font-variant-numeric:tabular-nums;flex:none}
-.badge{font-size:9.5px;letter-spacing:.12em;color:var(--b);border:1px solid rgba(245,165,36,.4);background:rgba(245,165,36,.08);padding:2px 7px;border-radius:999px;display:none;flex:none}
-
-.ctrl{height:54px;display:flex;align-items:center;gap:8px;flex:none}
-.btn{height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:#0F131A;color:#C4CBDA;font-size:12.5px;font-family:inherit;cursor:pointer}
-.btn:hover{background:#171D28;color:#fff}
-.btn.primary{background:var(--a);border-color:var(--a);color:#05070A;font-weight:650}
-select{height:36px;background:#0F131A;border:1px solid var(--line);color:#C4CBDA;border-radius:8px;padding:0 8px;font-family:inherit;font-size:12.5px}
-.spacer{flex:1}
-.cue{font-size:10.5px;color:#3E4658;font-family:Consolas,monospace;max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-#clipPanel{position:absolute;right:24px;bottom:110px;width:520px;max-height:520px;display:none;
-  flex-direction:column;background:linear-gradient(180deg,#12161F,#0A0D12);border:1px solid #2A3242;
-  border-radius:12px;z-index:12;overflow:hidden}
-#clipPanel.on{display:flex}
-.cp-head{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #1B2130;font-size:11px;
-  letter-spacing:.16em;color:#5C6478;text-transform:uppercase}
-.cp-close{margin-left:auto;background:none;border:none;color:#5C6478;font-size:18px;cursor:pointer;line-height:1}
-.cp-close:hover{color:#fff}
-.cp-body{padding:12px 16px;overflow:auto}
-.cp-empty{font-size:12px;color:#3E4658}
-.clip{margin-bottom:14px}
-.clip:last-child{margin-bottom:0}
-.clip .c-title{font-size:12.5px;color:#D6DBE6;margin-bottom:6px}
-.clip .c-meta{font-size:10.5px;color:#4A5365;margin-bottom:6px}
-.clip video{width:100%;border-radius:8px;background:#000;border:1px solid #1B2130}
-.clip .c-err{font-size:11.5px;color:#F87171}
-
-#endcard{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(4,6,9,.8);backdrop-filter:blur(5px);z-index:9}
-#endcard.on{display:flex}
-.endinner{width:560px;background:linear-gradient(180deg,#12161F,#0A0D12);border:1px solid #2A3242;border-radius:16px;padding:30px 34px;text-align:center}
-.endinner .k{font-size:9.5px;letter-spacing:.24em;color:#5C6478;text-transform:uppercase}
-.endinner .w{font-size:36px;font-weight:750;margin:8px 0 6px;color:var(--b)}
-.endinner .r{font-size:13px;color:var(--dim);line-height:1.6}
-.endinner .acts{display:flex;gap:9px;justify-content:center;margin-top:20px}
-/* 移动端：不再缩放 16:9 桌面舞台，改为纵向堆叠的原生布局。
-   固定舞台缩小到手机上文字会小到不可读，这不是适配，是将就。 */
-@media (max-width: 900px){
-  /* 手机顶栏两行：第一行品牌 + 赛制 + 开赛，第二行导航。单行会挤掉按钮。 */
-  #topbar{height:auto;min-height:48px;max-height:none;padding:6px 10px;gap:6px;flex-wrap:wrap;align-items:center}
-  #topbar .field{display:none}
-  #topbar .brand{flex:none;font-size:11px}
-  #topbar .nav{order:3;width:100%;margin-left:0;gap:2px;justify-content:space-between}
-  #topbar .nav a{padding:5px 8px;font-size:11px}
-  #topbar button{height:30px;padding:0 10px;font-size:11.5px}
-  #topbar .spacer{display:none}
-  #topbar .conn{margin-left:auto;font-size:10.5px;padding:2px 7px}
-  #matchId,#connectError{display:none}
-
-  #frame{position:static;inset:auto;display:block;overflow:visible;padding:0;background:#05070A}
-  body{overflow:auto}
-  #stage{width:100%;max-width:100%;height:auto;min-height:0;transform:none !important;margin:0 !important;
-    padding:10px 12px 24px;border-radius:0;display:block;box-sizing:border-box;overflow-x:hidden}
-  #stage *{max-width:100%}
-  .main,.center,.field,.card,.secret,.narration,.statusbox{min-width:0}
-  .topline{height:auto;flex-wrap:wrap;gap:6px;padding-bottom:8px}
-  .pill{font-size:11px;padding:3px 10px}
-  .topline .season{width:100%}
-  .right{display:none}
-  .main{display:flex;flex-direction:column;gap:10px;margin-top:8px}
-  /* display:contents 让两侧的卡直接参与 .main 的纵向排序；
-     否则 .side 仍是一个没有高度的 flex 容器，卡片会被压成一条。 */
-  .side{display:contents}
-  .side .card{flex:none;min-height:auto}
-  .main .center{order:1}
-  .main .side .card{order:2}
-  .main .side:last-of-type .card{order:3}
-  .card{min-height:auto;padding:12px 14px}
-  .card .ledger{max-height:160px}
-  .thought{min-height:52px;max-height:80px}
-  .big .n{font-size:34px}
-  .narration{height:auto;padding:10px 14px;margin-top:8px}
-  .narration .text{font-size:14px;white-space:normal;line-height:1.5}
-  .tlrow{margin-top:10px}
-  .ctrl{height:auto;flex-wrap:wrap;gap:6px;padding:10px 0}
-  .btn{height:34px;padding:0 12px;font-size:12px}
-  .statusbox{grid-template-columns:repeat(2,1fr);gap:8px}
-  #clipPanel{position:fixed;left:8px;right:8px;bottom:8px;width:auto;max-height:70vh}
-  .endinner{width:auto;margin:0 14px;padding:22px 18px}
-  .endinner .w{font-size:26px}
-  .secret .v{font-size:18px}
-}
+.hero-grid{display:grid;grid-template-columns:1.35fr .9fr;gap:18px}
+@media (max-width:980px){.hero-grid{grid-template-columns:1fr}}
+.poster{position:relative;border-radius:16px;border:1px solid var(--line);overflow:hidden;
+  background:linear-gradient(180deg,#0E131C,#080A0F);padding:18px;display:flex;flex-direction:column;gap:10px}
+.poster .ph{display:flex;align-items:center;gap:8px;font-size:10px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase}
+.poster .stage{flex:1;border-radius:12px;border:1px solid #1B2130;background:
+  radial-gradient(90% 120% at 50% 0%,rgba(34,211,238,.10),transparent 60%),#0A0D13;
+  padding:14px;display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:8px;min-height:230px}
+.poster .col{display:flex;flex-direction:column;gap:8px}
+.poster .pc{flex:1;border-radius:9px;border:1px solid #1B2130;background:#0E121A;padding:8px;display:flex;flex-direction:column;gap:5px;position:relative;overflow:hidden}
+.poster .pc::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--tone)}
+.poster .pc .nm{font-size:11px;font-weight:700}
+.poster .pc .th{height:3px;border-radius:2px;background:#232838}
+.poster .pc .th.b{background:var(--tone);opacity:.65}
+.poster .pc .th.s{width:60%}
+.poster .mid{display:flex;flex-direction:column;gap:8px}
+.poster .board{flex:1;border-radius:9px;border:1px solid #1B2130;background:#0B0E14;display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding:8px}
+.poster .board i{border-radius:4px;background:#151B26}
+.poster .board i.on{background:rgba(245,165,36,.75)}
+.poster .board i.on2{background:rgba(248,113,113,.7)}
+.poster .board i.on3{background:rgba(96,165,250,.7)}
+.poster .ticker{border-radius:9px;border:1px solid #1B2130;background:#0B0E14;padding:8px 10px;font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.poster .tl{height:16px;border-radius:6px;background:#0B0E14;border:1px solid #1B2130;position:relative;overflow:hidden}
+.poster .tl i{position:absolute;left:0;top:0;bottom:0;width:62%;background:linear-gradient(90deg,var(--a),#67E8F9);opacity:.6}
+.games-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px}
+.gcard{padding:15px 16px;border-radius:13px;border:1px solid var(--line);background:linear-gradient(180deg,#10141C,#0A0D13);
+  cursor:pointer;transition:border-color .15s,transform .15s;text-align:left}
+.gcard:hover{border-color:#35405A;transform:translateY(-2px)}
+.gcard .g{display:flex;align-items:center;gap:9px}
+.gcard .glyph{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-size:14px;font-weight:800;
+  background:var(--game-bg);color:var(--game-tone);border:1px solid var(--line)}
+.gcard b{font-size:14.5px}
+.gcard p{font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.55}
+.pill-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.pill-row .tag{font-size:10.5px}
+.two-col{display:grid;grid-template-columns:1.6fr 1fr;gap:16px}
+@media (max-width:980px){.two-col{grid-template-columns:1fr}}
+.bars{display:flex;align-items:flex-end;gap:6px;height:70px}
+.bars i{flex:1;background:linear-gradient(180deg,var(--a),rgba(34,211,238,.15));border-radius:3px 3px 0 0;min-height:3px;opacity:.75}
+.leader{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line-soft);font-size:12.5px}
+.leader:last-child{border-bottom:none}
+.leader .rk{width:18px;color:var(--faint);font-variant-numeric:tabular-nums}
+.leader .nm{flex:1;color:var(--dim)}
+.leader .w{color:var(--txt);font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
+<noscript><div style="padding:20px;background:#211d12;color:#E8C98A">本页面需要 JavaScript 才能加载赛事库与实时数据。</div></noscript>
 
-<div id="topbar">
-  <div class="brand">MELEE <span>/</span> 转播台</div>
-  <nav class="nav">
-    <a href="./index.html" class="on">观战</a>
-    <a href="./season.html">赛季</a>
-    <a href="./recap.html">战报</a>
-    <a href="./director.html">导播</a>
-  </nav>
-  <div class="field">
-    <input id="openId" placeholder="matchId" />
-    <button id="btnOpen">打开</button>
-  </div>
-  <select id="gamePick" title="赛制" style="height:30px;background:#0D1118;border:1px solid #232838;color:#C4CBDA;border-radius:6px;font-family:inherit;font-size:12px;padding:0 6px"></select>
-  <button id="btnNew">新开一局</button>
-  <button id="btnRender">导出高光</button>
-  <div class="spacer"></div>
-  <span id="connectError"></span>
-  <span id="matchId">—</span>
-  <span class="conn" id="conn">未连接</span>
-</div>
+<main id="main">
+<div class="wrap" style="padding-top:24px">
 
-<div id="frame">
-  <div id="stage">
-    <div class="topline">
-      <span class="season" id="gameLabel">TRANSMISSION</span>
-      <!-- 这两个 pill 的内容由 lit-html 整块渲染：留空，避免静态文本与模板叠在一起。 -->
-      <div class="pill" id="turnPill"></div>
-      <div class="pill" id="remainPill"></div>
-      <div class="live"><span class="dot"></span><span id="liveLabel">LIVE</span></div>
-      <div class="right"><span>事件 <b id="tlCount" style="color:#D6DBE6">0 / 0</b></span></div>
+  <section class="hero-grid">
+    <div class="hero" style="margin:0">
+      <div class="eyebrow">Self-hosted AI arena broadcast</div>
+      <h1>把 AI 对抗<br>做成<em>节目</em>，而不是评测页。</h1>
+      <p>六种确定性赛制、实时直播、可拖动回放、自动加人工导播、事实校验战报、服务端渲染高光。
+        一条命令起服务，事件日志是唯一真相。</p>
+      <div class="actions">
+        <button class="btn primary" id="btnQuick" type="button">立即开一局</button>
+        <a class="btn" href="watch.html" data-keep-query>进入观战</a>
+        <a class="btn ghost" href="season.html" data-keep-query>赛季</a>
+      </div>
+      <div class="kpis" id="kpis">
+        <div class="kpi"><b>—</b><span>已转播</span></div>
+        <div class="kpi"><b>—</b><span>事件总数</span></div>
+        <div class="kpi"><b>—</b><span>赛制</span></div>
+        <div class="kpi"><b>—</b><span>在线观战</span></div>
+      </div>
     </div>
 
-    <div class="main">
-      <div class="side" id="sideLeft"></div>
-
-      <div class="center">
-        <div class="secret">
-          <div class="k">当前局面</div>
-          <div class="v" id="headline">等待第一条解说。</div>
+    <div class="poster" aria-hidden="true">
+      <div class="ph"><span class="dot-live"></span> LIVE PREVIEW</div>
+      <div class="stage">
+        <div class="col">
+          <div class="pc" style="--tone:#22D3EE"><div class="nm">灰隼</div><div class="th" style="width:80%"></div><div class="th b"></div><div class="th s"></div><div class="th" style="width:45%"></div></div>
+          <div class="pc" style="--tone:#F5A524"><div class="nm">砚台</div><div class="th" style="width:66%"></div><div class="th" style="width:88%"></div><div class="th b s"></div></div>
         </div>
-        <div class="field" id="arenaPanel">
-          <div class="head">
-            <span class="t" id="panelTitle">公开提问记录</span>
-            <span class="n" id="panelMeta"></span>
-            <div class="bar"><i id="bar" style="width:100%"></i></div>
+        <div class="mid">
+          <div style="border-radius:9px;border:1px solid #1B2130;background:#0B0E14;padding:10px 12px">
+            <div style="font-size:9px;letter-spacing:.18em;color:#3E4658">当前局面</div>
+            <div style="font-size:13px;font-weight:600;margin-top:3px;color:#E8EAF2">候选收窄到 4 个，轮到你猜。</div>
           </div>
-          <div class="history" id="historyList"></div>
+          <div class="board">
+            <i></i><i class="on2"></i><i></i><i class="on"></i><i></i>
+            <i></i><i class="on3"></i><i class="on"></i><i></i><i></i>
+            <i class="on"></i><i></i><i></i><i class="on2"></i><i class="on"></i>
+            <i></i><i></i><i class="on3"></i><i></i><i></i>
+            <i class="on2"></i><i></i><i class="on"></i><i></i><i class="on3"></i>
+          </div>
+          <div class="ticker">解说 · 砚台问「小型」，答否，排除 4 个候选。</div>
+          <div class="tl"><i></i></div>
         </div>
-        <div class="statusbox">
-          <div>状态<b id="viewStatus">等待开赛</b></div>
-          <div>犯规<b id="rejected">0</b></div>
-          <div>镜头<b id="cues">0</b></div>
-          <div>最后一手<b id="lastAction">—</b></div>
-        </div>
-      </div>
-
-      <div class="side" id="sideRight"></div>
-    </div>
-
-    <div class="narration">
-      <div class="tag">解说</div>
-      <div class="text" id="narration" aria-live="polite" aria-atomic="true">—</div>
-    </div>
-
-    <div class="tlrow">
-      <div class="tl">
-        <div class="track"></div>
-        <div class="fill" id="tlFill"></div>
-        <input type="range" id="scrub" min="0" max="0" value="0" />
-      </div>
-      <span class="badge" id="replayBadge">回放中</span>
-      
-    </div>
-
-    <div class="ctrl">
-      <button class="btn primary" id="btnPause">暂停</button>
-      <button class="btn" id="btnReplay">从头回放</button>
-      <button class="btn" id="btnLive">回到直播</button>
-      <select id="speed">
-        <option value="0.5">0.5x</option>
-        <option value="1" selected>1x</option>
-        <option value="2">2x</option>
-        <option value="4">4x</option>
-      </select>
-      <div class="spacer"></div>
-      <span class="cue" id="cue">未切镜</span>
-    </div>
-
-    <div id="endcard">
-      <div class="endinner">
-        <div class="k">比赛结束</div>
-        <div class="w" id="winner">—</div>
-        <div class="r" id="endreason"></div>
-        <div class="acts">
-          <button class="btn primary" id="btnReplayEnd">从头回放</button>
-          <button class="btn" id="btnRenderEnd">导出高光</button>
+        <div class="col">
+          <div class="pc" style="--tone:#22D3EE"><div class="nm">观测者</div><div class="th" style="width:70%"></div><div class="th b" style="width:52%"></div><div class="th"></div></div>
+          <div class="pc" style="--tone:#F5A524"><div class="nm">审核员</div><div class="th" style="width:58%"></div><div class="th" style="width:84%"></div><div class="th b s"></div></div>
         </div>
       </div>
     </div>
+  </section>
 
-    <div id="clipPanel">
-      <div class="cp-head">
-        <span>高光</span>
-        <button class="cp-close" id="clipClose">×</button>
+  <div class="section-head">
+    <span class="badge-live"><span class="dot-live"></span>LIVE</span>
+    <h2>正在直播</h2>
+    <span class="muted" id="liveCount"></span>
+    <span class="spacer"></span>
+    <button class="btn sm" id="btnRefresh" type="button">刷新</button>
+  </div>
+  <div id="liveStrip" class="live-strip"></div>
+
+  <div class="section-head">
+    <h2>赛事库</h2>
+    <span class="muted">所有比赛都来自真实事件日志</span>
+    <span class="spacer"></span>
+    <div class="chips" id="gameFilter"></div>
+    <select class="input" id="statusFilter" style="height:32px;font-size:12px" aria-label="按状态筛选">
+      <option value="">全部状态</option>
+      <option value="ended">已结束</option>
+      <option value="live">直播中</option>
+    </select>
+  </div>
+  <div id="archive" class="grid-cards"></div>
+  <div style="display:flex;justify-content:center;margin-top:16px">
+    <button class="btn" id="btnMore" type="button" style="display:none">加载更多</button>
+  </div>
+
+  <div class="section-head"><h2>六种赛制</h2><span class="muted">全部由确定性引擎判定，同种子同结果</span></div>
+  <div class="games-grid" id="games"></div>
+
+  <div class="two-col" style="margin-top:26px">
+    <div class="card pad">
+      <h2>最近 14 天</h2>
+      <div class="bars" id="activity"><span class="muted">暂无数据</span></div>
+      <div class="muted" id="activityMeta" style="margin-top:8px"></div>
+    </div>
+    <div class="card pad">
+      <h2>胜者榜</h2>
+      <div id="leaders"><span class="muted">还没有比赛结果</span></div>
+    </div>
+  </div>
+
+  <div class="footer-slot"></div>
+</div>
+</main>
+
+<div class="modal" id="quickModal" role="dialog" aria-modal="true" aria-labelledby="quickTitle">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2 id="quickTitle">开一局</h2>
+      <button class="x" id="quickClose" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="sheet-body">
+      <div class="field">
+        <label for="qGame">赛制</label>
+        <select class="input" id="qGame"></select>
+        <span class="hint" id="qGameHint"></span>
       </div>
-      <div class="cp-body" id="clipBody"><div class="cp-empty">点「导出高光」生成视频</div></div>
+      <div class="field">
+        <label>选手</label>
+        <div id="qPlayers" class="grid-2"></div>
+        <span class="hint">默认是内置的确定性选手；接真实模型填下面的 BYOK，Key 只存在本场服务端内存里。</span>
+      </div>
+      <details style="margin-bottom:14px">
+        <summary style="cursor:pointer;font-size:12.5px;color:var(--dim)">接入真实模型（BYOK，可选）</summary>
+        <div class="grid-2" style="margin-top:12px">
+          <div class="field"><label for="qBase">Base URL</label><input class="input" id="qBase" placeholder="https://api.example.com/v1"></div>
+          <div class="field"><label for="qModel">模型名</label><input class="input" id="qModel" placeholder="gpt-4o-mini"></div>
+        </div>
+        <div class="field"><label for="qKey">API Key</label><input class="input" id="qKey" type="password" autocomplete="off" placeholder="sk-..."></div>
+        <div class="notice warn">Key 仅随本次建场请求提交，服务端用 Fernet 加密后入队；不会写进事件、日志或前端存储。</div>
+      </details>
+      <div class="field">
+        <label for="qSeed">种子（留空随机）</label>
+        <input class="input" id="qSeed" inputmode="numeric" placeholder="例如 2027">
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn" id="quickCancel" type="button">取消</button>
+      <button class="btn primary" id="quickStart" type="button">开赛并观战</button>
     </div>
   </div>
 </div>
 
-<script>
-  // 把 api / token 参数带到同站其它页面，免得手动再填
-  (function () {
-    const q = new URLSearchParams(location.search)
-    const keep = new URLSearchParams()
-    if (q.get('api')) keep.set('api', q.get('api'))
-    if (q.get('token')) keep.set('token', q.get('token'))
-    if (q.get('match')) keep.set('match', q.get('match'))
-    if (!keep.toString()) return
-    document.querySelectorAll('nav.nav a').forEach(function (a) {
-      const url = new URL(a.getAttribute('href'), location.href)
-      keep.forEach(function (v, k) { url.searchParams.set(k, v) })
-      a.setAttribute('href', url.pathname.split('/').pop() + url.search)
-    })
-  })()
-</script>
-<script type="module" src="./src/main.js"></script>
+<script type="module" src="./src/home.js"></script>
 </body>
 </html>

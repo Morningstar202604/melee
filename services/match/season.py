@@ -17,7 +17,9 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS seasons (
   season_id  TEXT PRIMARY KEY,
   name       TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  game       TEXT NOT NULL DEFAULT 'twenty-questions',
+  status     TEXT NOT NULL DEFAULT 'active'
 );
 
 CREATE TABLE IF NOT EXISTS rosters (
@@ -92,6 +94,8 @@ class Season:
     # (round, player_a, player_b, scheduled_at 或 None)
     fixtures: list[tuple[int, str, str, float | None]] = field(default_factory=list)
     results: list[dict[str, Any]] = field(default_factory=list)
+    # 赛季统一赛制：不同赛制的比分不能混进同一张榜。
+    game: str = "twenty-questions"
 
     def add_player(self, player_id: str, display: str, persona: str = "", model: str = "") -> None:
         self.roster[player_id] = {"display": display, "persona": persona, "model": model}
@@ -198,11 +202,30 @@ class Season:
         return sorted(out, key=lambda x: (-x["games"], -abs(x["aWins"] - x["bWins"])))
 
 
-def persist(conn: sqlite3.Connection, season: Season) -> None:
+def _migrate(conn: sqlite3.Connection) -> None:
+    """旧库补列：CREATE TABLE IF NOT EXISTS 不会给已存在的表加字段。"""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(seasons)")}
+    if "game" not in columns:
+        conn.execute("ALTER TABLE seasons ADD COLUMN game TEXT NOT NULL DEFAULT 'twenty-questions'")
+    if "status" not in columns:
+        conn.execute("ALTER TABLE seasons ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+    conn.commit()
+
+
+def persist(conn: sqlite3.Connection, season: Season, *, replace: bool = False) -> None:
+    """写赛季。
+
+    replace=True 用于"同 id 重建赛季"：先清掉旧 roster/fixtures/results，
+    否则新榜会混进上一批选手（旧行只是被 upsert，不会被删）。
+    """
     conn.executescript(SCHEMA)
+    _migrate(conn)
+    if replace:
+        for table in ("rosters", "fixtures", "results"):
+            conn.execute(f"DELETE FROM {table} WHERE season_id = ?", (season.season_id,))  # nosec B608
     conn.execute(
-        "INSERT OR REPLACE INTO seasons (season_id, name, created_at) VALUES (?,?,datetime('now'))",
-        (season.season_id, season.name),
+        "INSERT OR REPLACE INTO seasons (season_id, name, created_at, game) VALUES (?,?,datetime('now'),?)",
+        (season.season_id, season.name, season.game),
     )
     for pid, info in season.roster.items():
         conn.execute(
@@ -233,10 +256,11 @@ def persist(conn: sqlite3.Connection, season: Season) -> None:
 
 def load(conn: sqlite3.Connection, season_id: str) -> Season:
     conn.executescript(SCHEMA)
-    row = conn.execute("SELECT name FROM seasons WHERE season_id = ?", (season_id,)).fetchone()
+    _migrate(conn)
+    row = conn.execute("SELECT name, game FROM seasons WHERE season_id = ?", (season_id,)).fetchone()
     if row is None:
         raise KeyError(season_id)
-    season = Season(season_id=season_id, name=row[0])
+    season = Season(season_id=season_id, name=row[0], game=row[1] or "twenty-questions")
 
     for pid, display, persona, model in conn.execute(
         "SELECT player_id, display, persona, model FROM rosters WHERE season_id = ? ORDER BY player_id",
@@ -253,8 +277,12 @@ def load(conn: sqlite3.Connection, season_id: str) -> Season:
         )
     ]
 
+    # 按"实际发生的顺序"读：match_id 是字符串，r10 会排在 r2 前面，
+    # 而 OpenSkill 对顺序敏感，导致跑完接口返回的名次与刷新后不一致。
     for match_id, a, b, winner, reason in conn.execute(
-        "SELECT match_id, player_a, player_b, winner, reason FROM results WHERE season_id = ? ORDER BY match_id",
+        "SELECT r.match_id, r.player_a, r.player_b, r.winner, r.reason FROM results r "
+        "LEFT JOIN fixtures f ON f.match_id = r.match_id "
+        "WHERE r.season_id = ? ORDER BY COALESCE(f.round, 0), r.match_id",
         (season_id,),
     ):
         season.results.append(

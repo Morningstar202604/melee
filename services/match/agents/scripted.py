@@ -34,6 +34,11 @@ def asked_pairs(observation: dict[str, Any]) -> set[tuple[str, str]]:
     }
 
 
+def _guess_of(row: dict[str, Any]) -> AgentOutput:
+    move = Move(kind="guess", value=row["name"])
+    return AgentOutput(move=move, raw=f"guess:{move.value}")
+
+
 class GreedyAgent:
     """确定性贪心选手：每次挑一个能把候选集切得最均匀的问题。
 
@@ -72,12 +77,23 @@ class GreedyAgent:
     ) -> AgentOutput:
         remaining = self._candidates(observation)
         if len(remaining) == 1:
-            move = Move(kind="guess", value=remaining[0]["name"])
-            return AgentOutput(move=move, raw=f"guess:{move.value}")
+            return _guess_of(remaining[0])
 
-        used = asked_pairs(observation)
+        best = self._best_question(remaining, asked_pairs(observation), observation["aspects"])
+        if best is None:
+            return _guess_of(remaining[0])
+
+        if on_thought is not None:
+            on_thought(f"还剩 {len(remaining)} 个候选，挑一个切得最均匀的问题。")
+        return AgentOutput(move=Move(kind="ask", value=best), raw=f"ask:{best}")
+
+    @staticmethod
+    def _best_question(
+        remaining: list[dict[str, Any]],
+        used: set[tuple[str, str]],
+        aspects: dict[str, list[str]],
+    ) -> str | None:
         best: tuple[float, str] | None = None
-        aspects: dict[str, list[str]] = observation["aspects"]
         for aspect, values in aspects.items():
             for value in values:
                 if (aspect, value) in used:
@@ -88,15 +104,7 @@ class GreedyAgent:
                 score = abs(len(remaining) / 2 - hits)
                 if best is None or score < best[0]:
                     best = (score, f"{aspect}={value}")
-
-        if best is None:
-            move = Move(kind="guess", value=remaining[0]["name"])
-            return AgentOutput(move=move, raw=f"guess:{move.value}")
-
-        move = Move(kind="ask", value=best[1])
-        if on_thought is not None:
-            on_thought(f"还剩 {len(remaining)} 个候选，挑一个切得最均匀的问题。")
-        return AgentOutput(move=move, raw=f"ask:{move.value}")
+        return best[1] if best else None
 
 
 class BoardAgent:
@@ -242,17 +250,28 @@ class CodenamesAgent:
         on_thought: ThoughtSink | None = None,
     ) -> AgentOutput:
         if observation.get("phase") == "hint":
-            colors = observation.get("secretColors") or []
-            words = observation.get("words") or []
-            my_team = observation.get("team")
-            mine = [w for i, w in enumerate(words) if i < len(colors) and colors[i] == my_team]
-            # 线索不能是场上的词：用「目标词 + 一个后缀」造一个关联词。
-            base = mine[0] if mine else "提示"
-            clue = f"{base}相关"
-            if on_thought is not None:
-                on_thought(f"队里有 {len(mine)} 个词要猜，先给一个线索。")
-            return AgentOutput(move=Move(kind="guess", value=f"hint:{clue} 1"), raw=f"hint:{clue} 1")
+            return self._act_captain(observation, on_thought)
+        return self._act_operative(observation, on_thought)
 
+    @staticmethod
+    def _act_captain(
+        observation: dict[str, Any], on_thought: ThoughtSink | None
+    ) -> AgentOutput:
+        colors = observation.get("secretColors") or []
+        words = observation.get("words") or []
+        my_team = observation.get("team")
+        mine = [w for i, w in enumerate(words) if i < len(colors) and colors[i] == my_team]
+        # 线索不能是场上的词：用「目标词 + 一个后缀」造一个关联词。
+        base = mine[0] if mine else "提示"
+        clue = f"{base}相关"
+        if on_thought is not None:
+            on_thought(f"队里有 {len(mine)} 个词要猜，先给一个线索。")
+        return AgentOutput(move=Move(kind="guess", value=f"hint:{clue} 1"), raw=f"hint:{clue} 1")
+
+    @staticmethod
+    def _act_operative(
+        observation: dict[str, Any], on_thought: ThoughtSink | None
+    ) -> AgentOutput:
         # 队员：拿不到颜色，只能按线索相似度猜
         hint = observation.get("hint") or {}
         clue = str(hint.get("word", ""))
@@ -261,10 +280,7 @@ class CodenamesAgent:
         if not candidates:
             return AgentOutput(move=Move(kind="ask", value=""), raw="[no-candidates]")
 
-        def score(word: str) -> int:
-            return sum(1 for ch in set(clue) if ch in word)
-
-        best = max(candidates, key=score)
+        best = max(candidates, key=lambda word: sum(1 for ch in set(clue) if ch in word))
         if on_thought is not None:
             on_thought(f"线索是「{clue}」，从 {len(candidates)} 个未翻开的词里挑最像的。")
         return AgentOutput(move=Move(kind="guess", value=f"pick:{best}"), raw=f"pick:{best}")

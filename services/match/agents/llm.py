@@ -12,7 +12,7 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Iterable
 
 import httpx
 
@@ -42,6 +42,10 @@ class LLMConfig:
     json_mode: bool = True
     stream: bool = False
     thought_chunk_chars: int = 24
+    # 上游 429 / 5xx / 网络抖动不该立刻算一次犯规：有限次退避重试，
+    # 仍失败才落成 action.rejected。上限固定，避免坏端点把一局拖死。
+    max_retries: int = 2
+    retry_backoff_s: float = 0.8
 
 
 class LLMAgent:
@@ -95,39 +99,11 @@ class LLMAgent:
 
     def _codenames_messages(self, observation: dict[str, Any]) -> list[dict[str, str]]:
         team = {"red": "红队", "blue": "蓝队"}.get(observation.get("team"), "?")
-        phase = observation.get("phase")
-        words = observation.get("words") or []
-        public = observation.get("publicBoard") or []
-
-        board_lines = []
-        for i, row in enumerate(public):
-            mark = "已翻开" if row.get("revealed") else "未翻开"
-            color = row.get("color")
-            color_text = "（" + str(color) + "）" if color else ""
-            board_lines.append(str(i + 1) + ". " + str(row.get("word")) + " [" + mark + "]" + color_text)
-        board_text = "\n".join(board_lines)
-
-        if phase == "hint":
-            secrets = observation.get("secretColors") or []
-            mine = [words[i] for i in range(min(len(words), len(secrets))) if secrets[i] == observation.get("team")]
-            system = (
-                "你是" + team + "的队长，只有你看得到每个词的颜色。\n"
-                "你的队伍需要猜出这些词：" + ", ".join(mine) + "\n\n"
-                "请给出一条线索 + 数量，格式：hint:<线索词> <数量>\n"
-                "规则：线索不能是场上的词，数量是这条线索关联几个己方词（1-9）。\n"
-                "只输出 JSON，不要解释：\n"
-                '{"kind":"guess","value":"hint:海洋 2","thought":"为什么这样提示"}'
-            )
-            user = "场上 25 个词：\n" + board_text + "\n\n你是" + team + "队长，给出线索。"
+        board_text = _board_text(observation.get("publicBoard") or [])
+        if observation.get("phase") == "hint":
+            system, user = _captain_prompt(observation, team, board_text)
         else:
-            hint = observation.get("hint") or {}
-            system = (
-                "你是" + team + "的队员，看不到词的颜色。\n"
-                "请在场上未翻开的词里挑一个最符合队长线索的，格式：pick:<词>\n"
-                "只输出 JSON，不要解释：\n"
-                '{"kind":"guess","value":"pick:灯塔","thought":"为什么选它"}'
-            )
-            user = "队长线索：「" + str(hint.get("word")) + "」，指向 " + str(hint.get("count")) + " 个词。\n\n场上：\n" + board_text
+            system, user = _operative_prompt(observation, team, board_text)
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
     def _board_messages(self, observation: dict[str, Any], legal: list[str]) -> list[dict[str, str]]:
@@ -165,27 +141,9 @@ class LLMAgent:
         started = time.monotonic()
         if self.config.stream and on_thought is not None:
             return self._act_streaming(payload, on_thought, legal, started)
-        try:
-            response = self._client.post(
-                f"{self.config.base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {self.config.api_key}"},
-                json=payload,
-            )
-            response.raise_for_status()
-            body = response.json()
-        except httpx.HTTPStatusError as exc:
-            # 上游错误体常带凭据回显，必须先脱敏再落事件。
-            detail = _redact(exc.response.text[:500], self.config.api_key)
-            return AgentOutput(
-                move=Move(kind="ask", value=""),
-                raw=f"[http-{exc.response.status_code}] {detail}",
-            )
-        except Exception as exc:  # noqa: BLE001 - 任何失败都要变成一次可记录的犯规
-            message = _redact(str(exc), self.config.api_key)
-            return AgentOutput(
-                move=Move(kind="ask", value=""),
-                raw=f"[transport-error] {message}",
-            )
+        body, failure = self._post_with_retry(payload)
+        if failure is not None:
+            return AgentOutput(move=Move(kind="ask", value=""), raw=failure)
 
         elapsed_ms = int((time.monotonic() - started) * 1000)
         content = _extract_content(body)
@@ -197,6 +155,34 @@ class LLMAgent:
         raw = content if content else f"[empty-content] elapsed={elapsed_ms}ms"
         return AgentOutput(move=move, raw=raw)
 
+
+    def _post_with_retry(self, payload: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+        """发请求并做有限次退避重试；返回（响应体，失败描述）。"""
+        attempts = max(0, self.config.max_retries) + 1
+        last = "[transport-error] 未知错误"
+        for attempt in range(attempts):
+            try:
+                response = self._client.post(
+                    f"{self.config.base_url.rstrip('/')}/chat/completions",
+                    headers={"Authorization": f"Bearer {self.config.api_key}"},
+                    json=payload,
+                )
+                response.raise_for_status()
+                return response.json(), None
+            except httpx.HTTPStatusError as exc:
+                # 上游错误体常带凭据回显，必须先脱敏再落事件。
+                detail = _redact(exc.response.text[:500], self.config.api_key)
+                last = f"[http-{exc.response.status_code}] {detail}"
+                retryable = exc.response.status_code == 429 or exc.response.status_code >= 500
+                if not retryable or attempt == attempts - 1:
+                    return None, last
+            # aqg: top-level boundary
+            except Exception as exc:  # noqa: BLE001 - 任何失败都要变成一次可记录的犯规  # aqg: top-level boundary
+                last = f"[transport-error] {_redact(str(exc), self.config.api_key)}"
+                if attempt == attempts - 1:
+                    return None, last
+            time.sleep(self.config.retry_backoff_s * (attempt + 1))
+        return None, last
 
     def _act_streaming(
         self,
@@ -212,7 +198,6 @@ class LLMAgent:
         """
         payload = {**payload, "stream": True}
         content: list[str] = []
-        buffer = ""
 
         try:
             with self._client.stream(
@@ -222,29 +207,11 @@ class LLMAgent:
                 json=payload,
             ) as response:
                 response.raise_for_status()
-                for line in response.iter_lines():
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data = line[6:].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        piece = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    delta = (piece.get("choices") or [{}])[0].get("delta") or {}
-                    reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
-                    if reasoning:
-                        buffer += reasoning
-                        while len(buffer) >= self.config.thought_chunk_chars:
-                            on_thought(buffer[: self.config.thought_chunk_chars])
-                            buffer = buffer[self.config.thought_chunk_chars :]
-                    text = delta.get("content") or ""
-                    if text:
-                        content.append(text)
+                buffer = self._consume_stream(response.iter_lines(), content, on_thought)
         except httpx.HTTPStatusError as exc:
             detail = _redact(exc.response.text[:500], self.config.api_key)
             return AgentOutput(move=Move(kind="ask", value=""), raw=f"[http-{exc.response.status_code}] {detail}")
+        # aqg: top-level boundary
         except Exception as exc:  # noqa: BLE001
             return AgentOutput(
                 move=Move(kind="ask", value=""),
@@ -260,6 +227,82 @@ class LLMAgent:
             move=parse_action(joined, legal),
             raw=joined or f"[empty-stream] elapsed={elapsed_ms}ms",
         )
+
+    def _consume_stream(self, lines: Iterable[str], content: list[str], on_thought: ThoughtSink) -> str:
+        """消费 SSE 行，返回还没凑够一块的思考尾巴。"""
+        buffer = ""
+        for line in lines:
+            if not line or not line.startswith("data: "):
+                continue
+            data = line[6:].strip()
+            if data == "[DONE]":
+                break
+            reasoning, text = _delta_of(data)
+            if reasoning:
+                buffer = self._flush_reasoning(buffer + reasoning, on_thought)
+            if text:
+                content.append(text)
+        return buffer
+
+    def _flush_reasoning(self, buffer: str, on_thought: ThoughtSink) -> str:
+        chunk = self.config.thought_chunk_chars
+        while len(buffer) >= chunk:
+            on_thought(buffer[:chunk])
+            buffer = buffer[chunk:]
+        return buffer
+
+
+def _delta_of(data: str) -> tuple[str, str]:
+    """从一行 SSE 数据里取出 (思考增量, 正文增量)。"""
+    try:
+        piece = json.loads(data)
+    except json.JSONDecodeError:
+        return "", ""
+    delta = (piece.get("choices") or [{}])[0].get("delta") or {}
+    reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
+    return reasoning, delta.get("content") or ""
+
+
+def _board_text(public: list[dict[str, Any]]) -> str:
+    lines = []
+    for i, row in enumerate(public):
+        mark = "已翻开" if row.get("revealed") else "未翻开"
+        color = row.get("color")
+        color_text = "（" + str(color) + "）" if color else ""
+        lines.append(str(i + 1) + ". " + str(row.get("word")) + " [" + mark + "]" + color_text)
+    return "\n".join(lines)
+
+
+def _captain_prompt(
+    observation: dict[str, Any], team: str, board_text: str
+) -> tuple[str, str]:
+    words = observation.get("words") or []
+    secrets = observation.get("secretColors") or []
+    mine = [words[i] for i in range(min(len(words), len(secrets))) if secrets[i] == observation.get("team")]
+    system = (
+        "你是" + team + "的队长，只有你看得到每个词的颜色。\n"
+        "你的队伍需要猜出这些词：" + ", ".join(mine) + "\n\n"
+        "请给出一条线索 + 数量，格式：hint:<线索词> <数量>\n"
+        "规则：线索不能是场上的词，数量是这条线索关联几个己方词（1-9）。\n"
+        "只输出 JSON，不要解释：\n"
+        '{"kind":"guess","value":"hint:海洋 2","thought":"为什么这样提示"}'
+    )
+    user = "场上 25 个词：\n" + board_text + "\n\n你是" + team + "队长，给出线索。"
+    return system, user
+
+
+def _operative_prompt(
+    observation: dict[str, Any], team: str, board_text: str
+) -> tuple[str, str]:
+    hint = observation.get("hint") or {}
+    system = (
+        "你是" + team + "的队员，看不到词的颜色。\n"
+        "请在场上未翻开的词里挑一个最符合队长线索的，格式：pick:<词>\n"
+        "只输出 JSON，不要解释：\n"
+        '{"kind":"guess","value":"pick:灯塔","thought":"为什么选它"}'
+    )
+    user = "队长线索：「" + str(hint.get("word")) + "」，指向 " + str(hint.get("count")) + " 个词。\n\n场上：\n" + board_text
+    return system, user
 
 
 def _extract_content(body: dict[str, Any]) -> str:
@@ -327,7 +370,22 @@ def parse_action(content: str, legal: list[str]) -> Move:
 
     解析失败时返回一个明显非法的动作，交给 runner 记成 action.rejected。
     这里绝不猜模型"大概想说什么"——那会让犯规消失，也会让比赛失去可复现性。
+
+    唯一的例外：正文去掉空白后**恰好等于某个合法动作**（例如棋类只回了 `[4]`）。
+    这不是猜——字符串与 legal_moves 提供的候选逐字节相同，模型已经把动作说清楚了，
+    只是没包进 JSON。真实模型联调时这是最常见的一种"格式犯规"。
     """
+    text = (content or "").strip()
+    if text:
+        candidates = {str(item).strip() for item in legal}
+        if text in candidates:
+            return Move(kind="guess", value=text)
+        # 也可能"动作独占第一行、后面是解释"：第一行与合法动作逐字符相同才接受，
+        # 仍然不做任何语义猜测。
+        first_line = text.splitlines()[0].strip() if text.splitlines() else ""
+        if first_line in candidates:
+            return Move(kind="guess", value=first_line)
+
     parsed = _try_json(content)
     if not isinstance(parsed, dict):
         return Move(kind="ask", value="")
