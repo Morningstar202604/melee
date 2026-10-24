@@ -1,7 +1,7 @@
 # 路线图
 
 原则：只列**有明确验收标准**的项，不写"持续优化"这种无法判断的句子。
-已完成项移到 [CHANGELOG](CHANGELOG.md)。
+已完成项移到 [CHANGELOG](../CHANGELOG.md)。
 
 ## 下一版（1.1）
 
