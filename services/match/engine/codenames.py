@@ -27,11 +27,27 @@ from typing import Any
 from .base import AppliedEffect, Move, MoveResult, PlayerId
 
 # 25 个词。选常见名词，便于模型给出有意义的线索。
-WORDS: list[str] = [
+# 双语：英文界面下棋盘里出现中文词，是最刺眼的"语言错乱"——
+# 界面文案翻了、内容没翻，读起来像半成品。词表按语言分，种子决定取哪些词，
+# 所以同一种子在同一语言下仍然完全可复现。
+WORDS_EN: list[str] = [
+    "Lighthouse", "Ocean", "Desert", "Forest", "Snowpeak", "Volcano", "Glacier",
+    "Prairie", "Canyon", "Waterfall", "Sun", "Moon", "Star", "Cloud", "Rainbow",
+    "Thunder", "Mist", "Aurora", "Meteor", "Tide", "Page", "Canvas", "String",
+    "Clay", "Door", "Lock", "Glass", "Silk", "Mirror", "Monolith",
+]
+WORDS_ZH: list[str] = [
     "灯塔", "海洋", "沙漠", "森林", "雪山", "火山", "冰川", "草原", "峡谷", "瀑布",
     "太阳", "月亮", "星星", "云朵", "彩虹", "雷雨", "晨雾", "极光", "流星", "潮汐",
     "书页", "油画", "琴弦", "陶罐", "木门", "铁锁", "玻璃", "丝绸", "铜镜", "石碑",
 ]
+# 默认词表：中文，保持既有行为（历史事件、录像、测试都基于它）。
+WORDS: list[str] = WORDS_ZH
+
+
+def word_pool(lang: str = "zh") -> list[str]:
+    """按语言取词表；未知语言回退中文（与既有行为一致）。"""
+    return WORDS_EN if str(lang).lower().startswith("en") else WORDS_ZH
 
 _CN = {"red": "红队", "blue": "蓝队"}
 
@@ -135,7 +151,10 @@ class Codenames:
     def init(self, seed: int, players: list[PlayerId], config: dict[str, Any]) -> dict[str, Any]:
         views = _teams(players, config)  # 校验人数并解析席位
         rng = random.Random(seed)
-        pool = list(WORDS)
+        # 词表语言来自建场配置：同一场比赛的棋盘词必须与观看语言一致，
+        # 否则英文界面里出现中文词。config 里没给就沿用中文（历史行为）。
+        lang = str((config or {}).get("lang") or "zh")
+        pool = list(word_pool(lang))
         rng.shuffle(pool)
         board = pool[:GRID_SIZE]
 

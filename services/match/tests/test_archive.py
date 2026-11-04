@@ -175,11 +175,17 @@ def test_archive_is_fast_enough(client):
 
     # 先预热一次：首次请求包含连接池/模板初始化，不该算进查询耗时。
     client.get("/archive", params={"limit": 24})
-    started = time.perf_counter()
-    response = client.get("/archive", params={"limit": 24})
-    elapsed = time.perf_counter() - started
+    # 取 3 次的中位数而不是单次：单次墙钟包含 GC、系统调度、杀毒扫描，
+    # 在 CI 或负载中的开发机上会偶发超时——实测本项目就出现过
+    # "单跑必绿、全量偶红"，那种红是测量噪声，不是回归。
+    samples = []
+    for _ in range(3):
+        started = time.perf_counter()
+        response = client.get("/archive", params={"limit": 24})
+        samples.append(time.perf_counter() - started)
     assert response.status_code == 200
-    assert elapsed < 0.5, f"/archive 太慢：{elapsed:.3f}s"
+    median = sorted(samples)[1]
+    assert median < 0.5, f"/archive 太慢（3 次中位数）：{median:.3f}s samples={samples}"
 
 def test_queue_schema_initialized_by_api(client):
     """新建比赛后队列表必须可读：health 里 queue=true 的来源。"""

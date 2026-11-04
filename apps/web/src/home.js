@@ -355,6 +355,20 @@ function renderQuickPlayers(gameId) {
     : ''
 }
 
+/** 首次开赛的默认赛制：挑最容易上手的一个，而不是字母序第一个。
+ *
+ * 字母序第一个是 Codenames（4 人、隐藏信息、队长/队员两阶段），
+ * 对第一次点"Start a match"的人门槛过高——他要先理解规则才能开始。
+ * 井字棋这种一眼看懂的先跑通一遍，再去看复杂的。
+ */
+function preferredGame() {
+  const order = ['tic-tac-toe', 'nim', 'twenty-questions', 'othello']
+  for (const id of order) {
+    if (state.games.some((game) => game.gameId === id)) return id
+  }
+  return state.games[0]?.gameId || ''
+}
+
 let releaseQuickFocus = null
 
 function openQuick(gameId = '') {
@@ -368,8 +382,10 @@ function openQuick(gameId = '') {
     html`${state.games.map((game) => html`<option value="${game.gameId}">${gameMeta(game.gameId, game.label).label}</option>`)}`,
     pick,
   )
-  const wanted = gameId || pick.value
-  pick.value = state.games.some((game) => game.gameId === wanted) ? wanted : state.games[0].gameId
+  // 重新渲染 <option> 后，浏览器的 value 会回到第一项，所以这里必须
+  // 显式决定"打开时选中哪个赛制"，不能依赖 pick.value 的旧值。
+  const wanted = gameId || preferredGame()
+  pick.value = state.games.some((game) => game.gameId === wanted) ? wanted : preferredGame()
   renderQuickPlayers(pick.value)
   el('quickModal').classList.add('on')
   // 焦点关进弹层：Tab 不会跑到背后的赛事库，关掉后回到「立即开一局」。
@@ -394,9 +410,18 @@ async function startQuick() {
     return
   }
   const seedText = el('qSeed').value.trim()
+  // 默认给一个可观看的节奏：0 延迟会让一局井字棋在两秒内跑完，
+  // 用户点"Start and watch"后看到的是一个已经结束的页面——观战页失去意义。
+  // 900ms/步是"能跟上、又不拖沓"的经验值；BYOK 真实模型本身有延迟，不再叠加。
   const body = {
     game: gameId,
     players: names.map((id) => ({ id })),
+  }
+  // 内置选手（没有 BYOK）才有"节奏"这个概念；真实模型自带网络与推理延迟，
+  // 再叠 900ms 只会让一局变慢得没必要。
+  const useDelay = !el('qBase').value.trim() && !el('qModel').value.trim() && !el('qKey').value
+  if (useDelay) {
+    for (const spec of body.players) spec.delayMs = 900
   }
   if (seedText) {
     const seed = Number(seedText)

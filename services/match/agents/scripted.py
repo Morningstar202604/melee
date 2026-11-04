@@ -5,6 +5,31 @@ from typing import Any
 from ..engine.base import Move
 from .base import AgentOutput, ThoughtSink
 
+# 英文联想词：真实代号玩家给的是"另一个词"，不是目标词加后缀。
+# 目标词本身在棋盘上时不能直接用（规则禁止线索出现在场上），
+# 这里给每个词一个固定的语义联想；没有登记的退回数字后缀。
+_EN_ASSOCIATIONS: dict[str, str] = {
+    "Lighthouse": "Beacon", "Ocean": "Tide", "Desert": "Dune", "Forest": "Timber",
+    "Snowpeak": "Summit", "Volcano": "Lava", "Glacier": "Ice", "Prairie": "Grassland",
+    "Canyon": "Ravine", "Waterfall": "Cascade", "Sun": "Daylight", "Moon": "Night",
+    "Star": "Twinkle", "Cloud": "Sky", "Rainbow": "Spectrum", "Thunder": "Storm",
+    "Mist": "Haze", "Aurora": "Glow", "Meteor": "Comet", "Tide": "Shore",
+    "Page": "Paper", "Canvas": "Painting", "String": "Chord", "Clay": "Pottery",
+    "Door": "Entrance", "Lock": "Key", "Glass": "Window", "Silk": "Fabric",
+    "Mirror": "Reflection", "Monolith": "Stone",
+}
+
+
+def _thought(key: str, params: dict, lang: str = "zh") -> str:
+    """内置选手的内心戏：走与解说同一套消息目录，按界面语言渲染。
+
+    为什么不能直接写中文字面量：英文界面里"INNER MONOLOGUE"面板出现中文，
+    读者会认为本地化没做完——这比少一个功能更伤信任。
+    """
+    from ..messages import format_message
+
+    return format_message(key, params, lang=lang)
+
 
 class ScriptedAgent:
     """按预设脚本出招的假选手。用于离线跑通整条链路。"""
@@ -49,8 +74,9 @@ class GreedyAgent:
 
     name = "greedy"
 
-    def __init__(self, name: str, catalog: list[dict[str, str]]) -> None:
+    def __init__(self, name: str, catalog: list[dict[str, str]], lang: str = "zh") -> None:
         self.name = name
+        self.lang = lang
         self._catalog = catalog
 
     def _candidates(self, observation: dict[str, Any]) -> list[dict[str, str]]:
@@ -94,7 +120,7 @@ class GreedyAgent:
             return _guess_of(remaining[0])
 
         if on_thought is not None:
-            on_thought(f"还剩 {len(remaining)} 个候选，挑一个切得最均匀的问题。")
+            on_thought(_thought("thought.quiz", {"remaining": len(remaining)}, getattr(self, "lang", "zh")))
         return AgentOutput(move=Move(kind="ask", value=best), raw=f"ask:{best}")
 
     @staticmethod
@@ -129,9 +155,10 @@ class BoardAgent:
 
     name = "board"
 
-    def __init__(self, name: str, game_id: str = "") -> None:
+    def __init__(self, name: str, game_id: str = "", lang: str = "zh") -> None:
         self.name = name
         self.game_id = game_id
+        self.lang = lang
 
     def act(
         self,
@@ -159,7 +186,8 @@ class BoardAgent:
         index = _stable_index(observation.get("you", ""), moves)
         choice = moves[index]
         if on_thought is not None:
-            on_thought(f"可用动作 {len(moves)} 个，选第 {index + 1} 个。")
+            on_thought(_thought("thought.generic", {"count": len(moves), "index": index + 1},
+                                 getattr(self, "lang", "zh")))
         return AgentOutput(move=Move(kind="guess", value=choice), raw=f"choose:{choice}")
 
 
@@ -276,8 +304,9 @@ class CodenamesAgent:
 
     name = "codenames"
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, lang: str = "zh") -> None:
         self.name = name
+        self.lang = lang
         self._used_clues: set[str] = set()
 
     def act(
@@ -307,22 +336,33 @@ class CodenamesAgent:
             and index < len(revealed)
             and not revealed[index]
         ]
-        base = targets[0] if targets else "提示"
+        # 线索语言跟随界面：英文棋盘上出现「玻璃相关」，读起来像
+        # 本地化只做了一半。后缀用目标语言的连接词，保持线索像人话。
+        lang = getattr(self, "lang", "zh")
+        is_en = str(lang).startswith("en")
+        fallback = "hint" if is_en else "提示"
+        target = targets[0] if targets else fallback
+        # 英文优先用语义联想词（真实玩家给的是"另一个词"）；未登记退回目标词。
+        base = _EN_ASSOCIATIONS.get(target, target) if is_en else target
+        # 线索必须是**单个词**（引擎规则）：英文不能用 "Glass clue"，
+        # 空格会让整局被判"线索只能是一个词"然后弃权——实测直接把英文局打废。
+        # 也不加 "-clue" 这种机械后缀：真实代号玩家给的就是一个联想词。
+        joiner = "" if is_en else "相关"
         # 线索不能是场上的词；同一目标可能被反复问到（队员猜错换手），
         # 加一个稳定后缀保证这条线索在整个对局里唯一，避免"重复同一句"。
-        clue = f"{base}相关"
+        clue = f"{base}{joiner}".strip()
         suffix = 2
         while clue in board_words or clue in self._used_clues:
-            clue = f"{base}相关{suffix}"
+            clue = f"{base}{joiner}{'' if is_en else ''}{suffix}".strip()
             suffix += 1
         self._used_clues.add(clue)
         if on_thought is not None:
-            on_thought(f"队里还有 {len(targets)} 个词要猜，先提示「{base}」。")
+            on_thought(_thought("thought.captain", {"count": len(targets), "base": base},
+                                 getattr(self, "lang", "zh")))
         return AgentOutput(move=Move(kind="guess", value=f"hint:{clue} 1"), raw=f"hint:{clue} 1")
 
-    @staticmethod
     def _act_operative(
-        observation: dict[str, Any], on_thought: ThoughtSink | None
+        self, observation: dict[str, Any], on_thought: ThoughtSink | None
     ) -> AgentOutput:
         # 队员：拿不到颜色，只能按线索相似度猜
         hint = observation.get("hint") or {}
@@ -334,7 +374,8 @@ class CodenamesAgent:
 
         best = max(candidates, key=lambda word: sum(1 for ch in set(clue) if ch in word))
         if on_thought is not None:
-            on_thought(f"线索是「{clue}」，从 {len(candidates)} 个未翻开的词里挑最像的。")
+            on_thought(_thought("thought.guess", {"clue": clue, "count": len(candidates)},
+                                 getattr(self, "lang", "zh")))
         return AgentOutput(move=Move(kind="guess", value=f"pick:{best}"), raw=f"pick:{best}")
 
 
@@ -355,9 +396,10 @@ class MinimaxAgent:
 
     name = "minimax"
 
-    def __init__(self, name: str, game_id: str = "", depth: int = 2, board_fn=None) -> None:
+    def __init__(self, name: str, game_id: str = "", depth: int = 2, board_fn=None, lang: str = "zh") -> None:
         self.name = name
         self.game_id = game_id
+        self.lang = lang
         self.depth = max(1, depth)
         self._board_fn = board_fn
 
@@ -373,7 +415,8 @@ class MinimaxAgent:
         # 井字棋/反井字棋这类 3x3 才能做完整搜索；其它棋盘按"能立刻赢就赢"启发。
         choice = self._search(observation, moves)
         if on_thought is not None:
-            on_thought(f"在 {len(moves)} 个合法动作里搜索 {self.depth} 层，选择 {choice}。")
+            on_thought(_thought("thought.search", {"count": len(moves), "depth": self.depth, "choice": choice},
+                                 getattr(self, "lang", "zh")))
         return AgentOutput(move=Move(kind="guess", value=choice), raw=f"minimax:{choice}")
 
     # ---- 搜索 ----

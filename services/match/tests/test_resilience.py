@@ -477,11 +477,12 @@ def test_rule_narrator_situation_handles_missing_and_tie():
     narrator = RuleNarrator()
     red_leads = narrator.situation({"remaining": {"red": 3, "blue": 5}}, game_id="codenames")
     assert red_leads["msg"] == "narr.situation.leading"
-    assert red_leads["params"]["team"] == "红队"
+    # 队伍名存语言无关引用键：事件可按任意语言重读。
+    assert red_leads["params"]["team"] == "team.red"
 
     blue_leads = narrator.situation({"remaining": {"red": 5, "blue": 3}}, game_id="codenames")
     assert blue_leads["msg"] == "narr.situation.leading"
-    assert blue_leads["params"]["team"] == "蓝队"
+    assert blue_leads["params"]["team"] == "team.blue"
 
     tied = narrator.situation({"remaining": {"red": 3, "blue": 3}}, game_id="codenames")
     assert tied["msg"] == "narr.situation.tied"

@@ -168,6 +168,10 @@ async def create_match(body: CreateMatch, request: Request) -> dict[str, Any]:
         log.close()
 
     # 写路径走队列：任何副本都能接手，副本崩了租约到期后会被别人重跑。
+    # 建场语言写进 config：棋盘词等内容数据要与观看语言一致，
+    # 否则英文界面里会出现中文棋盘——这是"语言错乱"最刺眼的一种。
+    match_config = body.config.model_dump(exclude_none=True)
+    match_config.setdefault("lang", request_lang(request))
     try:
         job_id = enqueue_match(
             db_path,
@@ -180,7 +184,7 @@ async def create_match(body: CreateMatch, request: Request) -> dict[str, Any]:
             cipher=cipher,
             sealed_specs=sealed_specs,
             game=body.game,
-            config=body.config.model_dump(exclude_none=True),
+            config=match_config,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail="当前服务未配置安全的凭据封存密钥，无法创建外部 AI 比赛") from exc

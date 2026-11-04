@@ -1,6 +1,6 @@
 // REST 客户端：所有页面的取数都走这里，避免每个页面各写一份 fetch 与错误处理。
 // token 只存在内存与 URL 参数里，不写 localStorage（分享出去的链接不该带凭据）。
-import { gameLabel, t } from './i18n.js'
+import { gameLabel, getLang, t } from './i18n.js'
 
 let authToken = ''
 let baseUrl = ''
@@ -25,6 +25,9 @@ export function apiBase() {
 export function authHeaders(extra = {}) {
   const headers = { ...extra }
   if (authToken) headers.Authorization = `Bearer ${authToken}`
+  // 带上界面语言：建场时后端据此选择内容词表（如代号棋盘词），
+  // 否则英文界面里会混进中文棋盘——本地化看起来像只做了一半。
+  headers['Accept-Language'] = getLang()
   return headers
 }
 

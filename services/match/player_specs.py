@@ -179,7 +179,9 @@ def resolve_env_references(specs: list[PlayerSpec]) -> list[PlayerSpec]:
     return resolved
 
 
-def build_agents(specs: list[PlayerSpec], game_id: str = "twenty-questions") -> dict[str, Any]:
+def build_agents(
+    specs: list[PlayerSpec], game_id: str = "twenty-questions", lang: str = "zh"
+) -> dict[str, Any]:
     """按赛制挑默认选手。
 
     二十问用属性表贪心；棋类用"从观察里找可用动作"的 BoardAgent。
@@ -228,11 +230,11 @@ def build_agents(specs: list[PlayerSpec], game_id: str = "twenty-questions") -> 
                 moves.append(Move(kind=kind, value=value))
             agents[spec.id] = ScriptedAgent(spec.id, moves)
         elif default_factory is GreedyAgent:
-            agents[spec.id] = GreedyAgent(spec.id, CATALOG)
+            agents[spec.id] = GreedyAgent(spec.id, CATALOG, lang=lang)
         elif game_id == "codenames":
-            agents[spec.id] = CodenamesAgent(spec.id)
+            agents[spec.id] = CodenamesAgent(spec.id, lang=lang)
         else:
-            agents[spec.id] = BoardAgent(spec.id, game_id)
+            agents[spec.id] = BoardAgent(spec.id, game_id, lang=lang)
 
         if spec.delayMs:
             agents[spec.id] = PacedAgent(agents[spec.id], spec.delayMs)

@@ -190,6 +190,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Opening play.",
         "zh": "开局布局。",
     },
+    # ---- 队伍名（语言无关引用键的翻译表） ----
+    "team.red": {"en": "Red", "zh": "红队"},
+    "team.blue": {"en": "Blue", "zh": "蓝队"},
+    "team.neutral": {"en": "Neutral", "zh": "中立"},
+    "team.assassin": {"en": "Assassin", "zh": "刺客"},
+
     # ---- 分享落地页 ----
     "share.title.win": {
         "en": "{game} · {winner} wins",
@@ -235,6 +241,27 @@ MESSAGES: dict[str, dict[str, str]] = {
     "action.kind.hint": {"en": "gave a clue", "zh": "给线索"},
     "action.kind.reveal": {"en": "revealed", "zh": "翻牌"},
     "action.kind.pass": {"en": "passed", "zh": "过牌"},
+    # ---- 内置选手的内心戏 ----
+    "thought.quiz": {
+        "en": "{remaining} candidates left — pick the question that splits them most evenly.",
+        "zh": "还剩 {remaining} 个候选，挑一个切得最均匀的问题。",
+    },
+    "thought.generic": {
+        "en": "{count} legal moves; picking number {index}.",
+        "zh": "可用动作 {count} 个，选第 {index} 个。",
+    },
+    "thought.captain": {
+        "en": "{count} words left on our side; hinting at {base}.",
+        "zh": "队里还有 {count} 个词要猜，先提示「{base}」。",
+    },
+    "thought.guess": {
+        "en": 'Clue is "{clue}" — picking the closest of {count} unrevealed words.',
+        "zh": "线索是「{clue}」，从 {count} 个未翻开的词里挑最像的。",
+    },
+    "thought.search": {
+        "en": "Searching {depth} plies over {count} legal moves, choosing {choice}.",
+        "zh": "在 {count} 个合法动作里搜索 {depth} 层，选择 {choice}。",
+    },
     # ---- 赛制名（分享页与卡片用；前端有自己的字典） ----
     "game.twenty-questions": {"en": "Twenty Questions", "zh": "二十问"},
     "game.codenames": {"en": "Codenames", "zh": "代号"},
@@ -262,8 +289,10 @@ def format_message(key: str, params: dict[str, Any] | None = None, *, lang: str 
     template = table.get(lang) or table[LANG_FALLBACK]
     if not params:
         return template
+    # 集中在这里翻译参数：三个调用方（解说/战报/高光）都不必各自记得做。
+    localized = _localize_params(params, lang)
     return _PLACEHOLDER.sub(
-        lambda match: str(params[match.group(1)]) if match.group(1) in params else match.group(0),
+        lambda match: str(localized[match.group(1)]) if match.group(1) in localized else match.group(0),
         template,
     )
 
@@ -274,11 +303,14 @@ def message(key: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     事件流按 `msg` 重新渲染，`text` 是给不认识 `msg` 的客户端的兜底；
     默认英文与产品主语言一致。
     """
-    params = _localize_params(params or {})
+    # 事件里存"原始"参数（可能是 team.red 这样的引用键），
+    # 只有 text 是按默认语言渲染出来的兜底值。翻译发生在读取时，
+    # 这样一条事件可以按任意语言重读。
+    raw_params = params or {}
     return {
-        "text": format_message(key, params, lang=LANG_FALLBACK),
+        "text": format_message(key, raw_params, lang=LANG_FALLBACK),
         "msg": key,
-        "params": params,
+        "params": raw_params,
     }
 
 
@@ -288,13 +320,38 @@ _BOOL_WORDS = {
     "no": {"en": "no", "zh": "否"},
 }
 
+# 语言无关的引用型参数：值是消息键，渲染时才翻译。
+# 例如队伍名在事件里存 `team.red`，英文渲染成 "Red"，中文渲染成「红队」。
+_REFERENCE_PREFIXES = ("team.",)
+
+
+def _translate_ref(value: str, lang: str) -> str | None:
+    """如果参数是 `team.xxx` 这类引用键，返回它的译文；否则 None。"""
+    if not any(value.startswith(prefix) for prefix in _REFERENCE_PREFIXES):
+        return None
+    return format_message(value, lang=lang) if value in MESSAGES else None
+
 
 def _localize_params(params: dict[str, Any], lang: str = LANG_FALLBACK) -> dict[str, Any]:
-    """把语言无关的枚举参数落成目标语言的说法。"""
+    """把语言无关的参数落成目标语言的说法。
+
+    三类参数：
+    - yes/no 布尔词；
+    - `team.red` 这类引用键（值本身是消息键）；
+    - 其余原样（玩家名、棋盘词、数字）——它们是内容，不是文案。
+    """
     out: dict[str, Any] = {}
     for key, value in params.items():
-        words = _BOOL_WORDS.get(value) if isinstance(value, str) else None
-        out[key] = words.get(lang, value) if words else value
+        if isinstance(value, str):
+            words = _BOOL_WORDS.get(value)
+            if words:
+                out[key] = words.get(lang, value)
+                continue
+            referenced = _translate_ref(value, lang)
+            if referenced is not None:
+                out[key] = referenced
+                continue
+        out[key] = value
     return out
 
 

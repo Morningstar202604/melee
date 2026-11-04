@@ -127,7 +127,8 @@ def run_match_job(db_path: str | Path, payload: dict[str, Any]) -> None:
         if resume.state is not None:
             state = resume.state
             game = resume.game
-        agents = build_agents(specs, game.game_id) if specs else _default_agents(players, game.game_id)
+        lang = str((payload.get("config") or {}).get("lang") or "zh")
+        agents = build_agents(specs, game.game_id, lang) if specs else _default_agents(players, game.game_id, lang)
         if resume.events and state.get("finished"):
             # 已经跑完的只补记分，不再重跑；但终局事件可能因崩溃缺失，
             # 必须补上，否则这一场会永远停在"直播中"。
@@ -266,6 +267,10 @@ def _prepare(db_path: str | Path, payload: dict[str, Any], match_id: str, player
     for key in ("teams", "teamSize", "catalogSize"):
         if key in raw:
             config[key] = raw[key]
+    # lang 决定内容数据语言（代号棋盘词等），必须进到引擎；
+    # 之前被白名单挡掉，导致英文界面里棋盘词仍是中文。
+    if raw.get("lang"):
+        config["lang"] = raw["lang"]
     state = game.init(seed=payload["seed"], players=players, config=config)
 
     log = EventLog.open(db_path, match_id)
@@ -343,17 +348,21 @@ def _terminal_of(db_path: str | Path, match_id: str) -> tuple[str | None, str]:
     return None, ""
 
 
-def _default_agents(players: list[str], game_id: str) -> dict[str, Any]:
-    """没带选手声明时，按赛制给默认对手。"""
+def _default_agents(players: list[str], game_id: str, lang: str = "zh") -> dict[str, Any]:
+    """没带选手声明时，按赛制给默认对手。
+
+    `lang` 决定内置选手内心戏的语言：英文界面里出现中文独白，
+    是本地化没做完最明显的信号。
+    """
     if game_id == "twenty-questions":
-        return {p: GreedyAgent(p, CATALOG) for p in players}
+        return {p: GreedyAgent(p, CATALOG, lang=lang) for p in players}
     if game_id == "codenames":
         from .agents.scripted import CodenamesAgent
 
-        return {p: CodenamesAgent(p) for p in players}
+        return {p: CodenamesAgent(p, lang=lang) for p in players}
     from .agents.scripted import BoardAgent
 
-    return {p: BoardAgent(p, game_id) for p in players}
+    return {p: BoardAgent(p, game_id, lang=lang) for p in players}
 
 
 HANDLERS: dict[str, Callable[[str | Path, dict[str, Any]], None]] = {

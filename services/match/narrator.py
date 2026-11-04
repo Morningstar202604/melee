@@ -72,11 +72,11 @@ class RuleNarrator:
             # 剩得少的领先（先翻完就赢）
             if red < blue:
                 return message("narr.situation.leading", {
-                    "team": "红队", "own": red, "other": "蓝队", "rival": blue,
+                    "team": "team.red", "own": red, "other": "team.blue", "rival": blue,
                 })
             if blue < red:
                 return message("narr.situation.leading", {
-                    "team": "蓝队", "own": blue, "other": "红队", "rival": red,
+                    "team": "team.blue", "own": blue, "other": "team.red", "rival": red,
                 })
             return message("narr.situation.tied", {"count": red})
         return None
@@ -86,12 +86,18 @@ _TEAM_LABEL = {"red": "红队", "blue": "蓝队", "neutral": "中立", "assassin
 
 
 def _team_display(team: str | None) -> str:
-    """解说里的队伍名：预置表优先，动态队伍（team3…）走 codenames.team_label。"""
-    if team in _TEAM_LABEL:
-        return _TEAM_LABEL[team]
-    from .engine.codenames import team_label
+    """解说里的队伍名：返回语言无关的键（如 team.red），由 messages 层翻译。
 
-    return team_label(team) if isinstance(team, str) else str(team)
+    之前直接返回中文「红队」，英文请求里就变成
+    `蓝队 leads: 8 left to 红队's 9`——模板翻了、参数没翻。
+    参数必须保持语言无关，翻译只发生在渲染那一步。
+    """
+    if not isinstance(team, str) or not team:
+        return ""
+    if team in _TEAM_LABEL:
+        return f"team.{team}"
+    # 动态队伍 team3 / side2：交给前端字典的 team.indexed 规则。
+    return team
 
 
 def _message_for_effect(effect: AppliedEffect, player: str, public_state: dict[str, Any]) -> dict[str, Any] | None:

@@ -286,12 +286,13 @@ def test_situation_reports_leader_correctly():
     narrator = RuleNarrator()
     blue_leads = narrator.situation({"remaining": {"red": 9, "blue": 8}}, game_id="codenames")
     assert blue_leads["msg"] == "narr.situation.leading"
-    assert blue_leads["params"]["team"] == "蓝队"
+    # 队伍名存语言无关引用键，渲染时才翻译。
+    assert blue_leads["params"]["team"] == "team.blue"
     assert blue_leads["params"]["own"] == 8
 
     red_leads = narrator.situation({"remaining": {"red": 7, "blue": 9}}, game_id="codenames")
     assert red_leads["msg"] == "narr.situation.leading"
-    assert red_leads["params"]["team"] == "红队"
+    assert red_leads["params"]["team"] == "team.red"
 
     tied = narrator.situation({"remaining": {"red": 5, "blue": 5}}, game_id="codenames")
     assert tied["msg"] == "narr.situation.tied"
