@@ -2,6 +2,22 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循语义化版本。
 
+## [1.8.1] — 2026-11-04
+
+### 修复
+
+- **宿敌面板不可达**：`rivalries()` 要求每组对手交手 ≥2 场，而 `build_round_robin`
+  只排单循环，任意人数下宿敌永远为空——功能存在但永远不会触发。新增
+  `doubleRoundRobin`（API 默认 `false` 保持既有调用方的场次数，赛季弹窗默认勾选）。
+  实机验证：12 场跑完，4 人双循环产生 6 组宿敌数据（每组交手 2 场）。
+- **测试顺序污染**：`test_cipher_from_env_warns_without_key` 单独跑绿、全量跑红，
+  根因是 `settings()` 的 lru_cache 被前序测试设过的 `MELEE_SECRET_KEY` 污染。
+  已显式清缓存；全仓扫描其余 91 处 `MELEE_*` 环境改动，无同类问题。
+
+### 文档
+
+- README 下载入口指向 Release 页（便携 zip 是 Release 资产，不入 git 历史）。
+
 ## [1.8.0] — 2026-11-04
 
 ### 新增
@@ -13,6 +29,7 @@
 - **赛季调度自动发现**：建赛季给了 `startAt` 现在会到点自动开赛——不再要求 `MELEE_SCHEDULE` 点名；点名退化为过滤，`off` 显式关闭。
 - **凭据格式宽容**：`MELEE_API_TOKENS` 接受裸 token（自动命名 token-1/2）。
 - **注册时实测探测**：每个 TextArena env 注册前 `ta.make` 一次，装配失败的赛制不再进入目录。
+- **双循环赛季**：`POST /seasons` 新增 `doubleRoundRobin`（API 默认 `false` 保持兼容，赛季弹窗默认勾选）。单循环下 `rivalries()`（阈值 ≥2 场）永远为空——功能存在但不可达，实测发现；双循环让宿敌面板真的有数据。
 
 ### 变更
 

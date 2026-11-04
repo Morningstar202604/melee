@@ -61,7 +61,16 @@ def test_fingerprint_is_stable_and_short():
 
 
 def test_cipher_from_env_warns_without_key(monkeypatch):
+    """没配密钥时 cipher 关闭。
+
+    必须清 settings() 的 lru_cache：前面的测试设过 MELEE_SECRET_KEY，
+    缓存会让这里读到上一个测试的配置——单独跑绿、全量跑红，
+    是典型的测试顺序依赖，不是产品缺陷。
+    """
+    from services.match.settings import reset_settings
+
     monkeypatch.delenv("MELEE_SECRET_KEY", raising=False)
+    reset_settings()
     cipher = cipher_from_env()
     assert cipher.enabled is False
 

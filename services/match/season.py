@@ -99,31 +99,48 @@ class Season:
     def add_player(self, player_id: str, display: str, persona: str = "", model: str = "") -> None:
         self.roster[player_id] = {"display": display, "persona": persona, "model": model}
 
-    def build_round_robin(self, *, start_at: float | None = None, interval_minutes: float | None = None) -> None:
-        """单循环：每两人打一场。轮次用圆桌法排，保证同轮不重复出场。
+    def build_round_robin(
+        self,
+        *,
+        start_at: float | None = None,
+        interval_minutes: float | None = None,
+        double: bool = False,
+    ) -> None:
+        """循环赛：每两人交手一次（或 double=True 时主客各一次）。
 
+        轮次用圆桌法排，保证同轮不重复出场。
         给了 start_at 就按轮次排期：同一轮同时开赛，轮与轮之间隔 interval_minutes。
         不给时间就只排对阵，由调用方手动触发。
+
+        为什么要有双循环：`rivalries()` 的阈值是"交手 ≥2 场"，
+        单循环下任意人数都凑不满，界面上"宿敌"永远是空的——
+        功能存在但永远不会触发，等于没有。双循环让这个面板真的有数据。
         """
         players = list(self.roster)
         if len(players) % 2:
             players.append("__bye__")
 
         n = len(players)
+        legs = 2 if double else 1
         rounds: list[tuple[int, str, str, float | None]] = []
         round_numbers = 0
-        for r in range(n - 1):
-            round_numbers += 1
-            for i in range(n // 2):
-                a = players[i]
-                b = players[n - 1 - i]
-                if "__bye__" in (a, b):
-                    continue
-                scheduled = None
-                if start_at is not None and interval_minutes is not None:
-                    scheduled = start_at + (r * interval_minutes * 60)
-                rounds.append((r + 1, a, b, scheduled))
-            players = [players[0]] + [players[-1]] + players[1:-1]
+        for leg in range(legs):
+            leg_players = list(players)
+            for _rotation in range(n - 1):
+                round_numbers += 1
+                for i in range(n // 2):
+                    a = leg_players[i]
+                    b = leg_players[n - 1 - i]
+                    if "__bye__" in (a, b):
+                        continue
+                    # 次回合交换主客，让先手轮转在整季里仍然对称。
+                    if leg == 1:
+                        a, b = b, a
+                    scheduled = None
+                    if start_at is not None and interval_minutes is not None:
+                        scheduled = start_at + ((round_numbers - 1) * interval_minutes * 60)
+                    rounds.append((round_numbers, a, b, scheduled))
+                leg_players = [leg_players[0]] + [leg_players[-1]] + leg_players[1:-1]
         self.fixtures = rounds
 
     def record(self, match_id: str, player_a: str, player_b: str, winner: str | None, reason: str = "") -> None:

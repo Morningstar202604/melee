@@ -266,6 +266,7 @@ async function createSeason() {
     game,
     players: players.map((player) => ({ id: player })),
     intervalMinutes: Number(el('sInterval').value || 30),
+    doubleRoundRobin: Boolean(el('sDouble')?.checked),
   }
   const start = el('sStart').value
   if (start) body.startAt = new Date(start).toISOString()

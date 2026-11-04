@@ -35,6 +35,10 @@ class SeasonCreate(BaseModel):
     # 排期：给 startAt（ISO 时间或 unix 秒）就按轮次排开，每轮相隔 intervalMinutes。
     startAt: str | float | None = None
     intervalMinutes: float = Field(default=30.0, ge=1.0, le=1440.0)
+    # 双循环：每对选手主客各一场。单循环下"宿敌"（≥2 场）永远为空，
+    # 被实测发现。API 层保持单循环默认（不改变既有调用方的行为），
+    # 前端弹窗默认勾选它，让新建赛季的宿敌面板有数据。
+    doubleRoundRobin: bool = False
 
 
 @router.get("/seasons")
@@ -95,6 +99,7 @@ async def create_season(body: SeasonCreate, request: Request) -> dict[str, Any]:
     season.build_round_robin(
         start_at=start_at,
         interval_minutes=body.intervalMinutes if start_at is not None else None,
+        double=bool(body.doubleRoundRobin),
     )
 
     conn = sqlite3.connect(db_path_of(request))

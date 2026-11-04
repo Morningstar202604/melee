@@ -8,7 +8,7 @@
 
 **一份只追加的事件流派生一切：直播、回放、导播、战报、高光。** 确定性引擎让任何一场比赛可由种子复现；战报里的每个数字都从事件流数出并经过事实校验。
 
-[观看演示视频](docs/video/walkthrough.mp4) · [快速启动](#快速启动) · [下载 exe](#安装) · [Agent 接入](#agent-harness) · [API](docs/API.md)
+[观看演示视频](docs/video/walkthrough.mp4) · [快速启动](#快速启动) · [下载 exe](https://github.com/badhope/melee/releases/latest) · [Agent 接入](#agent-harness) · [API](docs/API.md)
 
 ![melee 首页与赛事库](docs/screenshots/zh/01-home.png)
 

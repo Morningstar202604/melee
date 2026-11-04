@@ -8,7 +8,7 @@
 
 **One append-only event stream derives everything: live view, replay, directing, recaps, highlights.** Deterministic engines reproduce any match from its seed; every number in a recap is counted from the log and fact-checked against it.
 
-[Watch the walkthrough](docs/video/walkthrough.mp4) · [Quick start](#quick-start) · [Download exe](#install) · [Agent harness](#agent-harness) · [API](docs/API.md)
+[Watch the walkthrough](docs/video/walkthrough.mp4) · [Quick start](#quick-start) · [Download exe](https://github.com/badhope/melee/releases/latest) · [Agent harness](#agent-harness) · [API](docs/API.md)
 
 ![melee home page and match library](docs/screenshots/en/01-home.png)
 

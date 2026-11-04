@@ -256,3 +256,52 @@ class _IdleScheduler:
 
     def shutdown(self, wait=False):
         return None
+
+
+# ---------- 双循环与宿敌 ----------
+# 单循环下任意人数都凑不满 rivalries 的"≥2 场"阈值，界面上宿敌永远为空。
+# 这不是文案问题，是功能不可达：双循环让面板真的有数据。
+
+
+def test_double_round_robin_doubles_every_pairing():
+    from services.match.season import Season
+
+    season = Season("d", "x")
+    for pid in "ABCD":
+        season.add_player(pid, pid)
+    season.build_round_robin()
+    single = len(season.fixtures)
+    season.build_round_robin(double=True)
+    assert len(season.fixtures) == single * 2 == 12
+
+    pairs = {}
+    for _round, a, b, _scheduled in season.fixtures:
+        pairs[tuple(sorted((a, b)))] = pairs.get(tuple(sorted((a, b))), 0) + 1
+    assert set(pairs.values()) == {2}, pairs
+
+
+def test_double_round_robin_swaps_home_and_away():
+    """次回合交换主客：整季的先手分布仍然对称。"""
+    from services.match.season import Season
+
+    season = Season("d", "x")
+    for pid in "AB":
+        season.add_player(pid, pid)
+    season.build_round_robin(double=True)
+    orders = {(a, b) for _r, a, b, _s in season.fixtures}
+    assert orders == {("A", "B"), ("B", "A")}
+
+
+def test_rivalries_appear_with_double_round_robin():
+    from services.match.season import Season
+
+    season = Season("d", "x")
+    for pid in "ABCD":
+        season.add_player(pid, pid)
+    season.build_round_robin(double=True)
+    for index, (_round, a, b, _scheduled) in enumerate(season.fixtures):
+        season.record(f"m{index}", a, b, a if index % 2 == 0 else b, "test")
+    rivalries = season.rivalries()
+    assert rivalries, "双循环下宿敌面板必须有数据"
+    assert all(r["games"] >= 2 for r in rivalries)
+    assert len(rivalries) == 6

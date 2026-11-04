@@ -175,3 +175,40 @@ def test_season_migrates_old_schema(tmp_path):
     conn.close()
     assert season.game == "twenty-questions"
     assert season.name == "旧赛季"
+
+
+def test_create_season_with_double_round_robin(client):
+    """API 契约：doubleRoundRobin=true 排双循环，默认单循环（向后兼容）。"""
+    base = {
+        "seasonId": "double-1",
+        "name": "Double",
+        "game": "tic-tac-toe",
+        "players": [{"id": p} for p in ["A", "B", "C", "D"]],
+    }
+    single = client.post("/seasons", json={**base, "seasonId": "single-1"}).json()
+    assert len(single["fixtures"]) == 6
+
+    doubled = client.post("/seasons", json={**base, "seasonId": "double-1", "doubleRoundRobin": True}).json()
+    assert len(doubled["fixtures"]) == 12
+    pairs = {}
+    for f in doubled["fixtures"]:
+        key = tuple(sorted((f["a"], f["b"])))
+        pairs[key] = pairs.get(key, 0) + 1
+    assert set(pairs.values()) == {2}
+
+
+def test_double_round_robin_produces_rivalries(client):
+    """跑完双循环后，宿敌面板必须有数据（单循环下永远为空）。"""
+    payload = {
+        "seasonId": "rivalry-1",
+        "name": "Rivalry",
+        "game": "tic-tac-toe",
+        "players": [{"id": p} for p in ["A", "B", "C", "D"]],
+        "doubleRoundRobin": True,
+    }
+    assert client.post("/seasons", json=payload).status_code == 201
+    run = client.post("/seasons/rivalry-1/run").json()
+    assert run["played"] == 12
+    detail = client.get("/seasons/rivalry-1").json()
+    assert len(detail["rivalries"]) == 6
+    assert all(r["games"] >= 2 for r in detail["rivalries"])
