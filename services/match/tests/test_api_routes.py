@@ -276,7 +276,10 @@ def test_create_match_accepts_multi_team_config(client):
 
     events = client.get(f"/matches/{match_id}/events").json()["events"]
     created = next(e for e in events if e["type"] == "match.created")
-    assert created["payload"]["config"] == {"teams": 3, "teamSize": 2}
+    # config 现在还带 lang/seedMode（语言与种子模式），断言子集而不是精确相等：
+    # 精确相等会让每加一个平台级字段都误报。
+    cfg = created["payload"]["config"]
+    assert cfg["teams"] == 3 and cfg["teamSize"] == 2
 
 
 def test_create_match_rejects_team_count_mismatch(client):

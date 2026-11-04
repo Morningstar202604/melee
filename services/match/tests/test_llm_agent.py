@@ -185,8 +185,13 @@ def test_llm_agent_plays_a_full_match_against_greedy():
     thought = next(e for e in events if e["type"] == "thought.delta")
     assert thought["player"] == first
     assert thought["payload"]["text"] == "先砍一半"
-    proposed = next(e for e in events if e["type"] == "action.proposed" and e["player"] == first)
-    assert "category=建筑" in proposed["payload"]["raw"]
+    # 模型原文现在写在私有 thought.delta 里（公开事件只带动作本身）。
+    raw_thoughts = [
+        e["payload"].get("text", "")
+        for e in events
+        if e["type"] == "thought.delta" and e["player"] == first
+    ]
+    assert any("category=建筑" in t for t in raw_thoughts), raw_thoughts[:2]
 
 
 def test_illegal_llm_output_is_rejected_then_forfeits():
@@ -353,7 +358,8 @@ def test_budget_exceeded_ends_match_with_reason():
     ended = [e for e in events if e["type"] == "match.ended"]
     assert len(ended) == 1
     assert ended[0]["payload"]["reason"].startswith("token 预算用尽")
-    assert result.winner is None
+    # 预算耗尽判该选手负，不是平局：旧语义允许落后方烧预算"消局"。
+    assert result.winner is not None and result.winner != "A"
 
 
 def test_budget_stops_before_second_request():

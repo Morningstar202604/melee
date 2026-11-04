@@ -117,6 +117,7 @@ class Runner:
         max_thought_chars: int = 4000,
         resume: bool = False,
         enforce_deadline: bool = False,
+        seed_mode: str = "",
     ) -> None:
         self.game = game
         self.log = log
@@ -129,6 +130,8 @@ class Runner:
         self.max_thought_chars = max_thought_chars
         # resume=True 表示日志里已有前半段：不再补写 match.created / match.started。
         self.resume = resume
+        # seed_mode：secure 时不把种子写进公开事件（种子能重建隐藏信息）。
+        self.seed_mode = seed_mode
         # enforce_deadline：config.turnTimeoutMs 设置后由墙钟强制。
         # 关闭时 deadline_ms 只写进 turn.started 事件（旧行为：告知，不执行）。
         self.enforce_deadline = enforce_deadline
@@ -181,18 +184,22 @@ class Runner:
         return self._finish(state, state.get("endReason") or "结束", state.get("winner"), turns)
 
     def play_with_budget(self, state: dict[str, Any]) -> RunnerResult:
-        """play() 的预算感知版本：token 预算用尽时正常写 match.ended 并结束。
+        """play() 的预算感知版本：token 预算用尽时写 match.ended 并结束。
 
-        预算终止不是犯规：reason 要说明是预算，而不是"选手不会玩"；
-        turns 报实际已完成的回合数，不是 0。
+        预算终止判**该选手负**，不是平局：旧实现 `winner=None`，
+        于是落后方可以主动烧光预算把必败局变成平局——这是"输不起就消局"。
+        预算耗尽与超时、弃权属于同一类"这一方没能继续比赛"。
         """
         try:
             return self.play(state)
         except LLMBudgetExceeded as exc:
+            loser = getattr(self, "_budget_exhausted_by", None)
+            players = list(state.get("players") or [])
+            winner = next((p for p in players if p != loser), None) if loser else None
             return self._finish(
                 state,
-                f"token 预算用尽：{exc}",
-                None,
+                f"token 预算用尽（{loser}）：{exc}",
+                winner,
                 self._completed_turns,
             )
 
@@ -214,24 +221,33 @@ class Runner:
     def _record_start(self, state: dict[str, Any], players: list[PlayerId]) -> None:
         config = {
             key: state[key]
-            for key in ("maxQuestions", "teams", "teamSize", "catalogSize")
+            for key in ("maxQuestions", "teams", "teamSize", "catalogSize", "lang")
             if key in state
         }
+        if self.seed_mode:
+            config["seedMode"] = self.seed_mode
         # 回合墙钟是平台层配置（不属于任何赛制状态），也必须落进
         # match.created：重放与战报要能回答"这一手为什么被判超时"。
         if self.enforce_deadline:
             config["turnTimeoutMs"] = self.deadline_ms
-        self.log.append(
-            "match.created",
-            {
-                "game": self.game.game_id,
-                "players": players,
-                "seed": state["seed"],
-                # 赛制配置必须完整落进 match.created：rehydrate 靠它重建同一局。
-                # 漏记 teams/teamSize 会让重放退回默认编队，多队对局直接错乱。
-                "config": config,
-            },
-        )
+        # 事件流对所有观众可见，而 seed 能重建隐藏信息。
+        # secure 模式不把种子写进事件：回放靠事件本身，不需要重新抽签。
+        created_payload = {
+            "game": self.game.game_id,
+            "players": players,
+            # 赛制配置必须完整落进 match.created：rehydrate 靠它重建同一局。
+            # 漏记 teams/teamSize 会让重放退回默认编队，多队对局直接错乱。
+            "config": config,
+        }
+        # 只有 replay 模式公开种子（那时公开是产品功能）；secure 模式不写。
+        # 没有 seedMode 的是历史事件或直接构造引擎的测试：保留旧行为，
+        # 否则老录像会因缺 seed 而无法重建。
+        from .fairness import assert_seed_disclosure_allowed
+
+        seed_mode = self.seed_mode
+        if not seed_mode or assert_seed_disclosure_allowed(seed_mode):
+            created_payload["seed"] = state["seed"]
+        self.log.append("match.created", created_payload)
         first = self.game.current_player(state) or players[0]
         self.log.append("match.started", {"firstPlayer": first})
 
@@ -285,6 +301,8 @@ class Runner:
         move: Move | None = None
         self._turn_elapsed_ms = 0
         self._turn_usage = None
+        # 预算耗尽的责任方：由 _take_turn 在抛异常前写入。
+        self._budget_exhausted_by: PlayerId | None = None
         thoughts: list[str] = []
         on_thought, _seen = self._thought_sink(player, state, thoughts)
         try:
@@ -307,7 +325,20 @@ class Runner:
                     if isinstance(usage, dict) and usage:
                         self._turn_usage = _merge_usage(self._turn_usage, usage)
                 except LLMBudgetExceeded:
+                    # 记下是谁烧穿的：判负要用，不能一律判平局。
+                    self._budget_exhausted_by = player
                     raise
+                except Exception as exc:  # noqa: BLE001 - 选手实现是外部代码
+                    # 选手抛异常不能把比赛挂死：旧实现直接冒泡，比赛停在
+                    # turn.started、没有 match.ended，任务重试 3 次后 failed，
+                    # 观众看到一场永远"直播中"的比赛。
+                    # 语义上这与弃权同类：这一方没能给出合法动作。
+                    self.log.append(
+                        "action.rejected",
+                        {"reason": f"选手异常：{type(exc).__name__}: {exc}"[:300], "retryable": False},
+                        player=player,
+                    )
+                    return None, None
                 except TurnTimeout as exc:
                     # 墙钟到点：与非法动作同一条弃权路径，但原因要能对上事件。
                     self.log.append(
@@ -317,11 +348,26 @@ class Runner:
                     )
                     return None, None
                 move = output.move
+                # 事件流对所有观众必须**同样长**：seq 是主键，私有事件被
+                # 过滤后会出现空洞（实测 [0..5,7]），断线续传与回放都会错位。
+                # 所以 `action.proposed` 保持公开、只带动作本身；
+                # 模型原文可能夹带私有推理（代号队长原文里出现过整盘配色），
+                # 单独写成一条私有事件 thought.raw，只对该作者可见。
                 self.log.append(
                     "action.proposed",
-                    {"action": {"kind": move.kind, "value": move.value}, "raw": output.raw[:4000]},
+                    # raw 是契约必填字段；公开事件里只记动作，原文另存私有事件。
+                    {"action": {"kind": move.kind, "value": move.value}, "raw": ""},
                     player=player,
                 )
+                if output.raw:
+                    # 复用与 on_thought 相同的可见性判定：代号队长的原文
+                    # 含配色，必须私有；其他赛制的原文是公开的思考。
+                    self.log.append(
+                        "thought.delta",
+                        {"text": output.raw[:self.max_thought_chars]},
+                        player=player,
+                        visibility=_thought_visibility(self.game, state, player),
+                    )
                 result = self.game.apply(state, player, move)
                 if result.legal:
                     _record_own_history(self.agents, player, move, thoughts)

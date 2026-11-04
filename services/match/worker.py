@@ -144,6 +144,7 @@ def run_match_job(db_path: str | Path, payload: dict[str, Any]) -> None:
                 resume=resume.events,
                 deadline_ms=turn_timeout,
                 enforce_deadline=turn_timeout is not None,
+                seed_mode=str((payload.get("config") or {}).get("seedMode") or ""),
             ).play_with_budget(state)
     finally:
         log.close()
@@ -264,7 +265,10 @@ def _prepare(db_path: str | Path, payload: dict[str, Any], match_id: str, player
     # turnTimeoutMs 是平台层的回合墙钟，不属于任何赛制的状态：不能漏进
     # game.init（引擎收到未知键会忽略，但重放 config 会带着它误导人）。
     raw.pop("turnTimeoutMs", None)
-    for key in ("teams", "teamSize", "catalogSize"):
+    # 这份白名单必须与"引擎/运行器真正需要的 config 键"同步。
+    # 漏一个键不会报错，只会静默降级——lang 漏过一次（棋盘词不翻译），
+    # seedMode 漏过一次（种子照样写进公开事件）。所以这里列全，并有测试守着。
+    for key in ("teams", "teamSize", "catalogSize", "seedMode"):
         if key in raw:
             config[key] = raw[key]
     # lang 决定内容数据语言（代号棋盘词等），必须进到引擎；

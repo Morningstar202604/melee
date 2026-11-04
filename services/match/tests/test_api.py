@@ -39,7 +39,10 @@ def test_events_are_monotonic_and_replayable(client):
 
     payload = client.get(f"/matches/{data['matchId']}/events").json()
     seqs = [e["seq"] for e in payload["events"]]
-    assert seqs == list(range(len(seqs)))
+    # 公开视图里 seq 严格递增且不重复，但**允许有空洞**：
+    # 私有事件（选手思考）对观众不可见，硬要连续就得给每个观众重编号，
+    # 那样同一条事件在不同身份下的 id 不同，回放与续传都会错位。
+    assert seqs == sorted(set(seqs)), f"seq 必须严格递增且无重复：{seqs}"
     assert payload["nextAfter"] == seqs[-1]
 
     tail = client.get(f"/matches/{data['matchId']}/events", params={"after": seqs[-2]}).json()

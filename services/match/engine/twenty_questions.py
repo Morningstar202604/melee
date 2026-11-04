@@ -143,7 +143,9 @@ class TwentyQuestions:
             "isYourTurn": self.current_player(state) == player,
             "history": [dict(item) for item in state["history"]],
             "yourRemaining": len(_candidates(state)),
-            "aspects": ASPECTS,
+            # 必须深拷贝：直接返回全局 ASPECTS 时，选手往列表里 append
+            # 就能改掉整台服务器的规则表，而且跨对局持续（实测复现）。
+            "aspects": copy.deepcopy(ASPECTS),
             "candidates": [row["name"] for row in CATALOG[: state.get("catalogSize", len(CATALOG))]],
         }
 

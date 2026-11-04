@@ -113,9 +113,18 @@ def _release_season_lock(conn: sqlite3.Connection, season_id: str, owner: str) -
 
 
 def _played_matches(season: Season) -> set[tuple[int, str, str]]:
+    """已打过的场次，键是 (round, playerA, playerB)。
+
+    必须保留**有向**对位：双循环的第二回合是 A vs B 交换成 B vs A，
+    用无序 set{playerA,playerB} 判重会把第二回合当成第一回合已经打过，
+    于是跑完第一轮就永远跳过剩下的全部场次（实测 played=0, skipped=12）。
+    """
     done = {(r["playerA"], r["playerB"]) for r in season.results}
-    done |= {(r["playerB"], r["playerA"]) for r in season.results}
-    return {(round_no, a, b) for round_no, a, b, _scheduled in season.fixtures if (a, b) in done}
+    return {
+        (round_no, a, b)
+        for round_no, a, b, _scheduled in season.fixtures
+        if (a, b) in done
+    }
 
 
 def due_season_ids(db_path: str | Path, *, now: float | None = None) -> list[str]:
@@ -230,7 +239,11 @@ def _play_fixture(
         )
 
     # 种子必须对任意选手名稳定：ord() 只接受单字符，中文名会直接崩。
-    fresh = game.init(seed=_stable_seed(round_no, a, b), players=[a, b], config=config)
+    fresh = game.init(
+        seed=_stable_seed(round_no, a, b, _season_salt(season.season_id)),
+        players=[a, b],
+        config=config,
+    )
     state = existing.state if existing.state is not None else fresh
 
     log = EventLog.open(db_path, match_id)
@@ -263,19 +276,35 @@ def _play_fixture(
     )
 
 
-def _stable_seed(round_no: int, a: str, b: str) -> int:
-    """由轮次与两个选手名生成稳定种子（同参数必得同种子）。
+def _stable_seed(round_no: int, a: str, b: str, season_salt: int = 0) -> int:
+    """由轮次、两个选手名与赛季盐生成稳定种子（同参数必得同种子）。
 
-    用位置加权哈希，不用 Python 的 hash()——后者每次进程启动都变，
-    会让"同一赛季重跑得到同样结果"这条保证失效。
+    为什么需要 season_salt：只用名字哈希时，种子的奇偶性由名字决定——
+    而奇偶决定谁先手。实测 6 人赛季里，固定一个名字枚举 500 个候选名，
+    219 人整个赛季 5 场全后手、281 人 5 场全先手；先手次数不是 2/3，
+    而是 0 或 5。赛季排名因此可以被"改名"操纵。
+    加一个由赛季 id 派生的盐，让同一名字在不同赛季/不同轮次分散开。
+
+    不用 Python 的 hash()：它每次进程启动都变，会让
+    "同一赛季重跑得到同样结果"这条保证失效。
     """
-    total = round_no * 1000
+    # 轮次乘 1001（奇数）而不是 1000（偶数）：偶数偏移不改变奇偶性，
+    # 同一对选手每个轮次的先手会固定不变。奇数偏移让轮次交替。
+    total = round_no * 1001 + season_salt
     for index, name in enumerate((a, b)):
         acc = 0
         for ch in name:
             acc = (acc * 131 + ord(ch)) % 100000
         total += acc * (17 if index == 0 else 43)
     return total % 2_147_483_647
+
+
+def _season_salt(season_id: str) -> int:
+    """赛季盐：由赛季 id 稳定派生，同一赛季永远相同，不同赛季不同。"""
+    acc = 0
+    for ch in season_id:
+        acc = (acc * 131 + ord(ch)) % 1_000_003
+    return acc
 
 
 @dataclass

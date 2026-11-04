@@ -47,7 +47,14 @@ def export_match(
         if not any(e["type"] == "match.ended" for e in events):
             raise ValueError("match not ended; reveal is not allowed yet")
     else:
-        events = [e for e in events if visible(e, None)]
+        # 过滤私有事件时必须**保留 seq 连续性**：直接丢掉会让 seq 出现空洞，
+        # 导入端按"seq 必须从 0 连续"校验，于是任何含私有事件的比赛都导不进来
+        # （实测 test_export_roundtrip 直接 ValueError）。
+        # 做法：私有事件替换成一条占位（同样的 seq/type），内容抹掉。
+        events = [
+            e if visible(e, None) else {**e, "payload": {"redacted": True}}
+            for e in events
+        ]
     created = events[0]["payload"]
     ended = [e for e in events if e["type"] == "match.ended"]
     return {

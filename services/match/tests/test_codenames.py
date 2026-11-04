@@ -15,8 +15,20 @@ from services.match.engine.codenames import (
 )
 
 
-def start(seed: int = 3):
+def start(seed: int = 3, *, red_first: bool = False):
+    """造一局 4 人代号。
+
+    先手现在由 seed 轮转（公平性修复）。依赖"红队先手"的旧测试传
+    red_first=True，由这里挑一个让红队先手的 seed——测试意图不变，
+    但不再假设"红队永远先手"这个错误前提。
+    """
     game = Codenames()
+    if red_first:
+        for candidate in range(64):
+            state = game.init(seed=candidate, players=["A", "B", "C", "D"], config={})
+            if state["turn"] == "red":
+                return game, state
+        raise AssertionError("找不到让红队先手的 seed")
     state = game.init(seed=seed, players=["A", "B", "C", "D"], config={})
     return game, state
 
@@ -32,8 +44,11 @@ def test_board_has_25_distinct_words():
 def test_colors_match_layout():
     _game, state = start()
     colors = state["colors"]
-    assert colors.count(TEAM_RED) == LAYOUT[TEAM_RED]
-    assert colors.count(TEAM_BLUE) == LAYOUT[TEAM_BLUE]
+    # 先手队拿 9 个（官方补偿），先手由 seed 决定，不再固定红队。
+    first = state["turn"]
+    other = TEAM_BLUE if first == TEAM_RED else TEAM_RED
+    assert colors.count(first) == LAYOUT[TEAM_RED]
+    assert colors.count(other) == LAYOUT[TEAM_BLUE]
     assert colors.count(TEAM_NEUTRAL) == LAYOUT[TEAM_NEUTRAL]
     assert colors.count(TEAM_ASSASSIN) == LAYOUT[TEAM_ASSASSIN]
 
@@ -74,7 +89,7 @@ def test_public_board_hides_unrevealed_colors():
 
 
 def test_public_board_reveals_color_after_pick():
-    game, state = start()
+    game, state = start(red_first=True)
     # 队长给线索 → 队员翻一个词
     r1 = game.apply(state, "A", Move("guess", "hint:测试 2"))
     state = r1.next_state
@@ -110,8 +125,10 @@ def test_agent_observation_never_contains_full_palette():
 # ---------- 回合与动作 ----------
 
 def test_red_captain_starts_with_hint_phase():
-    game, state = start()
-    assert state["turn"] == TEAM_RED
+    game, state = start(red_first=True)
+    # 先手随 seed 轮转；这里断言"轮到的是某一支真实队伍且是线索阶段"。
+    assert state["turn"] in {TEAM_RED, TEAM_BLUE}
+    assert state["phase"] == "hint"
     assert state["phase"] == "hint"
     assert game.current_player(state) == "A"
 
@@ -131,74 +148,87 @@ def test_hint_requires_number():
 
 def test_hint_number_out_of_range_rejected():
     game, state = start()
-    assert not game.apply(state, "A", Move("guess", "hint:测试 0")).legal
-    assert not game.apply(state, "A", Move("guess", "hint:测试 99")).legal
+    captain = game.current_player(state)
+    assert not game.apply(state, captain, Move("guess", "hint:测试 0")).legal
+    assert not game.apply(state, captain, Move("guess", "hint:测试 99")).legal
 
 
 def test_valid_hint_moves_to_guess_phase():
     game, state = start()
-    result = game.apply(state, "A", Move("guess", "hint:测试 2"))
+    result = game.apply(state, game.current_player(state), Move("guess", "hint:测试 2"))
     assert result.legal
     assert result.next_state["phase"] == "guess"
-    assert game.current_player(result.next_state) == "C"
+    # 线索之后由"给线索那一队的队员"猜，不能写死红队队员 C。
+    captain = game.current_player(state)
+    assert game.current_player(result.next_state) != captain
 
 
 def test_wrong_player_cannot_act():
     game, state = start()
-    result = game.apply(state, "B", Move("guess", "hint:测试 2"))
+    current = game.current_player(state)
+    # 随便找一个不是当前行动者的选手（先手随 seed 轮转，不能写死名字）。
+    other = next(p for p in state["players"] if p != current)
+    result = game.apply(state, other, Move("guess", "hint:测试 2"))
     assert not result.legal
 
 
 def test_pick_unknown_word_rejected():
     game, state = start()
-    state = game.apply(state, "A", Move("guess", "hint:测试 2")).next_state
-    result = game.apply(state, "C", Move("guess", "pick:不存在的词"))
+    state = game.apply(state, game.current_player(state), Move("guess", "hint:测试 2")).next_state
+    result = game.apply(state, game.current_player(state), Move("guess", "pick:不存在的词"))
     assert not result.legal
 
 
 def test_cannot_pick_same_word_twice():
-    game, state = start()
-    state = game.apply(state, "A", Move("guess", "hint:测试 3")).next_state
+    game, state = start(red_first=True)
+    state = game.apply(state, game.current_player(state), Move("guess", "hint:测试 3")).next_state
     word = state["words"][0]
-    state = game.apply(state, "C", Move("guess", f"pick:{word}")).next_state
+    picker = game.current_player(state)
+    state = game.apply(state, picker, Move("guess", f"pick:{word}")).next_state
 
-    # 若还轮到红队队员，再猜同一个词应当被拒
-    if game.current_player(state) == "C":
-        assert not game.apply(state, "C", Move("guess", f"pick:{word}")).legal
+    # 猜中己方词会继续由同一队猜；再猜同一个已翻开的词必须被拒。
+    if game.current_player(state) == picker:
+        assert not game.apply(state, picker, Move("guess", f"pick:{word}")).legal
 
 
 # ---------- 胜负 ----------
 
 def test_hitting_assassin_loses_immediately():
-    game, state = start()
+    game, state = start(red_first=True)
     assassin_index = state["colors"].index(TEAM_ASSASSIN)
     word = state["words"][assassin_index]
 
-    state = game.apply(state, "A", Move("guess", "hint:测试 3")).next_state
-    result = game.apply(state, "C", Move("guess", f"pick:{word}"))
+    state = game.apply(state, game.current_player(state), Move("guess", "hint:测试 3")).next_state
+    picker_team = _team_of_player(game, state, game.current_player(state))
+    result = game.apply(state, game.current_player(state), Move("guess", f"pick:{word}"))
     assert result.legal
     assert result.next_state["finished"] is True
-    assert result.next_state["winner"] == TEAM_BLUE
+    # 翻到刺客的队伍出局，胜者来自其余队伍。
+    assert result.next_state["winner"] not in {picker_team, TEAM_ASSASSIN}
 
 
 def test_wrong_guess_switches_turn():
-    game, state = start()
-    # 找一个蓝队的词
-    blue_index = state["colors"].index(TEAM_BLUE)
-    word = state["words"][blue_index]
+    game, state = start(red_first=True)
+    first = state["turn"]
+    other = TEAM_BLUE if first == TEAM_RED else TEAM_RED
+    # 找对手队伍的词：猜错才会换手。
+    other_index = state["colors"].index(other)
+    word = state["words"][other_index]
 
-    state = game.apply(state, "A", Move("guess", "hint:测试 3")).next_state
-    result = game.apply(state, "C", Move("guess", f"pick:{word}"))
+    state = game.apply(state, game.current_player(state), Move("guess", "hint:测试 3")).next_state
+    result = game.apply(state, game.current_player(state), Move("guess", f"pick:{word}"))
     assert result.legal
-    assert result.next_state["turn"] == TEAM_BLUE
+    assert result.next_state["turn"] == other
     assert result.next_state["phase"] == "hint"
 
 
 def test_forfeit_hands_win_to_other_team():
-    game, state = start()
-    result = game.apply(state, "A", Move("forfeit", ""))
+    game, state = start(red_first=True)
+    forfeiter_team = state["turn"]
+    expected = TEAM_BLUE if forfeiter_team == TEAM_RED else TEAM_RED
+    result = game.apply(state, game.current_player(state), Move("forfeit", ""))
     assert result.legal
-    assert result.next_state["winner"] == TEAM_BLUE
+    assert result.next_state["winner"] == expected
 
 
 # ---------- 默认选手能打完 ----------
@@ -357,15 +387,20 @@ def test_history_has_hint_and_pick_kinds():
 
 def test_legal_moves_exclude_revealed_words():
     """已翻开的词不能再进可选列表：模型照着选会连犯两次规然后弃权。"""
-    game, state = start()
-    r1 = game.apply(state, "A", Move("guess", "hint:测试 2"))
+    game, state = start(red_first=True)
+    r1 = game.apply(state, game.current_player(state), Move("guess", "hint:测试 2"))
     state = r1.next_state
-    word = state["words"][0]
-    r2 = game.apply(state, "C", Move("guess", f"pick:{word}"))
+    # 挑一个"对手颜色"的词：猜错才会换手，才能推进到下一轮猜词阶段。
+    my_team = state["turn"]
+    other = TEAM_BLUE if my_team == TEAM_RED else TEAM_RED
+    word = state["words"][state["colors"].index(other)]
+    r2 = game.apply(state, game.current_player(state), Move("guess", f"pick:{word}"))
+    assert r2.legal, r2.reason
     state = r2.next_state
 
-    # 猜错会换手回到对方队长；推进到下一次猜词阶段再断言。
-    r3 = game.apply(state, game.current_player(state), Move("guess", "hint:测试 1"))
+    assert not state["finished"], "猜错对手词不该终局"
+    hint_giver = game.current_player(state)
+    r3 = game.apply(state, hint_giver, Move("guess", "hint:测试 1"))
     state = r3.next_state
     picker = game.current_player(state)
     options = game.legal_moves(state, picker)
@@ -379,10 +414,12 @@ def test_legal_moves_exclude_revealed_words():
 
 def test_layout_numbers_are_absolute_not_self_referential():
     """配色数量必须写死成规则值：只断言 counts == LAYOUT 时，改常量也测不出来。"""
-    game, state = start()
+    game, state = start(red_first=True)
     colors = state["colors"]
-    assert colors.count(TEAM_RED) == 9
-    assert colors.count(TEAM_BLUE) == 8
+    first = state["turn"]
+    second = TEAM_BLUE if first == TEAM_RED else TEAM_RED
+    assert colors.count(first) == 9
+    assert colors.count(second) == 8
     assert colors.count(TEAM_NEUTRAL) == 7
     assert colors.count(TEAM_ASSASSIN) == 1
     assert len(colors) == 25
@@ -414,7 +451,7 @@ def test_own_word_highlight_requires_color_match():
 
 def test_current_player_respects_phase_and_team():
     """轮到谁：线索阶段是队长，猜词阶段是队员；换队后跟着换。"""
-    game, state = start()
+    game, state = start(red_first=True)
     assert game.current_player(state) == "A"  # 红队队长
     r1 = game.apply(state, "A", Move("guess", "hint:海 1"))
     state = r1.next_state
@@ -466,3 +503,55 @@ def test_captain_targets_an_unrevealed_own_word():
     # 线索不能是已翻开那个词直接派生的（旧实现会给出「<已翻开词>相关」）
     revealed_word = words[first_red]
     assert clue != f"{revealed_word}相关", f"线索仍指向已翻开的词 {revealed_word}"
+
+
+def _team_of_player(game, state, player) -> str | None:
+    """从该选手的观察里读队伍；观察不带 team 时退回席位表。"""
+    obs = game.observe(state, player)
+    team = obs.get("team")
+    if team:
+        return team
+    names = state.get("teamNames") or []
+    size = int(state.get("teamSize") or 2)
+    index = state["players"].index(player)
+    return names[index // size] if names and index // size < len(names) else None
+
+
+def test_first_turn_rotates_with_seed():
+    """先手必须随 seed 轮转，不能固定某一队。
+
+    旧实现写死 `"turn": TEAM_RED`：代号是唯一"同一选手永远同席位"的赛制，
+    而其它 10 个赛制都随 seed 轮转。固定先手 = 固定席位优势。
+    """
+    firsts = set()
+    for seed in range(12):
+        _game, state = start(seed)
+        firsts.add(state["turn"])
+    assert firsts == {TEAM_RED, TEAM_BLUE}, f"先手没有轮转：{firsts}"
+
+
+def test_forfeit_from_non_red_team_does_not_always_favour_red():
+    """3 队时任一队弃权，胜者不能一律是红队。
+
+    旧实现 `TEAM_BLUE if team == TEAM_RED else TEAM_RED`：
+    team3 弃权也判红队赢。超时复用同一条路径，等于把故障送给固定一方。
+    """
+    game = Codenames()
+    state = game.init(seed=0, players=[f"p{i}" for i in range(6)],
+                      config={"teams": 3, "teamSize": 2})
+    winners = {}
+    for team in ("red", "blue", "team3"):
+        # 弃权只对"当前行动者"合法，所以把 state 的先手与阶段摆到该队。
+        probe = dict(state)
+        probe["turn"] = team
+        probe["phase"] = "hint"
+        probe["finished"] = False
+        probe["winner"] = None
+        result = game.apply(probe, game.current_player(probe), Move("forfeit", ""))
+        assert result.legal, result.reason
+        winners[team] = result.next_state["winner"]
+    # 核心断言：胜者永远不是弃权方自己，且不同队弃权得到不同胜者
+    # （旧实现一律把非红队的弃权判给红队，set 只会有一个值）。
+    for out_team, winner in winners.items():
+        assert winner is not None and winner != out_team, f"{out_team} 弃权后胜者异常：{winners}"
+    assert len(set(winners.values())) == 3, f"不同队弃权应判给不同队伍：{winners}"

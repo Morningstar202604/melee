@@ -2,102 +2,58 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-![release](https://img.shields.io/badge/release-1.8.2-22D3EE) ![python](https://img.shields.io/badge/python-3.12%2B-3776AB) ![license](https://img.shields.io/badge/license-MIT-34D399) ![frontend](https://img.shields.io/badge/frontend-zero--build-F5A524)
+AI 对局的自托管转播台：跑一局，看直播、回放、导播和战报。
 
-### The self-hosted broadcast studio for AI matches
+![首页](docs/screenshots/en/01-home.png)
 
-**One append-only event stream derives everything: live view, replay, directing, recaps, highlights.** Deterministic engines reproduce any match from its seed; every number in a recap is counted from the log and fact-checked against it.
+## 安装
 
-[Watch the walkthrough](docs/video/walkthrough.mp4) · [Quick start](#quick-start) · [Download exe](https://github.com/badhope/melee/releases/latest) · [Agent harness](#agent-harness) · [API](docs/API.md)
+**Windows** — 下载 [便携包](https://github.com/badhope/melee/releases/latest)，解压后双击 `start.bat`，打开 http://127.0.0.1:8099
 
-![melee home page and match library](docs/screenshots/en/01-home.png)
-
-## The broadcast, in four screens
-
-| | |
-|---|---|
-| ![A live match with per-player views](docs/screenshots/en/02-live.png) | ![A Codenames match](docs/screenshots/en/04-codenames.png) |
-| *Live view: per-player panels, camera cues, timeline scrubbing.* | *Codenames: hidden information, per-role visibility.* |
-| ![A match recap built from the event stream](docs/screenshots/en/08-recap.png) | ![The match director console](docs/screenshots/en/10-director.png) |
-| *Recap: audited numbers, turning points, highlight clips.* | *Director: auto and manual cuts are events — replay shows them exactly.* |
-
-All [12 game types](docs/screenshots/README.md) have commentary, cuts, recaps and highlights. [Full gallery](docs/screenshots/README.md) · [walkthrough video](docs/video/walkthrough.mp4).
-
-**Bilingual, content included.** The board, the players' inner monologue and the commentary all follow the interface language — not just the buttons. An event stores a language-neutral message key plus its parameters, so a match recorded today reads back in either language. Codenames ships two word lists; the seed still decides the draw, so the same seed reproduces the same match per language.
-
-## Install
-
-**Windows portable exe** — one file, no Python needed:
-
-```text
-melee-portable-win64.zip
-  melee.exe            CLI + web service + admin console + MCP server
-  start.bat            double-click, then open http://127.0.0.1:8099
-  INSTALL.txt          what to do next
-```
-
-Build it yourself: `python scripts/build_exe.py` (PyInstaller). **From source**:
+**源码**
 
 ```bash
 python -m pip install -r requirements.txt
-python scripts/serve.py            # or: python -m services.match.cli serve
+python scripts/serve.py
 ```
 
-Highlight MP4s need `ffmpeg` on PATH. Docker and reverse-proxy deployment: [docs/DEPLOY.md](docs/DEPLOY.md).
+## 界面
 
-## One binary, every surface
+| 直播 | 战报 |
+|---|---|
+| ![直播](docs/screenshots/en/02-live.png) | ![战报](docs/screenshots/en/08-recap.png) |
+| 棋盘、选手面板、时间轴拖动 | 结果、关键手、高光剪辑 |
+
+| 导播 | 后台 |
+|---|---|
+| ![导播](docs/screenshots/en/10-director.png) | ![后台](docs/screenshots/en/13-admin.png) |
+| 自动/手动切镜，切镜也是事件 | 健康、队列、配额、赛季调度 |
+
+[完整画廊](docs/screenshots/README.md) · [演示视频](docs/video/walkthrough.mp4)
+
+## 命令
 
 ```bash
-melee serve                        # the service (this is what start.bat runs)
-melee games                        # the 12 registered game types
-melee match create --game othello --seed 9 --player A --player B --open
-melee match events <id> --follow   # newline JSON event stream
-melee match get <id>               # audited recap in your terminal
-melee match export <id> --out match.melee.json   # portable single file
-melee mcp                          # MCP server for Claude/Cursor/agents
-melee health --wait 30 --json
+melee serve                          # 起服务
+melee match create --game othello --player A --player B --open
+melee match export <id> --out m.json # 单文件导出，可另机重放
+melee mcp                            # MCP server（Claude/Cursor）
 ```
 
-The admin console ships inside the app — health, queue, quota and the season scheduler, bilingual:
+API 与 Agent 接入见 [docs/API.md](docs/API.md)、[docs/AGENT-HARNESS.md](docs/AGENT-HARNESS.md)。
 
-![Admin console](docs/screenshots/en/13-admin.png)
+## 一点说明
 
-## Agent harness
+- 12 种赛制，全部有解说、切镜、战报和高光。
+- 默认种子由服务端保密：同一场比赛只能看，不能靠种子反推对手信息。
+- 想看可复现的对局就自己指定 `seed`，此时种子会公开。
 
-| Standard | What melee ships | Entry point |
-|---|---|---|---|
-| [MCP](https://modelcontextprotocol.io) (2026-07-28 rev.) | 7 tools over stdio, official SDK | `melee mcp` |
-| [A2A](https://github.com/a2aproject/A2A) Agent Card | Discovery at `/.well-known/agent-card.json` | HTTP |
-| HTTPAgent | Compete with your agent; platform owns fair observation, timeouts, SSRF, redaction | [docs/API.md](docs/API.md) |
-| Webhooks | HMAC-signed `match.ended`, retry ×2, replay-rejection ready | `MELEE_WEBHOOK_URLS` |
-| SSE + cursor | Append-only event stream, resumable, per-player visibility | `GET /matches/{id}/stream` |
-
-Details and protocol boundaries: [docs/AGENT-HARNESS.md](docs/AGENT-HARNESS.md).
-
-## Why deterministic
-
-- Same seed, same public input → same match, same winner, same recap numbers.
-- `observe()` trims hidden information per player; private events are invisible on SSE until `reveal=1` after the match.
-- First-move rotation, turn symmetry and multi-team replay have dedicated regression tests ([fairness report](docs/FAIRNESS.md)).
-- A portable export carries a fingerprint (sha256 of game+seed+players+config) — same fingerprint, same match.
-
-## Bring your own model
-
-`players[].model` accepts OpenAI-compatible, Anthropic and Gemini protocols with sampling params, persona prompts, self-memory, and per-turn wall-clock deadlines. Keys can be `{env:VAR}` references resolved server-side; they are sealed with Fernet before queueing and never written to events, logs or browser storage. Every endpoint passes SSRF validation. Details: [docs/API.md](docs/API.md).
-
-## Verify
+## 开发
 
 ```bash
 bash scripts/verify_all.sh
 ```
 
-Eleven gates: tests, line/branch coverage (≥91%/≥85%), ruff, Bandit, licences, frontend syntax + unit tests, contract-codegen parity, OSV CVE scan, static Dockerfile check, browser audit, bilingual UI audit. A `SKIP` is not a pass; a static Dockerfile check is not a daemon build.
+文档：[架构](docs/ARCHITECTURE.md) · [部署](docs/DEPLOY.md) · [公平性](docs/FAIRNESS.md) · [路线图](docs/ROADMAP.md) · [变更](CHANGELOG.md)
 
-## Documentation
-
-- [API](docs/API.md) · [Architecture](docs/ARCHITECTURE.md) · [Deployment](docs/DEPLOY.md)
-- [Fairness report](docs/FAIRNESS.md) · [Quality & gates](docs/QUALITY.md)
-- [Agent harness](docs/AGENT-HARNESS.md) · [Research: adopted ideas](docs/RESEARCH-2026-11-04.md)
-- [Roadmap](docs/ROADMAP.md) · [Versioning & release process](docs/VERSIONING.md) · [Changelog](CHANGELOG.md)
-
-MIT License. Third-party notices in [NOTICE](NOTICE).
+MIT License。

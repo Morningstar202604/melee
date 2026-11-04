@@ -162,18 +162,28 @@ class Codenames:
         # 3 队及以上按队伍均分剩余词，否则新增队伍永远没有自己的词，
         # 只能靠翻别人的词获胜——那不是三队，是"两队 + 一个搅局的"。
         names = [view.team for view in views]
+        # 先手队由 seed 决定（旧实现固定红队）。
+        first_team = names[seed % len(names)]
         if len(names) == 2:
-            layout = {names[0]: LAYOUT[TEAM_RED], names[1]: LAYOUT[TEAM_BLUE]}
+            # 官方规则：先手队多 1 个词作为被针对的补偿。
+            # 多出的那个必须给先手队，否则"词少的一方还后手"会双重吃亏。
+            other = names[1] if first_team == names[0] else names[0]
+            layout = {first_team: LAYOUT[TEAM_RED], other: LAYOUT[TEAM_BLUE]}
         else:
-            per_team = (GRID_SIZE - LAYOUT[TEAM_NEUTRAL] - LAYOUT[TEAM_ASSASSIN]) // len(names)
-            layout = {name: per_team for name in names}
+            # 词数必须尽量均等：旧实现把 25-7-1 的全部余数塞给首队，
+            # 6 队时变成 7:2:2:2:2:2——首队要翻的词是别人的 3.5 倍，
+            # 而首队又固定先手，等于把胜负写死在抽签里。
+            # 现在按"每队至少 floor(左右)，余数轮流给前几队，每队至多多 1 个"。
+            pool = GRID_SIZE - LAYOUT[TEAM_NEUTRAL] - LAYOUT[TEAM_ASSASSIN]
+            base_count, extra = divmod(pool, len(names))
+            # 余数优先给先手队，再按席位顺序补——保证"词最多的队就是先手队"。
+            # 若按席位顺序分，会出现 seed=0 时先手队恰好拿少一个词的双重劣势。
+            order = [first_team] + [name for name in names if name != first_team]
+            bonus = set(order[:extra])
+            layout = {name: base_count + (1 if name in bonus else 0) for name in names}
         colors = []
         for team in names:
             colors += [team] * layout[team]
-        # 余数补给先手队：总格数必须是 25，多出来的给第一队（它也是先手）。
-        filler = GRID_SIZE - len(colors) - LAYOUT[TEAM_NEUTRAL] - LAYOUT[TEAM_ASSASSIN]
-        if filler > 0:
-            colors += [names[0]] * filler
         colors += [TEAM_NEUTRAL] * LAYOUT[TEAM_NEUTRAL]
         colors += [TEAM_ASSASSIN] * LAYOUT[TEAM_ASSASSIN]
         rng.shuffle(colors)
@@ -197,7 +207,9 @@ class Codenames:
             "words": board,
             "colors": colors,
             "revealed": [False] * GRID_SIZE,
-            "turn": TEAM_RED,
+            # 先手由 seed 决定：旧实现固定红队，是唯一"同一选手永远同席位"的
+            # 赛制（其它赛制都随 seed 轮转）。多人时按队伍列表轮转。
+            "turn": first_team,
             "phase": "hint",          # hint | guess
             "hint": None,             # {"word": str, "count": int}
             "remainingGuesses": 0,
@@ -228,7 +240,8 @@ class Codenames:
             "board": self._public_board(state),
             "turn": state["turn"],
             "phase": state["phase"],
-            "hint": state["hint"],
+            # 拷贝而不是引用：选手改 observation 不能改到引擎状态。
+            "hint": dict(state["hint"]) if state.get("hint") else None,
             # 观众需要知道现在轮到哪一队、是队长给线索还是队员猜词，
             # 否则棋盘再漂亮也读不出"这一步在等谁"。
             "currentPlayer": self.current_player(state),
@@ -267,7 +280,8 @@ class Codenames:
             "words": list(state["words"]),
             "revealed": list(state["revealed"]),
             "publicBoard": self._public_board(state),
-            "hint": state["hint"],
+            # 拷贝而不是引用：选手改 observation 不能改到引擎状态。
+            "hint": dict(state["hint"]) if state.get("hint") else None,
             "remaining": self.public_state(state)["remaining"],
         }
 
@@ -329,7 +343,10 @@ class Codenames:
             team = _team_of(players, player, state.get("teamConfig"))
             next_state = copy.deepcopy(state)
             next_state["finished"] = True
-            next_state["winner"] = TEAM_BLUE if team == TEAM_RED else TEAM_RED
+            # 多队时旧实现一律判红队胜：3/4/6 队里任何非红队弃权都送给红队，
+            # 这条路径还被超时复用，等于把故障判给固定一方。
+            # 正确语义：弃权队出局，胜者按"活着的队伍里先手顺位最靠前的"。
+            next_state["winner"] = _winner_after_forfeit(state, team)
             next_state["endReason"] = "弃权"
             return MoveResult(
                 legal=True,
@@ -425,7 +442,8 @@ class Codenames:
         next_state: dict[str, Any], color: str, team: str, raw: str
     ) -> tuple[str | None, str]:
         if color == TEAM_ASSASSIN:
-            winner = TEAM_BLUE if team == TEAM_RED else TEAM_RED
+            # 翻刺客 = 本队出局，胜者从其余队伍里按先手顺位取（不再固定红/蓝）。
+            winner = _winner_after_forfeit(next_state, team)
             return winner, f"翻到刺客「{raw}」，{_label(team)}立即判负"
         if color != team:
             # 对手翻掉了你最后一个词，等于你的词全被翻开——该队直接获胜。
@@ -443,6 +461,25 @@ class Codenames:
         if next_state["remainingGuesses"] <= 0:
             _pass_turn(next_state)
         return None, ""
+
+
+def _winner_after_forfeit(state: dict[str, Any], out_team: str) -> str | None:
+    """某队出局后的胜者：轮转顺序里紧接出局队的下一支存活队伍。
+
+    为什么不是"存活队里的第一个"：那等于永远判给席位最靠前的队。
+    实测 3 队时 team3 弃权会判红队胜——红队根本没参与，却被判赢。
+    按轮转顺序取下一支，语义上等于"轮到谁"的延续，不偏向任何席位。
+    """
+    names = list(state.get("teamNames") or [TEAM_RED, TEAM_BLUE])
+    if out_team not in names:
+        alive = [name for name in names]
+        return alive[0] if alive else None
+    start = names.index(out_team)
+    for step in range(1, len(names) + 1):
+        candidate = names[(start + step) % len(names)]
+        if candidate != out_team:
+            return candidate
+    return None
 
 
 def _pass_turn(next_state: dict[str, Any]) -> None:

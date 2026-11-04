@@ -120,7 +120,11 @@ SUPPORTED: dict[str, dict[str, Any]] = {
         # player_hands：双方手牌。own = 只看自己的。
         # pending_bids：本轮已提交的秘密出牌——**必须 own**，否则后手能看到
         # 先手的暗牌再针对性出牌，整个赛制的竞技性直接归零（实测复现）。
-        "hidden": {"player_hands": "own", "pending_bids": "own"},
+        # prize_deck：未来 13 轮的奖品顺序——**必须隐藏**，
+        # 否则双方都能提前知道每轮奖品，赛制的信息结构等于不存在。
+        "hidden": {"player_hands": "own", "pending_bids": "own", "prize_deck": "none"},
+        # 秘密出牌赛制：history 里只能记"某人出了一张牌"，不能记是哪张。
+        "hideHistoryValue": True,
     },
     # 以下三个由 105 个环境的全量实跑扫描筛出：每种用 5 个种子跑满整局、
     # 零犯规、正常分出胜负，且观察里直接带 Available Moves 列表。
@@ -390,8 +394,20 @@ class TextArenaGame:
             "endReason": state["endReason"],
             # 棋类没有"提问数"，但前端需要"第几步"，所以统一给 turnIndex
             "turnIndex": state.get("turnIndex", 0),
-            "history": list(state.get("history") or []),
+            "history": self._public_history(state),
         }
+
+    def _public_history(self, state: dict[str, Any]) -> list[dict[str, Any]]:
+        """公开历史里的动作值：秘密出牌赛制必须抹掉具体牌面。
+
+        `history` 会进 public_state、解说、导出与所有读事件流的人。
+        GOPS 的先手出牌如果带 `"[2]"`，后手在轮到自己之前就能看到对方暗牌，
+        `pending_bids` 的裁剪也就白做了。
+        """
+        rows = list(state.get("history") or [])
+        if not SUPPORTED.get(self.game_id, {}).get("hideHistoryValue"):
+            return rows
+        return [{**row, "value": "[hidden]"} for row in rows]
 
     def observe(self, state: dict[str, Any], player: PlayerId) -> dict[str, Any]:
         """按当前局面重建一个玩家视角。
@@ -590,7 +606,9 @@ class TextArenaGame:
             "endReason": end_reason,
             "turnIndex": state.get("turnIndex", 0) + 1,
             "history": (state.get("history") or [])
-            + [{"by": player, "kind": "move", "value": action}],
+            + [{"by": player, "kind": "move",
+                # 秘密出牌赛制：连"刚出的这张"也不能记具体牌面。
+                "value": "[hidden]" if SUPPORTED.get(self.game_id, {}).get("hideHistoryValue") else action}],
             # 上游的新观察必须在这里抓一次并缓存：它是消费型队列，
             # 等 observe() 时再读就已经空了。
             "observations": [] if finished else _observations(env),

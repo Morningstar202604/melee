@@ -16,6 +16,7 @@ from ..auth import AuthError, authenticate, issue_ticket, redeem_ticket, usage
 from ..broadcast import global_broadcaster, presence_scope
 from ..engine import registry as game_registry
 from ..eventlog import EventLog, has_match, read_match, replay
+from ..fairness import public_payload, resolve_seed
 from ..messages import LANGS as MESSAGE_LANGS
 from ..messages import localize_payload, localize_recap
 from ..player_specs import PlayerSpec
@@ -149,7 +150,9 @@ async def create_match(body: CreateMatch, request: Request) -> dict[str, Any]:
         _check_season_game(db_path, body.seasonId, body.game)
 
     match_id = f"m_{uuid.uuid4().hex[:12]}"
-    seed = body.seed if body.seed is not None else int.from_bytes(uuid.uuid4().bytes[:4], "big")
+    # 种子决定隐藏信息：默认由服务端生成且不公开，否则建场方可以先算出
+    # 20Q 的目标 / 代号的配色再参赛（实测可 100% 获胜）。
+    seed, seed_mode = resolve_seed(body.seed)
     specs = [spec.model_dump() for spec in body.players]
     try:
         cipher = cipher_from_env()
@@ -172,6 +175,8 @@ async def create_match(body: CreateMatch, request: Request) -> dict[str, Any]:
     # 否则英文界面里会出现中文棋盘——这是"语言错乱"最刺眼的一种。
     match_config = body.config.model_dump(exclude_none=True)
     match_config.setdefault("lang", request_lang(request))
+    # 种子模式落进 config：runner 据此决定是否把 seed 写进事件。
+    match_config["seedMode"] = seed_mode
     try:
         job_id = enqueue_match(
             db_path,
@@ -193,7 +198,7 @@ async def create_match(body: CreateMatch, request: Request) -> dict[str, Any]:
 
     return {
         "matchId": match_id,
-        "seed": seed,
+        **public_payload(seed, seed_mode),
         "players": players,
         "seasonId": body.seasonId,
         "jobId": job_id,
@@ -234,15 +239,24 @@ async def view(match_id: str, request: Request) -> dict[str, Any]:
 async def view_as(match_id: str, player: str, request: Request) -> dict[str, Any]:
     """某位选手在当时的视角。
 
-    直播期用它做"队长视角"回放，赛后用来看"他当时看到了什么"。
+    赛后用它看"他当时看到了什么"。**直播期禁止**：这条端点会返回该选手的
+    私有事件（队长思考、隐藏信息），直播期对任何人开放等于给了实时作弊通道。
+    想直播期看队长视角，必须用该选手自己的身份（token 名 = 选手 id）。
+
     返回的是该选手可见的事件子集，前端复用同一个 reduce 即可。
     """
-    guard(request, "read")
+    principal, _remaining = guard(request, "read")
     events = read_match(db_path_of(request), match_id)
     if not events and not has_match(db_path_of(request), match_id):
         raise HTTPException(status_code=404, detail="比赛不存在")
     if not any(event.get("player") == player for event in events):
         raise HTTPException(status_code=404, detail=f"这场比赛没有选手 {player}")
+    finished = any(event.get("type") == "match.ended" for event in events)
+    if not finished and principal.name != player:
+        raise HTTPException(
+            status_code=403,
+            detail="直播期只能查看自己的视角；他人的视角在比赛结束后开放",
+        )
     scoped = [e for e in events if visible(e, player)]
     return {"matchId": match_id, "player": player, "events": scoped, "view": replay(scoped)}
 

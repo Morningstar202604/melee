@@ -460,7 +460,11 @@ def test_codenames_every_team_member_gets_a_turn():
 
 
 def test_two_team_codenames_layout_is_backward_compatible():
-    """2 队必须保持经典 9/8/7/1，不能因为支持多队而改变线上语义。"""
+    """2 队必须保持经典 9/8/7/1，不能因为支持多队而改变线上语义。
+
+    9 个词给**先手队**（官方补偿规则）。先手现在随 seed 轮转——
+    旧实现固定红队先手，等于把补偿永远给同一席位。
+    """
     from collections import Counter
 
     from services.match.engine.codenames import Codenames
@@ -468,7 +472,9 @@ def test_two_team_codenames_layout_is_backward_compatible():
     game = Codenames()
     state = game.init(seed=7, players=["r1", "b1", "r2", "b2"], config={})
     colors = Counter(state["colors"])
-    assert colors["red"] == 9 and colors["blue"] == 8
+    first = state["turn"]
+    second = "blue" if first == "red" else "red"
+    assert colors[first] == 9 and colors[second] == 8
     assert colors["neutral"] == 7 and colors["assassin"] == 1
 
 

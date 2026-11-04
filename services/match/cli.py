@@ -21,7 +21,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-APP_VERSION = "1.8.2"
+APP_VERSION = "1.8.3"
 
 
 

@@ -97,12 +97,15 @@ def test_export_hides_private_events_by_default(client):
 
     public_export = export_match(client.app.state.db_path, created, reveal=False)
     private_export = export_match(client.app.state.db_path, created, reveal=True)
-    def _has_private(document):
-        return any(
-            isinstance(e.get("visibility"), dict) for e in document["events"]
-        )
-    assert not _has_private(public_export), "默认导出泄漏了私有事件"
-    assert _has_private(private_export), "赛后 reveal 导出应包含私有事件"
+    def _leaks_content(document):
+        """私有事件的内容是否泄漏：占位 payload 只有 redacted 标记，不算泄漏。"""
+        for e in document["events"]:
+            if isinstance(e.get("visibility"), dict) and e.get("payload") != {"redacted": True}:
+                return True
+        return False
+
+    assert not _leaks_content(public_export), "默认导出泄漏了私有事件内容"
+    assert _leaks_content(private_export), "赛后 reveal 导出应包含私有事件内容"
 
 
 def test_export_reveal_requires_ended(client):

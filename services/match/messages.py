@@ -258,6 +258,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": 'Clue is "{clue}" — picking the closest of {count} unrevealed words.',
         "zh": "线索是「{clue}」，从 {count} 个未翻开的词里挑最像的。",
     },
+    "thought.strategy": {
+        "en": "Reading the position: {count} legal moves, choosing {choice}.",
+        "zh": "看局面：{count} 个合法动作，选 {choice}。",
+    },
     "thought.search": {
         "en": "Searching {depth} plies over {count} legal moves, choosing {choice}.",
         "zh": "在 {count} 个合法动作里搜索 {depth} 层，选择 {choice}。",

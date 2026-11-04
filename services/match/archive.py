@@ -95,7 +95,8 @@ def _row_to_item(row: sqlite3.Row, payload: dict[str, Any], lang: str = "en") ->
         "matchId": row["match_id"],
         "game": row["game"],
         "gameLabel": _label_of(row["game"], lang),
-        "seed": row["seed"],
+        # 不回显 seed：它是隐藏信息的熵源（20Q 目标、代号配色、Kuhn 手牌），
+        # 赛事库对所有观众开放，回显等于公开答案。
         "players": players,
         "status": "ended" if row["ended_at"] else "live",
         "winner": payload.get("winner"),

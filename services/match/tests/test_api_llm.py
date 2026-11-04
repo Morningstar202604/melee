@@ -40,8 +40,11 @@ def test_llm_player_plays_via_api(local_client):
     thoughts = [e["payload"]["text"] for e in events if e["type"] == "thought.delta"]
     assert "建筑类通常更大" in thoughts
 
-    proposed = [e for e in events if e["type"] == "action.proposed" and e["player"] == "A"]
-    assert "category=建筑" in proposed[0]["payload"]["raw"]
+    # 模型原文不再写进公开事件（会泄漏私有推理），改为私有 thought.delta。
+    # 这里用 reveal=1 读完整流来断言它确实被记录了。
+    full = local_client.get(f"/matches/{match_id}/events", params={"reveal": 1}).json()["events"]
+    thoughts = [e["payload"].get("text", "") for e in full if e["type"] == "thought.delta"]
+    assert any("category=建筑" in t for t in thoughts), thoughts[:2]
 
 def test_key_never_appears_in_events_or_view(local_client):
     with FakeOpenAI() as server:

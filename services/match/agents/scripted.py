@@ -183,10 +183,22 @@ class BoardAgent:
         if not moves:
             return AgentOutput(move=Move(kind="ask", value=""), raw="[no-available-moves]")
 
-        index = _stable_index(observation.get("you", ""), moves)
-        choice = moves[index]
-        if on_thought is not None:
-            on_thought(_thought("thought.generic", {"count": len(moves), "index": index + 1},
+        # 优先用赛制策略：按局面算出的走法，而不是按名字哈希取索引。
+        # 哈希选索引等于随机落子——实测井字棋 40 局全部先手赢（最优对弈应平局），
+        # 说明双方都在乱下，观战和"AI 对战"的定位都站不住。
+        # 注意 moves 可能来自 legal（权威）或从观察文本解析（测试/上游缺 legal
+        # 时），策略只在这份候选集内选，不做坐标越界推断。
+        from .strategy import move_for
+
+        choice = move_for(self.game_id, observation, moves)
+        if choice is None:
+            index = _stable_index(observation.get("you", ""), moves)
+            choice = moves[index]
+            if on_thought is not None:
+                on_thought(_thought("thought.generic", {"count": len(moves), "index": index + 1},
+                                     getattr(self, "lang", "zh")))
+        elif on_thought is not None:
+            on_thought(_thought("thought.strategy", {"count": len(moves), "choice": choice},
                                  getattr(self, "lang", "zh")))
         return AgentOutput(move=Move(kind="guess", value=choice), raw=f"choose:{choice}")
 
