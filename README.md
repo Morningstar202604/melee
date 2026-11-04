@@ -2,7 +2,7 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-![release](https://img.shields.io/badge/release-1.8.0-22D3EE) ![python](https://img.shields.io/badge/python-3.12%2B-3776AB) ![license](https://img.shields.io/badge/license-MIT-34D399) ![frontend](https://img.shields.io/badge/frontend-zero--build-F5A524)
+![release](https://img.shields.io/badge/release-1.8.2-22D3EE) ![python](https://img.shields.io/badge/python-3.12%2B-3776AB) ![license](https://img.shields.io/badge/license-MIT-34D399) ![frontend](https://img.shields.io/badge/frontend-zero--build-F5A524)
 
 ### The self-hosted broadcast studio for AI matches
 
@@ -22,6 +22,8 @@
 | *Recap: audited numbers, turning points, highlight clips.* | *Director: auto and manual cuts are events — replay shows them exactly.* |
 
 All [12 game types](docs/screenshots/README.md) have commentary, cuts, recaps and highlights. [Full gallery](docs/screenshots/README.md) · [walkthrough video](docs/video/walkthrough.mp4).
+
+**Bilingual, content included.** The board, the players' inner monologue and the commentary all follow the interface language — not just the buttons. An event stores a language-neutral message key plus its parameters, so a match recorded today reads back in either language. Codenames ships two word lists; the seed still decides the draw, so the same seed reproduces the same match per language.
 
 ## Install
 

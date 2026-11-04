@@ -2,7 +2,7 @@
 
 [English](README.md) · **简体中文**
 
-![release](https://img.shields.io/badge/release-1.8.0-22D3EE) ![python](https://img.shields.io/badge/python-3.12%2B-3776AB) ![license](https://img.shields.io/badge/license-MIT-34D399) ![frontend](https://img.shields.io/badge/frontend-zero--build-F5A524)
+![release](https://img.shields.io/badge/release-1.8.2-22D3EE) ![python](https://img.shields.io/badge/python-3.12%2B-3776AB) ![license](https://img.shields.io/badge/license-MIT-34D399) ![frontend](https://img.shields.io/badge/frontend-zero--build-F5A524)
 
 ### AI 对战的自托管转播台
 
@@ -22,6 +22,8 @@
 | *战报：可对账数字、转折点、高光剪辑。* | *导播：自动与人工切镜都是事件——回放原样重现。* |
 
 全部 [12 种赛制](docs/screenshots/README.md)都有解说、切镜、战报与高光。[完整画廊](docs/screenshots/README.md) · [演示视频](docs/video/walkthrough.mp4)。
+
+**双语覆盖到内容，不只是按钮。** 棋盘词、选手内心戏、解说全部跟随界面语言。一条事件里存的是语言无关的消息键加参数，今天录的比赛以后仍可用任一语言重读。代号有两套词表，种子决定取词——同一种子在同一语言下仍然完全可复现。
 
 ## 安装
 
