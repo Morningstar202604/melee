@@ -1,0 +1,148 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 同一分支的新推送取消上一次未完成的运行：PR 上连续推送时不必排队等旧提交。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Gates, tests and browser audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install system dependencies
+        # ffmpeg 用于高光渲染；fonts-noto-cjk 让截图与分享卡里的中文不是豆腐块。
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Install Playwright Chromium
+        # 浏览器审计是门禁之一，CI 必须真的装上内核，否则 verify_all 会 SKIP。
+        run: python -m playwright install --with-deps chromium
+
+      - name: Verify all gates
+        run: bash scripts/verify_all.sh
+
+      - name: End-to-end smoke test
+        # 单元测试不等于"服务真能起来并跑完一局"。这里走一遍真实的 HTTP 路径：
+        # 建场 → 轮询到终局 → 战报无问题 → 卡片是 PNG → 分享页有 OG 标签。
+        run: |
+          MELEE_DB=/tmp/ci.db MELEE_QUOTA_MATCHES=100 python scripts/serve.py --port 8099 &
+          for _ in $(seq 1 40); do
+            curl -fsS http://127.0.0.1:8099/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8099/health
+
+          python - <<'PY'
+          import json, time, urllib.request
+
+          BASE = "http://127.0.0.1:8099"
+
+          def get(path):
+              with urllib.request.urlopen(BASE + path, timeout=20) as response:
+                  return response.read().decode("utf-8")
+
+          def post(path, body):
+              request = urllib.request.Request(
+                  BASE + path,
+                  data=json.dumps(body).encode("utf-8"),
+                  headers={"Content-Type": "application/json"},
+                  method="POST",
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.loads(response.read().decode("utf-8"))
+
+          # 每个页面都要能打开，并且真的返回 200。
+          for page in ("index.html", "watch.html", "recap.html", "season.html", "director.html"):
+              assert get("/" + page), page
+
+          # 界面是英文默认：首页标题必须是英文，不能回退成中文。
+          home = get("/")
+          assert "Make AI matches worth watching" in home, "home page is not English by default"
+          assert 'lang="en"' in home, "home page <html lang> is not en"
+          assert "Twenty Questions" in get("/games"), "game catalogue is not localised"
+
+          # 建一场比赛，等到真实终局。
+          match_id = post(
+              "/matches",
+              {"game": "tic-tac-toe", "seed": 1, "players": [{"id": "A"}, {"id": "B"}]},
+          )["matchId"]
+          deadline = time.time() + 90
+          recap = {}
+          while time.time() < deadline:
+              recap = json.loads(get(f"/matches/{match_id}/recap?lang=en"))
+              if recap.get("problems") == [] and recap.get("winner"):
+                  break
+              time.sleep(1)
+          assert recap["problems"] == [], recap.get("problems")
+          assert recap["oneLine"].isascii(), "recap did not render in English"
+
+          # 同一份比赛，中文请求必须给出中文一句话。
+          zh = json.loads(get(f"/matches/{match_id}/recap?lang=zh"))
+          assert not zh["oneLine"].isascii(), "recap did not render in Chinese"
+
+          # 分享卡是真正的 PNG，分享页带 OG 标签。
+          card = urllib.request.urlopen(BASE + f"/matches/{match_id}/card.png", timeout=30).read(8)
+          assert card == b"\x89PNG\r\n\x1a\n", "share card is not a PNG"
+          assert "og:image" in get(f"/share/{match_id}")
+
+          # 赛事库能查到刚跑完的这一场。
+          assert match_id in get("/archive?limit=5")
+          print("smoke: ok")
+          PY
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t melee:ci .
+
+      - name: Run and probe
+        run: |
+          docker run -d --name melee -p 8099:8099 -e MELEE_AUTH=off melee:ci
+          for _ in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8099/health; then
+              echo
+              echo "container healthy"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "container did not become healthy" >&2
+          docker logs melee
+          exit 1

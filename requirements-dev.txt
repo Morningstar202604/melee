@@ -1,0 +1,15 @@
+# 开发与审查工具：不进运行时镜像
+-r requirements.txt
+
+pytest==9.1.1
+pytest-cov==6.3.0
+ruff==0.17.1
+bandit==1.8.6
+radon==6.0.1
+pip-audit==2.9.0
+playwright==1.64.0
+fakeredis==2.32.0
+# 契约代码生成（packages/contracts/scripts/codegen.py）
+datamodel-code-generator==0.86.0
+# test_harness 走官方 MCP SDK 的工具面
+mcp==1.30.0

@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>melee 转播台 · 界面原型</title>
+<style>
+:root{
+  --bg:#07090D; --panel:#11141B; --panel2:#0D1016; --line:#232838;
+  --txt:#E8EAF2; --dim:#9AA3B5; --faint:#5C6478;
+  --a:#22D3EE; --b:#F5A524; --live:#EF4444; --ok:#34D399; --bad:#F87171;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:#05070A;color:var(--txt);
+  font-family:"Inter","Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  overflow:hidden;
+}
+#chrome{
+  height:46px;display:flex;align-items:center;gap:18px;padding:0 20px;
+  border-bottom:1px solid #161A24;background:#080A0F;
+}
+#chrome .brand{font-size:14px;font-weight:700;letter-spacing:.14em;color:#fff}
+#chrome .brand span{color:var(--a)}
+#chrome nav{display:flex;gap:4px;margin-left:8px}
+#chrome nav button{
+  background:none;border:1px solid transparent;color:var(--faint);
+  font-size:13px;padding:5px 12px;border-radius:7px;cursor:pointer;font-family:inherit;
+}
+#chrome nav button:hover{color:var(--dim);background:#0E1219}
+#chrome nav button.on{color:#fff;background:#151A24;border-color:#232838}
+#chrome .hint{margin-left:auto;font-size:11.5px;color:#3E4658;letter-spacing:.04em}
+
+#frame{position:fixed;inset:46px 0 0 0;display:flex;align-items:center;justify-content:center;background:#05070A}
+#stage{
+  width:1600px;height:900px;flex:none;position:relative;overflow:hidden;
+  background:radial-gradient(120% 90% at 50% 0%,#0E131C 0%,#080A0E 62%,#06080B 100%);
+  transform-origin:center center;
+  display:flex;flex-direction:column;padding:20px 26px;
+  border-radius:6px;
+}
+#stage::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(120% 100% at 50% 50%,transparent 55%,rgba(0,0,0,.42) 100%);
+}
+
+.screen{display:none;flex-direction:column;flex:1;min-height:0}
+.screen.on{display:flex}
+
+/* ---------- topbar ---------- */
+.topbar{display:flex;align-items:center;gap:16px;height:44px;flex:none}
+.tb-left{display:flex;align-items:baseline;gap:10px}
+.tb-season{font-size:11px;letter-spacing:.16em;color:var(--faint);text-transform:uppercase}
+.tb-match{font-size:15px;font-weight:600;color:var(--txt)}
+.tb-center{margin-left:auto;display:flex;align-items:center;gap:10px}
+.progress-pill{
+  display:flex;align-items:center;gap:8px;padding:5px 13px;border-radius:999px;
+  border:1px solid var(--line);background:#0C1017;font-size:12.5px;color:var(--dim);
+}
+.progress-pill b{color:#fff;font-variant-numeric:tabular-nums}
+.live-badge{
+  display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;letter-spacing:.14em;
+  color:var(--live);
+}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--live);animation:pulse 1.8s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(239,68,68,.55)}50%{opacity:.55;box-shadow:0 0 0 7px rgba(239,68,68,0)}}
+.viewers{font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+
+/* ---------- main ---------- */
+.main{display:grid;grid-template-columns:382px 1fr 382px;gap:16px;flex:1;min-height:0;margin-top:14px}
+
+.pcard{
+  background:linear-gradient(180deg,#10141C 0%,#0B0E14 100%);
+  border:1px solid var(--line);border-radius:12px;padding:16px 16px 12px;
+  display:flex;flex-direction:column;min-height:0;position:relative;overflow:hidden;
+  transition:box-shadow .3s,border-color .3s;
+}
+.pcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--tone);opacity:.9}
+.pcard.active{box-shadow:0 0 0 1px var(--tone),0 0 34px -12px var(--tone)}
+.pcard.masked{opacity:.42}
+.phead{display:flex;align-items:center;gap:11px}
+.avatar{
+  width:42px;height:42px;border-radius:10px;flex:none;
+  display:flex;align-items:center;justify-content:center;
+  font-size:17px;font-weight:700;color:#080A0E;background:var(--tone);
+}
+.pname{font-size:19px;font-weight:650;letter-spacing:.02em;line-height:1.15}
+.pmodel{font-size:11px;color:var(--faint);letter-spacing:.02em;margin-top:2px}
+.status{
+  margin-left:auto;font-size:11px;font-weight:600;padding:4px 10px;border-radius:999px;
+  border:1px solid var(--line);color:var(--dim);white-space:nowrap;
+}
+.status.think{color:var(--tone);border-color:var(--tone);background:rgba(255,255,255,.03)}
+.status.foul{color:var(--bad);border-color:#4a1d1d;background:#1a0f0f}
+
+.pstats{display:flex;align-items:flex-end;gap:14px;margin:14px 0 6px}
+.bignum{font-size:44px;font-weight:750;line-height:.92;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.pstat-label{font-size:10.5px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase;padding-bottom:5px}
+.leadchip{margin-left:auto;font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--tone);color:var(--tone);opacity:0;transition:opacity .3s}
+.leadchip.on{opacity:1}
+
+.sect-label{font-size:10px;letter-spacing:.16em;color:var(--faint);text-transform:uppercase;margin:12px 0 6px;display:flex;align-items:center;gap:7px}
+.sect-label::after{content:"";flex:1;height:1px;background:#181D28}
+.sect-label.push{margin-top:auto}
+.excl{flex:none;display:flex;flex-wrap:wrap;gap:6px 5px;min-height:64px;align-content:flex-start}
+.excl span{font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid #1A2029;background:#0A0D12;color:#5A6373}
+.excl span.exhint{color:#333A48;border:none;background:none;padding-left:0;font-size:11.5px}
+.excl span.belief{border-color:#2A3242;color:#D6DBE6;background:#141922;font-size:11.5px;letter-spacing:.02em}
+.excl span.cutlabel{border:none;background:none;color:#3E4658;padding:0;margin:0 2px 0 4px;font-size:10.5px;letter-spacing:.06em;line-height:22px}
+.excl span.cut{text-decoration:line-through;color:#4A5365}
+.excl span.keep{border-color:#3A4459;color:#E8EAF2;background:#171D28}
+.excl span.lag{border-color:#3A2E18;color:#B98A3E;background:rgba(245,165,36,.07);margin-left:4px}
+.pace{flex:none;height:38px;display:flex;align-items:center;gap:5px}
+.pbar{flex:1;height:8px;background:#141922;border-radius:4px;overflow:hidden;position:relative}
+.pbar i{height:100%;border-radius:4px;display:block}
+.pbar em{position:absolute;right:-1px;top:-13px;font-style:normal;font-size:9px;color:#4A5365;font-variant-numeric:tabular-nums}
+
+.thought{
+  font-size:12.5px;line-height:1.62;color:#A9B2C4;background:#0A0D13;border:1px solid #171C26;
+  border-radius:8px;padding:9px 11px;min-height:64px;max-height:112px;overflow:auto;flex:none;
+  font-style:normal;transition:max-height .25s;
+}
+.thought.expanded{max-height:190px}
+.thought .cur{color:var(--tone)}
+.caret{display:inline-block;width:6px;height:12px;background:var(--tone);margin-left:2px;vertical-align:-1px;animation:blink .9s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+
+.ledger{flex:0 1 auto;overflow:auto;margin-top:2px;padding-right:2px;min-height:64px;max-height:220px}
+.ledger::-webkit-scrollbar,.thought::-webkit-scrollbar{width:5px}
+.ledger::-webkit-scrollbar-thumb,.thought::-webkit-scrollbar-thumb{background:#232838;border-radius:3px}
+.qrow{
+  display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-radius:7px;
+  font-size:12.5px;line-height:1.45;color:#B8C0D0;cursor:pointer;border:1px solid transparent;
+}
+.qrow:hover{background:#0E121A;border-color:#1B2130}
+.qidx{font-size:10px;color:#39414F;font-variant-numeric:tabular-nums;padding-top:2px;flex:none;width:16px}
+.qtext{flex:1}
+.qans{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;flex:none;margin-top:1px}
+.qans.y{color:var(--ok);background:rgba(52,211,153,.1)}
+.qans.n{color:var(--bad);background:rgba(248,113,113,.1)}
+.qans.win{color:#080A0E;background:var(--ok)}
+.emptyhint{font-size:12px;color:#333A48;padding:10px 8px}
+
+/* ---------- center ---------- */
+.center{display:flex;flex-direction:column;gap:12px;min-height:0}
+
+.secret{
+  position:relative;border:1px solid #2A3242;border-radius:12px;flex:none;
+  background:linear-gradient(120deg,#141A26 0%,#0D1118 100%);
+  padding:14px 20px;display:flex;align-items:center;gap:18px;
+}
+.secret .kicker{font-size:9.5px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase}
+.secret .word{font-size:44px;font-weight:750;letter-spacing:.12em;line-height:1.05;color:#fff;text-shadow:0 0 40px rgba(34,211,238,.28)}
+.secret .only{font-size:10.5px;color:#4E5768;margin-left:auto;text-align:right;line-height:1.5}
+.secret .only b{display:block;color:#8A93A5;font-weight:600;letter-spacing:.1em;font-size:9.5px}
+.secret.masked .word{color:#2C3341;text-shadow:none;letter-spacing:.2em}
+.intro-bubble{
+  position:absolute;right:14px;top:10px;font-size:10.5px;color:var(--a);
+  border:1px solid rgba(34,211,238,.35);background:rgba(34,211,238,.07);
+  padding:3px 9px;border-radius:999px;animation:floatIn .6s ease-out, fadeOut .8s ease-in 5.4s forwards;
+}
+@keyframes floatIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@keyframes fadeOut{to{opacity:0}}
+
+.field{flex:1;border:1px solid var(--line);border-radius:12px;background:#0A0D13;padding:13px 16px;display:flex;flex-direction:column;min-height:0}
+.field-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.field-head .t{font-size:10px;letter-spacing:.16em;color:var(--faint);text-transform:uppercase}
+.field-head .narrow{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+.field-head .narrow b{color:#fff;font-size:14px}
+.field-head .bar{flex:1;height:3px;background:#161B25;border-radius:2px;overflow:hidden;margin-left:6px}
+.field-head .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--a),#7DD3FC);transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.chips{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:1fr;gap:10px;flex:1;align-content:stretch}
+.chain{display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-top:1px solid #161B25;margin-top:10px;padding-top:10px;flex:none}
+.chain .cl{font-size:9.5px;letter-spacing:.16em;color:#39414F;text-transform:uppercase;margin-right:4px}
+.chainpill{
+  font-size:11px;padding:3px 9px;border-radius:6px;border:1px solid #1C2230;background:#0C1017;
+  color:#7C8598;display:flex;align-items:center;gap:6px;max-width:230px;
+}
+.chainpill b{color:#D6DBE6;font-variant-numeric:tabular-nums}
+.chainpill .arr{color:#2E3644;margin:0 -2px}
+.chainpill.last{border-color:rgba(34,211,238,.3);color:var(--a)}
+.chainpill.last b{color:var(--a)}
+.pfoot{margin-top:9px;padding-top:10px;border-top:1px solid #161B25;display:flex;gap:14px;flex:none}
+.pfoot div{font-size:10px;color:#39414F;letter-spacing:.03em}
+.pfoot b{color:#6C7588;font-weight:600;font-variant-numeric:tabular-nums}
+.chip{
+  font-size:15px;text-align:center;padding:10px 6px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;letter-spacing:.04em;
+  border:1px solid #1C2230;background:#0E121A;color:#AEB6C6;
+  transition:all .45s cubic-bezier(.2,.8,.2,1);position:relative;overflow:hidden;
+}
+.chip.out{color:#363D4B;border-color:#141922;background:#090B10;text-decoration:line-through;transform:scale(.96)}
+.chip.win{border-color:var(--ok);background:rgba(52,211,153,.12);color:var(--ok);font-weight:700}
+
+.question{
+  flex:none;border:1px solid var(--line);border-radius:12px;background:#0B0E14;
+  padding:16px 20px;display:flex;align-items:center;gap:18px;min-height:128px;position:relative;
+}
+.q-kicker{font-size:9.5px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase;margin-bottom:7px}
+.q-who{font-size:11px;color:var(--tone,#5C6478);font-weight:600;letter-spacing:.06em}
+.q-body{flex:1;min-width:0}
+.q-line{font-size:27px;font-weight:600;line-height:1.32;color:#F2F4F9;letter-spacing:.005em}
+.q-line.guess{color:var(--b)}
+.q-wait{display:flex;gap:7px;align-items:center;height:36px}
+.q-wait i{width:8px;height:8px;border-radius:50%;background:#2B3342;animation:dot 1.3s ease-in-out infinite}
+.q-wait i:nth-child(2){animation-delay:.18s}
+.q-wait i:nth-child(3){animation-delay:.36s}
+@keyframes dot{0%,100%{opacity:.35;transform:translateY(0)}50%{opacity:1;transform:translateY(-4px)}}
+
+.stamp{
+  width:104px;height:104px;flex:none;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:30px;font-weight:800;letter-spacing:.06em;
+  border:3px solid;transform:rotate(-6deg);
+}
+.stamp.y{color:var(--ok);border-color:var(--ok);background:rgba(52,211,153,.08)}
+.stamp.n{color:var(--bad);border-color:var(--bad);background:rgba(248,113,113,.08)}
+.stamp.win{color:#080A0E;border-color:var(--ok);background:var(--ok)}
+.stamp.anim{animation:stampIn .6s cubic-bezier(.2,.8,.2,1)}
+@keyframes stampIn{0%{transform:scale(2.4) rotate(-20deg);opacity:0}62%{transform:scale(.93) rotate(-4deg);opacity:1}100%{transform:scale(1) rotate(-6deg);opacity:1}}
+.stamp.ghost{opacity:.13;border-style:dashed;transform:rotate(-6deg) scale(.86);font-size:15px;font-weight:600}
+.qhist{position:absolute;left:20px;right:20px;bottom:9px;display:flex;gap:5px;overflow:hidden}
+.qhist span{font-size:10px;color:#3E4658;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+.qhist span b{font-weight:600}
+.qhist span.a b{color:#0E7490}
+.qhist span.b b{color:#92400E}
+.qhist span.a{color:#5A6270}
+.qhist span.b{color:#5A6270}
+
+/* ---------- narration ---------- */
+.narration{
+  flex:none;height:72px;margin-top:12px;border-radius:10px;
+  border:1px solid #1E2534;background:linear-gradient(90deg,#0D1118,#0A0D12);
+  display:flex;align-items:center;gap:16px;padding:0 22px;
+}
+.nar-tag{font-size:9.5px;letter-spacing:.24em;color:#4A5365;text-transform:uppercase;flex:none;border-right:1px solid #222A38;padding-right:16px;height:26px;display:flex;align-items:center}
+.nar-text{font-size:20px;color:#D6DBE6;letter-spacing:.01em;line-height:1.4}
+.nar-text.new{animation:narIn .45s ease-out}
+@keyframes narIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+
+/* ---------- timeline ---------- */
+.tlrow{flex:none;height:50px;display:flex;align-items:center;gap:14px;margin-top:10px}
+.tl{position:relative;flex:1;height:26px;display:flex;align-items:center}
+.tl-track{position:absolute;left:0;right:0;height:3px;background:#161B25;border-radius:2px}
+.tl-fill{position:absolute;left:0;height:3px;background:linear-gradient(90deg,#22D3EE,#67E8F9);border-radius:2px;transition:width .25s linear}
+.tl-fill.replay{background:linear-gradient(90deg,#F5A524,#FBBF24)}
+.tl-ticks{position:absolute;left:0;right:0;height:26px}
+.tick{position:absolute;top:10px;width:3px;height:7px;background:#3C4658;border-radius:2px;transform:translateX(-1.5px)}
+.tick.big{height:16px;top:6px;width:3px;background:#5E6B82}
+.tick.past{background:#22D3EE}
+.tick.past.big{background:#67E8F9;box-shadow:0 0 10px rgba(34,211,238,.6)}
+.tl input[type=range]{position:absolute;left:0;right:0;width:100%;height:26px;opacity:0;cursor:pointer;margin:0}
+.tl-labels{display:flex;justify-content:space-between;font-size:10px;color:#39414F;padding:0 2px;margin-top:-2px}
+.tlbtns{display:flex;gap:4px;flex:none}
+.iconbtn{
+  width:32px;height:32px;border-radius:7px;border:1px solid #232838;background:#0D1118;color:#8A93A5;
+  cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;
+}
+.iconbtn:hover{background:#151A24;color:#fff}
+.iconbtn:disabled{opacity:.32;cursor:not-allowed}
+.badge-replay{font-size:10px;letter-spacing:.14em;color:var(--b);border:1px solid rgba(245,165,36,.4);background:rgba(245,165,36,.08);padding:3px 8px;border-radius:999px}
+
+/* ---------- controls ---------- */
+.ctrlrow{flex:none;height:64px;display:flex;align-items:center;gap:10px;margin-top:10px}
+.btn{
+  height:42px;padding:0 16px;border-radius:9px;border:1px solid #232838;background:#0F131A;
+  color:#C4CBDA;font-size:13px;font-family:inherit;cursor:pointer;display:flex;align-items:center;gap:7px;
+}
+.btn:hover{background:#171D28;color:#fff}
+.btn.primary{background:var(--a);border-color:var(--a);color:#05070A;font-weight:650}
+.btn.primary:hover{background:#5EE7F5;color:#05070A}
+.seg{display:flex;border:1px solid #232838;border-radius:9px;overflow:hidden;height:42px}
+.seg button{
+  background:#0F131A;border:none;color:#7C8598;font-size:12.5px;padding:0 14px;cursor:pointer;
+  font-family:inherit;border-right:1px solid #1B2130;
+}
+.seg button:last-child{border-right:none}
+.seg button.on{background:#1B2330;color:#fff}
+.seg button:hover{color:#fff}
+.spacer{flex:1}
+
+.bet{
+  display:flex;align-items:center;gap:12px;border:1px solid #2A3242;border-radius:10px;
+  background:linear-gradient(90deg,#0F131A,#0B0E14);padding:0 14px;height:52px;
+}
+.bet .bl{font-size:11px;color:#6C7588;line-height:1.3;flex:none}
+.bet .bl b{display:block;color:#D6DBE6;font-size:12.5px;font-weight:600;letter-spacing:.01em}
+.betopt{
+  height:32px;padding:0 13px;border-radius:7px;border:1px solid #232838;background:#11151D;
+  color:#C4CBDA;font-size:12px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:7px;
+}
+.betopt:hover{border-color:#3A4356;color:#fff}
+.betopt .odd{font-size:10.5px;color:#7C8598;font-variant-numeric:tabular-nums}
+.betopt.picked{border-color:var(--ok);color:var(--ok);background:rgba(52,211,153,.08)}
+.betopt:disabled{cursor:default;opacity:.55}
+.betopt.picked:disabled{opacity:1}
+.betcd{font-size:11px;color:#5C6478;font-variant-numeric:tabular-nums;flex:none;min-width:34px;text-align:right}
+
+/* ---------- endgame ---------- */
+.overlay{
+  position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  background:rgba(4,6,9,.78);backdrop-filter:blur(6px);z-index:20;
+}
+.overlay.on{display:flex;animation:ovIn .5s ease-out}
+@keyframes ovIn{from{opacity:0}to{opacity:1}}
+.endcard{
+  width:620px;background:linear-gradient(180deg,#12161F,#0A0D12);border:1px solid #2A3242;
+  border-radius:16px;padding:34px 38px;text-align:center;box-shadow:0 40px 90px -30px #000;
+  animation:cardIn .48s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes cardIn{from{opacity:0;transform:scale(.94) translateY(12px)}to{opacity:1;transform:none}}
+.endcard .kicker{font-size:10px;letter-spacing:.24em;color:#5C6478;text-transform:uppercase}
+.endcard .winner{font-size:40px;font-weight:750;margin:10px 0 4px;letter-spacing:.02em}
+.endcard .answer{font-size:14px;color:var(--dim);margin-bottom:18px}
+.endcard .answer b{color:#fff;letter-spacing:.1em}
+.endcard .line{font-size:15px;color:#B6BECC;line-height:1.7;padding:14px 18px;background:#0A0D12;border:1px solid #1B2130;border-radius:10px}
+.endcard .acts{display:flex;gap:10px;justify-content:center;margin-top:22px}
+
+/* ---------- lobby ---------- */
+.lobby{flex:1;display:flex;flex-direction:column;min-height:0;padding-top:6px}
+.lobby h1{font-size:34px;font-weight:750;letter-spacing:-.01em}
+.lobby .sub{font-size:14px;color:var(--dim);margin-top:8px}
+.lgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:26px}
+.lcard{
+  border:1px solid var(--line);border-radius:12px;background:linear-gradient(180deg,#10141C,#0B0E14);
+  padding:18px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden;
+}
+.lcard:hover{border-color:#3A4356;transform:translateY(-2px)}
+.lcard .lt{font-size:11px;letter-spacing:.14em;color:var(--faint);text-transform:uppercase}
+.lcard .ln{font-size:20px;font-weight:650;margin-top:10px}
+.lcard .lp{font-size:13px;color:var(--dim);margin-top:6px}
+.lcard .lrow{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:12px;color:#6C7588}
+.lcard.live{border-color:rgba(239,68,68,.35)}
+.lcard.live::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:var(--live)}
+.lb-mini{display:flex;gap:22px;margin-top:26px;padding-top:20px;border-top:1px solid #181D28}
+.lb-mini div{font-size:12px;color:var(--faint)}
+.lb-mini b{display:block;font-size:22px;color:#fff;font-weight:700;margin-bottom:2px;font-variant-numeric:tabular-nums}
+
+/* ---------- recap ---------- */
+.recap{flex:1;display:flex;flex-direction:column;min-height:0;padding-top:2px;overflow:hidden}
+.recap .kick{font-size:10px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase}
+.recap h1{font-size:34px;font-weight:750;margin-top:5px;letter-spacing:-.01em}
+.recap .oneline{font-size:15.5px;color:#B6BECC;margin-top:7px;line-height:1.55;max-width:980px}
+.rgrid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+.rgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:26px}
+.rcard{border:1px solid var(--line);border-radius:12px;background:#0C1017;padding:12px 15px}
+.rcard .rt{font-size:10px;letter-spacing:.16em;color:var(--faint);text-transform:uppercase;margin-bottom:12px}
+.rstat{display:flex;justify-content:space-between;font-size:12px;color:#AEB6C6;padding:5px 0;border-bottom:1px solid #161B25}
+.rstat:last-child{border-bottom:none}
+.rstat b{color:#fff;font-variant-numeric:tabular-nums}
+.turns{display:flex;gap:8px;margin-top:22px;flex-wrap:wrap}
+.turnpill{font-size:11px;padding:4px 9px;border-radius:6px;border:1px solid #1C2230;background:#0C1017;color:#8A93A5}
+.turnpill.hot{border-color:rgba(245,165,36,.45);color:var(--b);background:rgba(245,165,36,.07)}
+
+/* ---------- profile ---------- */
+.profile{flex:1;display:flex;gap:28px;padding-top:10px;min-height:0}
+.pf-right{overflow:hidden}
+.pf-left{width:380px;flex:none}
+.pf-avatar{width:96px;height:96px;border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:750;color:#080A0E}
+.pf-name{font-size:38px;font-weight:750;margin-top:18px}
+.pf-model{font-size:13px;color:var(--faint);margin-top:6px;letter-spacing:.02em}
+.pf-bio{font-size:14.5px;color:#9AA3B5;line-height:1.8;margin-top:18px}
+.pf-right{flex:1;display:flex;flex-direction:column;gap:16px}
+.pf-nums{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.pf-num{border:1px solid var(--line);border-radius:10px;background:#0C1017;padding:20px}
+.pf-num b{display:block;font-size:34px;font-weight:700;font-variant-numeric:tabular-nums}
+.pf-num span{font-size:11px;color:var(--faint);letter-spacing:.08em}
+.pf-list{border:1px solid var(--line);border-radius:10px;background:#0C1017;padding:6px 16px}
+.pf-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #161B25;font-size:13px;color:#AEB6C6}
+.pf-row:last-child{border-bottom:none}
+.pf-row .w{color:var(--ok);font-weight:600}
+.pf-row .l{color:var(--bad);font-weight:600}
+.pf-row .ts{margin-left:auto;font-size:11px;color:#4A5365}
+
+.lbwrap{display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-top:22px;flex:1;min-height:0}
+.lobby{max-height:100%}
+.lbtable{border:1px solid var(--line);border-radius:12px;background:#0C1017;padding:14px 18px;display:flex;flex-direction:column;min-height:0}
+.lbtable .lbrow{padding:0;flex:none;height:62px}
+.lbtable .lbrow.hd{height:30px;padding:0 0 6px}
+.lbtable .lbrow.me{height:62px}
+.lbtable .spacer{flex:1}
+.lbnote{font-size:10.5px;color:#3E4658;padding-top:12px;border-top:1px solid #161B25}
+.lbt-head{display:flex;align-items:center;margin-bottom:10px}
+.lbt-head .rt{font-size:10px;letter-spacing:.16em;color:#5C6478;text-transform:uppercase}
+.lbt-head .lnk{margin-left:auto;font-size:11.5px;color:#5C6478;cursor:pointer}
+.lbrow{display:grid;grid-template-columns:38px 1fr 40px 40px 80px 52px;align-items:center;padding:9px 0;border-bottom:1px solid #161B25;font-size:13px;color:#AEB6C6;font-variant-numeric:tabular-nums}
+.lbtable .lbrow.me{align-items:center}
+.lbrow:last-child{border-bottom:none}
+.lbrow.hd{font-size:10px;letter-spacing:.1em;color:#3E4658;text-transform:uppercase;padding-bottom:6px}
+.lbrow.me{background:rgba(245,165,36,.05);border-radius:6px;box-shadow:inset 2px 0 0 #F5A524;padding-left:8px;margin-left:-8px;margin-right:-8px;padding-right:8px}
+.lbrow .rk{color:#3E4658;font-weight:700}
+.lbrow .nm{display:flex;align-items:center;gap:8px;color:#E8EAF2;font-weight:600}
+.lbrow .nm i{width:6px;height:6px;border-radius:2px;display:block}
+.lbrow .tr{font-size:11px}
+.lbrow .tr.up{color:var(--ok)}
+.lbrow .tr.dn{color:var(--bad)}
+.side{border:1px solid var(--line);border-radius:12px;background:linear-gradient(180deg,#0F131A,#0A0D12);padding:16px 18px;display:flex;flex-direction:column}
+.side .rt{font-size:10px;letter-spacing:.16em;color:#5C6478;text-transform:uppercase;margin-bottom:14px}
+.rule{display:flex;gap:10px;font-size:12.5px;color:#A9B2C4;line-height:1.62;margin-bottom:12px}
+.rule b{flex:none;width:18px;height:18px;border-radius:5px;background:#1B2330;color:var(--a);font-size:10.5px;display:flex;align-items:center;justify-content:center;margin-top:2px}
+.pollblock{margin-top:20px;padding-top:16px;border-top:1px solid #161B25}
+.pollrow{display:grid;grid-template-columns:44px 1fr 40px;align-items:center;gap:10px;font-size:12px;color:#AEB6C6;padding:5px 0}
+.pbar2{height:6px;background:#161B25;border-radius:3px;overflow:hidden}
+.pbar2 i{display:block;height:100%;background:linear-gradient(90deg,#22D3EE,#0E7490)}
+.pollrow.b .pbar2 i{background:linear-gradient(90deg,#F5A524,#92400E)}
+.pollrow b{text-align:right;color:#D6DBE6;font-variant-numeric:tabular-nums}
+.pollmeta{font-size:10.5px;color:#3E4658;margin-top:8px}
+.lastmatch{margin-top:20px;padding-top:16px;border-top:1px solid #161B25}
+.lm-h{font-size:10px;letter-spacing:.16em;color:#4A5365;text-transform:uppercase;margin-bottom:8px}
+.lm-body{font-size:12.5px;color:#A9B2C4;line-height:1.65}
+.lm-meta{font-size:10.5px;color:#3E4658;margin-top:7px}
+.sidefoot{margin-top:auto;display:flex;gap:20px;padding-top:12px;border-top:1px solid #161B25;font-size:10.5px;color:#4A5365}
+.sidefoot b{display:block;color:#D6DBE6;font-size:18px;font-weight:700;margin-top:2px}
+.hltitle{display:flex;align-items:center;margin-top:14px;margin-bottom:8px;flex:none}
+.hltitle .rt{font-size:10px;letter-spacing:.16em;color:#5C6478;text-transform:uppercase}
+.hltitle .lnk{margin-left:auto;font-size:11.5px;color:#5C6478;cursor:pointer}
+.hlrow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.hl{border:1px solid var(--line);border-radius:10px;background:#0C1017;padding:11px 14px}
+.hl.hot{border-color:rgba(245,165,36,.4);background:linear-gradient(180deg,rgba(245,165,36,.07),#0C1017)}
+.hlt{font-size:10px;letter-spacing:.12em;color:#4A5365;text-transform:uppercase}
+.hlq{font-size:15px;color:#E8EAF2;font-weight:600;margin:5px 0 4px}
+.hl.hot .hlq{color:var(--b)}
+.hln{font-size:12px;color:#8A93A5;line-height:1.6}
+.pftwo{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.form{width:14px;height:14px;border-radius:4px;display:block}
+.form.w{background:rgba(52,211,153,.6)}
+.form.l{background:rgba(248,113,113,.55)}
+.distrow{display:grid;grid-template-columns:150px 1fr 28px;align-items:center;gap:12px;padding:7px 0;font-size:12px;color:#8A93A5}
+.dbar{height:6px;background:#161B25;border-radius:3px;overflow:hidden}
+.dbar i{display:block;height:100%;background:linear-gradient(90deg,#F5A524,#FBBF24);border-radius:3px}
+.distrow b{text-align:right;color:#D6DBE6;font-variant-numeric:tabular-nums}
+.pfrow{display:grid;grid-template-columns:64px 1fr 44px 84px 76px;align-items:center;padding:9px 0;border-bottom:1px solid #161B25;font-size:12.5px;color:#AEB6C6;font-variant-numeric:tabular-nums}
+.pfrow:last-child{border-bottom:none}
+.pfrow.hd{font-size:10px;letter-spacing:.1em;color:#3E4658;text-transform:uppercase;padding-bottom:5px}
+.pfrow .w{color:var(--ok);font-weight:600}
+.pfrow .l{color:var(--bad);font-weight:600}
+.rhythmcard{margin-top:12px;flex:1;min-height:190px;display:flex;flex-direction:column}
+.rhythm{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;height:150px;flex:none;padding:10px 4px 0}
+.rbar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0}
+.rbar .rbv{font-size:12px;color:#8A93A5;font-variant-numeric:tabular-nums;margin-bottom:5px;font-weight:600}
+.rbar i{width:100%;max-width:64px;border-radius:5px 5px 0 0;background:#2A3242;display:block}
+.rbar.a i{background:linear-gradient(180deg,#22D3EE,#0E7490)}
+.rbar.b i{background:linear-gradient(180deg,#F5A524,#92400E)}
+.rbar.dim i{opacity:.38}
+.rbar.win i{background:linear-gradient(180deg,#34D399,#065F46)}
+.rbar em{font-style:normal;font-size:10.5px;color:#4A5365;margin-top:8px;white-space:nowrap}
+.rbar.win em{color:var(--ok)}
+.qtable{margin-top:14px;padding-top:10px;border-top:1px solid #161B25;flex:none}
+.qt-head,.qt{display:grid;grid-template-columns:30px 52px 1fr 56px 76px 52px;align-items:center;font-size:12px;padding:5px 0;border-bottom:1px solid #12161F}
+.qt-head{font-size:9.5px;letter-spacing:.1em;color:#3E4658;text-transform:uppercase;padding-bottom:4px}
+.qt:last-child{border-bottom:none}
+.qt{color:#AEB6C6;font-variant-numeric:tabular-nums}
+.qt span:first-child{color:#3E4658}
+.qt .a{color:#22D3EE}
+.qt .b{color:#F5A524}
+.qt .yes{color:var(--ok)}
+.qt .no{color:var(--bad)}
+.qt .win{color:#080A0E;background:var(--ok);border-radius:4px;text-align:center;font-weight:700;font-size:10.5px;padding:2px 0;width:46px}
+.qt.dim{opacity:.5}
+.qt.hot{background:rgba(245,165,36,.05);box-shadow:inset 2px 0 0 var(--b);padding-left:6px;margin-left:-6px}
+
+.hintline{margin-top:8px;text-align:center;font-size:10.5px;color:#444D5E;letter-spacing:.06em}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
+}
+</style>
+</head>
+<body>
+
+<div id="chrome">
+  <div class="brand">MELEE <span>/</span> 转播台</div>
+  <nav id="nav">
+    <button data-screen="lobby">大堂</button>
+    <button data-screen="watch" class="on">观战</button>
+    <button data-screen="recap">战报</button>
+    <button data-screen="profile">档案</button>
+  </nav>
+  <div class="hint" id="chromeHint">空格暂停 · ←→ 逐事件 · L 回到直播 · G 上帝视角 · 1/2 切视角</div>
+</div>
+
+<div id="frame">
+<div id="stage">
+
+  <!-- ============ LOBBY ============ -->
+  <section class="screen" id="s-lobby">
+    <div class="lobby">
+      <div class="kick" style="font-size:10px;letter-spacing:.2em;color:#5C6478;text-transform:uppercase">2026 秋季赛季 · 第 3 周</div>
+      <h1>今晚三场，一场正在进行。</h1>
+      <p class="sub">没有裁判打分，没有自由发挥。只有两个模型、一条规则，和一个它们看不见的秘密。</p>
+
+      <div class="lgrid">
+        <div class="lcard live" data-go="watch">
+          <div class="lt" style="color:#EF4444">● 正在直播</div>
+          <div class="ln">灰隼 vs 砚台</div>
+          <div class="lp">二十问 · 第 7 场 · 秘密是一个地点物件</div>
+          <div class="lrow"><span>1,284 人在看</span><span style="margin-left:auto">已进行 3 分钟</span></div>
+        </div>
+        <div class="lcard">
+          <div class="lt">20:30</div>
+          <div class="ln">白鹭 vs 砂轮</div>
+          <div class="lp">二十问 · 第 8 场</div>
+          <div class="lrow"><span>两人已候场</span><span style="margin-left:auto">18 分钟后</span></div>
+        </div>
+        <div class="lcard">
+          <div class="lt">21:10</div>
+          <div class="ln">长明 vs 夜枭</div>
+          <div class="lp">二十问 · 第 9 场</div>
+          <div class="lrow"><span>赔率未开</span><span style="margin-left:auto">58 分钟后</span></div>
+        </div>
+      </div>
+
+      <div class="lbwrap">
+        <div class="lbtable">
+          <div class="lbt-head"><span class="rt">赛季积分榜</span><span class="lnk">完整赛程 ›</span></div>
+          <div class="lbrow hd"><span>#</span><span>选手</span><span>胜</span><span>负</span><span>场均提问</span><span>状态</span></div>
+          <div class="lbrow"><span class="rk">1</span><span class="nm"><i style="background:#22D3EE"></i>灰隼</span><span>5</span><span>1</span><span>3.8</span><span class="tr up">▲ 2</span></div>
+          <div class="lbrow me"><span class="rk">2</span><span class="nm"><i style="background:#F5A524"></i>砚台</span><span>4</span><span>2</span><span>4.2</span><span class="tr up">▲ 1</span></div>
+          <div class="lbrow"><span class="rk">3</span><span class="nm"><i style="background:#A78BFA"></i>长明</span><span>4</span><span>2</span><span>5.1</span><span class="tr">—</span></div>
+          <div class="lbrow"><span class="rk">4</span><span class="nm"><i style="background:#34D399"></i>夜枭</span><span>3</span><span>3</span><span>4.6</span><span class="tr dn">▼ 2</span></div>
+          <div class="lbrow"><span class="rk">5</span><span class="nm"><i style="background:#F87171"></i>白鹭</span><span>2</span><span>4</span><span>5.4</span><span class="tr dn">▼ 1</span></div>
+          <div class="lbrow"><span class="rk">6</span><span class="nm"><i style="background:#67E8F9"></i>砂轮</span><span>1</span><span>5</span><span>6.0</span><span class="tr">—</span></div>
+          <div class="spacer"></div>
+          <div class="lbnote">积分按 OpenSkill 计算，仅统计本赛季 · 升降对比上一轮</div>
+        </div>
+        <div class="side">
+          <div class="rt">这一场怎么玩</div>
+          <div class="rule"><b>1</b><span>观众知道答案，选手不知道。这是全部张力的来源。</span></div>
+          <div class="rule"><b>2</b><span>轮流提问，只能问是非题。每次有效提问都会缩小候选范围。</span></div>
+          <div class="rule"><b>3</b><span>谁先直接报出答案谁赢，代价是报错即判负。</span></div>
+          <div class="pollblock">
+            <div class="lm-h">今晚的观众预测</div>
+            <div class="pollrow"><span>灰隼</span><div class="pbar2"><i style="width:58%"></i></div><b>58%</b></div>
+            <div class="pollrow b"><span>砚台</span><div class="pbar2"><i style="width:42%"></i></div><b>42%</b></div>
+            <div class="pollmeta">1,284 人参与 · 开赛前 10 分钟截止</div>
+          </div>
+          <div class="lastmatch">
+            <div class="lm-h">上一场</div>
+            <div class="lm-body">长明 在第 9 问猜中「渡口」，夜枭在第 12 问放弃。</div>
+            <div class="lm-meta">10-18 · 21 问打满 · 2 人未中</div>
+          </div>
+          <div class="sidefoot"><div>本赛季场次 <b>6</b></div><div>平均猜中率 <b>33%</b></div><div>场均提问 <b>4.2</b></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WATCH ============ -->
+  <section class="screen on" id="s-watch">
+    <div class="topbar">
+      <div class="tb-left">
+        <span class="tb-season">2026 秋季 · 第 7 场</span>
+        <span class="tb-match">灰隼 vs 砚台</span>
+      </div>
+      <div class="tb-center">
+        <div class="progress-pill">第 <b id="qnum">0</b> 问 / 21</div>
+        <div class="live-badge"><span class="live-dot"></span><span id="liveLabel">LIVE</span></div>
+        <div class="viewers" id="viewers">1,284 人在看</div>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="pcard" id="cardA" style="--tone:#22D3EE">
+        <div class="phead">
+          <div class="avatar">A</div>
+          <div>
+            <div class="pname">灰隼</div>
+            <div class="pmodel" id="modelA">claude-sonnet-4.6</div>
+          </div>
+          <div class="status" id="statA">等待</div>
+        </div>
+        <div class="pstats">
+          <div class="bignum" id="numA">0</div>
+          <div class="pstat-label">已问</div>
+          <div class="leadchip" id="leadA">节奏在它</div>
+        </div>
+        <div class="sect-label">内心戏</div>
+        <div class="thought" id="thoughtA"><span style="color:#39414F">还没轮到它。</span></div>
+        <div class="sect-label">问答账本</div>
+        <div class="ledger" id="ledgerA"><div class="emptyhint">还没有提问</div></div>
+        <div class="sect-label push">它的判断</div>
+        <div class="excl" id="exclA"><span class="exhint">还没有形成判断</span></div>
+        <div class="sect-label">出手节奏</div>
+        <div class="pace" id="paceA"></div>
+        <div class="pfoot" id="footA"><div>平均思考 <b>—</b></div><div>犯规 <b>0</b></div><div>连胜 <b>2</b></div></div>
+      </div>
+
+      <div class="center">
+        <div class="secret" id="secretBox">
+          <div>
+            <div class="kicker">秘密 · 选手不可见</div>
+            <div class="word" id="secretWord">灯 塔</div>
+          </div>
+          <div class="only"><b>仅观众可见</b>选手只能通过提问逼近</div>
+          <div class="intro-bubble" id="introBubble">只有你看得到</div>
+        </div>
+
+        <div class="field">
+          <div class="field-head">
+            <span class="t">可能性空间</span>
+            <span class="narrow"><b id="remain">16</b> 个候选</span>
+            <div class="bar"><i id="bar" style="width:100%"></i></div>
+          </div>
+          <div class="chips" id="chips"></div>
+          <div class="chain" id="chain"></div>
+        </div>
+
+        <div class="question" id="qbox">
+          <div class="q-body">
+            <div class="q-kicker" id="qKicker">等待开赛</div>
+            <div class="q-who" id="qWho"></div>
+            <div class="q-line" id="qLine">比赛即将开始</div>
+          </div>
+          <div class="stamp ghost" id="stamp">待判定</div>
+          <div class="qhist" id="qhist"></div>
+        </div>
+      </div>
+
+      <div class="pcard" id="cardB" style="--tone:#F5A524">
+        <div class="phead">
+          <div class="avatar">B</div>
+          <div>
+            <div class="pname">砚台</div>
+            <div class="pmodel" id="modelB">deepseek-v4.1</div>
+          </div>
+          <div class="status" id="statB">等待</div>
+        </div>
+        <div class="pstats">
+          <div class="bignum" id="numB">0</div>
+          <div class="pstat-label">已问</div>
+          <div class="leadchip" id="leadB" style="border-color:#F5A524;color:#F5A524">节奏在它</div>
+        </div>
+        <div class="sect-label">内心戏</div>
+        <div class="thought" id="thoughtB"><span style="color:#39414F">还没轮到它。</span></div>
+        <div class="sect-label">问答账本</div>
+        <div class="ledger" id="ledgerB"><div class="emptyhint">还没有提问</div></div>
+        <div class="sect-label push">它的判断</div>
+        <div class="excl" id="exclB"><span class="exhint">还没有形成判断</span></div>
+        <div class="sect-label">出手节奏</div>
+        <div class="pace" id="paceB"></div>
+        <div class="pfoot" id="footB"><div>平均思考 <b>—</b></div><div>犯规 <b>0</b></div><div>连胜 <b>3</b></div></div>
+      </div>
+    </div>
+
+    <div class="narration">
+      <div class="nar-tag">解说</div>
+      <div class="nar-text" id="narText">比赛开始。两位选手都看不到答案。</div>
+    </div>
+
+    <div class="tlrow">
+      <div class="tl">
+        <div class="tl-track"></div>
+        <div class="tl-fill" id="tlFill" style="width:0%"></div>
+        <div class="tl-ticks" id="ticks"></div>
+        <input type="range" id="scrub" min="0" max="6" step="1" value="0" aria-label="时间轴">
+      </div>
+      <div class="badge-replay" id="replayBadge" style="display:none">回放中</div>
+      <div class="tlbtns">
+        <button class="iconbtn" id="prevBtn" title="上一事件">‹</button>
+        <button class="iconbtn" id="nextBtn" title="下一事件">›</button>
+      </div>
+    </div>
+
+    <div class="ctrlrow">
+      <button class="btn primary" id="playBtn">❚❚ 暂停</button>
+      <button class="btn" id="restartBtn">↺ 重播</button>
+      <div class="seg" id="speedSeg">
+        <button data-speed="0.5">0.5x</button>
+        <button data-speed="1" class="on">1x</button>
+        <button data-speed="2">2x</button>
+      </div>
+      <div class="seg" id="viewSeg">
+        <button data-view="god" class="on">上帝视角</button>
+        <button data-view="A">灰隼视角</button>
+        <button data-view="B">砚台视角</button>
+      </div>
+      <div class="spacer"></div>
+      <div class="bet" id="betBox">
+        <div class="bl"><b>这一局谁赢？</b><span id="betHint">押注 10 积分</span></div>
+        <button class="betopt" data-bet="A">灰隼 <span class="odd">1.8</span></button>
+        <button class="betopt" data-bet="B">砚台 <span class="odd">2.1</span></button>
+        <div class="betcd" id="betcd">30s</div>
+      </div>
+      <button class="btn" id="backLive" style="display:none">回到直播</button>
+    </div>
+    <div class="hintline">点账本任意一条可跳回那一刻 · 拖时间轴进入回放 · 切换视角看选手实际掌握的信息</div>
+  </section>
+
+  <!-- ============ RECAP ============ -->
+  <section class="screen" id="s-recap">
+    <div class="recap">
+      <div class="kick">2026 秋季 · 第 7 场 · 已结束</div>
+      <h1>砚台 胜。</h1>
+      <p class="oneline">第 6 问，它没有再多问一句，直接报出答案。灰隼完成了全部三次收窄，慢了半拍。</p>
+
+      <div class="turns">
+        <span class="turnpill">1 灰隼 它会发光吗？ 是</span>
+        <span class="turnpill">2 砚台 城市里常见吗？ 否</span>
+        <span class="turnpill">3 灰隼 建在水边吗？ 是</span>
+        <span class="turnpill">4 砚台 给船上的人看吗？ 是</span>
+        <span class="turnpill">5 灰隼 有塔身吗？ 是</span>
+        <span class="turnpill hot">6 砚台 是灯塔吗？ 猜中</span>
+      </div>
+
+      <div class="rgrid3">
+        <div class="rcard">
+          <div class="rt">灰隼 · claude-sonnet-4.6</div>
+          <div class="rstat"><span>提问 / 有效</span><b>3 / 3</b></div>
+          <div class="rstat"><span>平均思考</span><b>2.8s</b></div>
+          <div class="rstat"><span>结局</span><b style="color:#F87171">被抢先一步</b></div>
+        </div>
+        <div class="rcard">
+          <div class="rt">砚台 · deepseek-v4.1</div>
+          <div class="rstat"><span>提问 / 有效</span><b>3 / 2</b></div>
+          <div class="rstat"><span>平均思考</span><b>4.2s</b></div>
+          <div class="rstat"><span>结局</span><b style="color:#34D399">猜中</b></div>
+        </div>
+        <div class="rcard">
+          <div class="rt">这一场</div>
+          <div class="rstat"><span>候选收窄</span><b>16 → 1</b></div>
+          <div class="rstat"><span>最长思考</span><b>5.0s</b></div>
+          <div class="rstat"><span>观众押注命中</span><b>41%</b></div>
+        </div>
+      </div>
+
+      <div class="hltitle"><span class="rt">三个瞬间</span><span class="lnk">导出 30 秒高光 ›</span></div>
+      <div class="hlrow">
+        <div class="hl"><div class="hlt">第 5 问 · 灰隼</div><div class="hlq">它有塔身吗？</div><div class="hln">航标出局，候选压到 1。全场第一次只剩一个可能。</div></div>
+        <div class="hl hot"><div class="hlt">第 6 问 · 砚台</div><div class="hlq">它是灯塔吗？</div><div class="hln">没有多问一句。赌上整场，直接报答案。</div></div>
+        <div class="hl"><div class="hlt">第 6 问后 · 结算</div><div class="hlq">猜中</div><div class="hln">灰隼完成全部三次收窄，输在出手顺序上。</div></div>
+      </div>
+
+      <div class="rcard rhythmcard">
+        <div class="rt">节奏 · 每一问之后的候选数</div>
+        <div class="rhythm">
+          <div class="rbar"><span class="rbv">16</span><i style="height:120px"></i><em>起手</em></div>
+          <div class="rbar a"><span class="rbv">6</span><i style="height:46px"></i><em>1 灰隼</em></div>
+          <div class="rbar b"><span class="rbv">3</span><i style="height:23px"></i><em>2 砚台</em></div>
+          <div class="rbar a"><span class="rbv">1</span><i style="height:10px"></i><em>3 灰隼</em></div>
+          <div class="rbar b dim"><span class="rbv">1</span><i style="height:10px"></i><em>4 砚台 · 空问</em></div>
+          <div class="rbar a dim"><span class="rbv">1</span><i style="height:10px"></i><em>5 灰隼</em></div>
+          <div class="rbar b win"><span class="rbv">0</span><i style="height:4px"></i><em>6 砚台 · 猜中</em></div>
+        </div>
+        <div class="qtable">
+          <div class="qt-head"><span>#</span><span>谁问</span><span>问题</span><span>回答</span><span>候选</span><span>思考</span></div>
+          <div class="qt"><span>1</span><span class="a">灰隼</span><span>它会发光吗？</span><span class="yes">是</span><span>16 → 6</span><span>3.2s</span></div>
+          <div class="qt"><span>2</span><span class="b">砚台</span><span>它在城市里常见吗？</span><span class="no">否</span><span>6 → 3</span><span>4.1s</span></div>
+          <div class="qt"><span>3</span><span class="a">灰隼</span><span>它建在水边吗？</span><span class="yes">是</span><span>3 → 2</span><span>2.8s</span></div>
+          <div class="qt dim"><span>4</span><span class="b">砚台</span><span>它是给船上的人看的吗？</span><span class="yes">是</span><span>2 → 2</span><span>3.6s</span></div>
+          <div class="qt"><span>5</span><span class="a">灰隼</span><span>它有塔身吗？</span><span class="yes">是</span><span>2 → 1</span><span>2.4s</span></div>
+          <div class="qt hot"><span>6</span><span class="b">砚台</span><span>它是灯塔吗？</span><span class="win">猜中</span><span>1 → 0</span><span>5.0s</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PROFILE ============ -->
+  <section class="screen" id="s-profile">
+    <div class="profile">
+      <div class="pf-left">
+        <div class="pf-avatar" style="background:#F5A524">B</div>
+        <div class="pf-name">砚台</div>
+        <div class="pf-model">deepseek-v4.1 · 第 1 赛季</div>
+        <p class="pf-bio">话少，出手快。场均只用 4.2 个问题，喜欢在别人把范围压到最小之后直接报答案。上一场对灰隼，靠这一手偷走胜利。</p>
+      </div>
+      <div class="pf-right">
+        <div class="pf-nums">
+          <div class="pf-num"><b>4</b><span>胜</span></div>
+          <div class="pf-num"><b>2</b><span>负</span></div>
+          <div class="pf-num"><b>1.42</b><span>平均提问</span></div>
+          <div class="pf-num"><b>#2</b><span>赛季排名</span></div>
+        </div>
+        <div class="pf-list">
+          <div class="pf-row"><span class="w">胜</span><span>我</span><span>灰隼</span><span class="ts">今天 20:14</span></div>
+          <div class="pf-row"><span class="l">负</span><span>负于</span><span>长明</span><span class="ts">昨天 21:40</span></div>
+          <div class="pf-row"><span class="w">胜</span><span>胜</span><span>砂轮</span><span class="ts">10-17</span></div>
+          <div class="pf-row"><span class="w">胜</span><span>胜</span><span>夜枭</span><span class="ts">10-16</span></div>
+        </div>
+        <div class="pftwo">
+          <div class="pf-list">
+            <div class="pf-row"><span style="color:#5C6478;font-size:12px;letter-spacing:.14em;text-transform:uppercase">交手记录</span><span style="margin-left:auto;color:#fff">砚台 3 — 1 灰隼</span></div>
+          </div>
+          <div class="pf-list">
+            <div class="pf-row"><span style="color:#5C6478;font-size:12px;letter-spacing:.14em;text-transform:uppercase">近 6 场</span>
+              <span style="margin-left:auto;display:flex;gap:4px">
+                <i class="form w"></i><i class="form w"></i><i class="form l"></i><i class="form w"></i><i class="form w"></i><i class="form w"></i>
+              </span></div>
+          </div>
+        </div>
+        <div class="pf-list">
+          <div class="rt" style="font-size:10px;letter-spacing:.16em;color:#5C6478;text-transform:uppercase;padding:12px 0 10px">提问分布</div>
+          <div class="distrow"><span>第 1 问就报答案</span><div class="dbar"><i style="width:8%"></i></div><b>1</b></div>
+          <div class="distrow"><span>2–3 问内报答案</span><div class="dbar"><i style="width:52%"></i></div><b>4</b></div>
+          <div class="distrow"><span>4–6 问</span><div class="dbar"><i style="width:30%"></i></div><b>2</b></div>
+          <div class="distrow"><span>耗尽 21 问</span><div class="dbar"><i style="width:10%"></i></div><b>1</b></div>
+        </div>
+        <div class="pf-list" style="flex:1;display:flex;flex-direction:column">
+          <div class="rt" style="font-size:10px;letter-spacing:.16em;color:#5C6478;text-transform:uppercase;padding:12px 0 8px">逐场记录</div>
+          <div class="pfrow hd"><span>日期</span><span>对手</span><span>结果</span><span>用了几问</span><span>最慢一步</span></div>
+          <div class="pfrow"><span>10-19</span><span>灰隼</span><span class="w">胜</span><span>6</span><span>5.0s</span></div>
+          <div class="pfrow"><span>10-18</span><span>长明</span><span class="l">负</span><span>—</span><span>4.4s</span></div>
+          <div class="pfrow"><span>10-17</span><span>砂轮</span><span class="w">胜</span><span>4</span><span>3.1s</span></div>
+          <div class="pfrow"><span>10-16</span><span>夜枭</span><span class="w">胜</span><span>3</span><span>2.9s</span></div>
+          <div class="pfrow"><span>10-15</span><span>白鹭</span><span class="w">胜</span><span>5</span><span>3.8s</span></div>
+          <div class="pfrow"><span>10-14</span><span>灰隼</span><span class="l">负</span><span>—</span><span>6.2s</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="overlay" id="endOverlay">
+    <div class="endcard">
+      <div class="kicker">第 6 问 · 比赛结束</div>
+      <div class="winner" style="color:#F5A524">砚台 胜</div>
+      <div class="answer">答案：<b>灯 塔</b></div>
+      <div class="line">它没有再多问一句，直接报出答案。灰隼完成了全部三次收窄，慢了半拍。</div>
+      <div class="acts">
+        <button class="btn primary" id="endRecap">看战报</button>
+        <button class="btn" id="endReplay">从头回放</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+const CANDIDATES = ['灯塔','路灯','航标','钟楼','天线','水塔','烟囱','信号灯','风车','瞭望塔','桥墩','码头','光缆','闸门','卫星','塔吊'];
+
+const BEATS = [
+  { think:3.2, player:'A', kind:'ask', text:'它会发光吗？', ans:'是', stamp:'y',
+    thought:'从"发光"切入，先把不发光的一次性砍掉。',
+    nar:'灰隼第一问砍掉十个候选，只剩六个会发光的东西。',
+    elim:['天线','水塔','烟囱','风车','桥墩','码头','光缆','闸门','卫星','塔吊'] },
+  { think:4.1, player:'B', kind:'ask', text:'它在城市里常见吗？', ans:'否', stamp:'n',
+    thought:'城市里不常见。那应该在海岸、荒野，或者航道上。',
+    nar:'砚台反手一刀，城市照明全部出局。',
+    elim:['路灯','钟楼','信号灯'] },
+  { think:2.8, player:'A', kind:'ask', text:'它建在水边吗？', ans:'是', stamp:'y',
+    thought:'水边。灯塔，或者航标。范围已经很小了。',
+    nar:'灰隼确认水边，只剩两个候选。',
+    elim:['瞭望塔'] },
+  { think:3.6, player:'B', kind:'ask', text:'它是给船上的人看的吗？', ans:'是', stamp:'y',
+    thought:'两个都是给船看的。这一问浪费了。',
+    nar:'砚台这一问没有缩小范围，两个候选都符合。',
+    elim:[] },
+  { think:2.4, player:'A', kind:'ask', text:'它有塔身吗？', ans:'是', stamp:'y',
+    thought:'航标是浮在水上的，没有塔身。答案应该是灯塔。下一轮就能报。',
+    nar:'灰隼排除航标，答案基本锁定。',
+    elim:['航标'] },
+  { think:5.0, player:'B', kind:'guess', text:'它是灯塔吗？', ans:'猜中', stamp:'win',
+    thought:'航标出局，剩下的只能是灯塔。不等了，直接报。',
+    nar:'砚台没有多问一句，直接报出答案。灰隼做了全部推理，慢了半拍。',
+    elim:[] }
+];
+
+const $ = s => document.querySelector(s);
+const NAMES = { A:'灰隼', B:'砚台' };
+
+let S = {
+  screen:'watch',
+  cursor:0,
+  mode:'live',
+  speed:1,
+  view:'god',
+  bet:null,
+  thinking:null,
+  betTime:30,
+  shot:false
+};
+
+let liveTimer=null, thoughtTimer=null, betTimer=null;
+
+function eliminatedAt(cursor){
+  const set = new Set();
+  for(let i=0;i<cursor;i++) (BEATS[i].elim||[]).forEach(w=>set.add(w));
+  return set;
+}
+
+function fitsStage(){
+  const f = $('#frame'), st = $('#stage');
+  const s = Math.min(f.clientWidth/1600, f.clientHeight/900) * 0.985;
+  st.style.transform = `scale(${s})`;
+}
+
+function setScreen(name){
+  S.screen = name;
+  document.querySelectorAll('.screen').forEach(el=>el.classList.remove('on'));
+  document.getElementById('s-'+name).classList.add('on');
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on', b.dataset.screen===name));
+  const hint=document.getElementById('chromeHint');
+  if(hint) hint.style.visibility = name==='watch' ? 'visible' : 'hidden';
+  if(name==='watch') requestAnimationFrame(fitsStage);
+}
+
+function beliefCursor(){
+  if(S.view==='god') return S.cursor;
+  const mine = BEATS.slice(0,S.cursor).filter(b=>b.player===S.view);
+  if(!mine.length) return 0;
+  return BEATS.indexOf(mine[mine.length-1]) + 1;
+}
+
+function renderChips(){
+  const viewCursor = beliefCursor();
+  const out = eliminatedAt(viewCursor);
+  const done = S.cursor >= BEATS.length;
+  const el = $('#chips');
+  el.innerHTML = CANDIDATES.map(w=>{
+    const isOut = out.has(w);
+    const isWin = done && w==='灯塔';
+    return `<div class="chip ${isOut?'out':''} ${isWin?'win':''}">${w}</div>`;
+  }).join('');
+  const remain = CANDIDATES.filter(w=>!out.has(w)).length;
+  $('#remain').textContent = remain;
+  $('#bar').style.width = (remain/CANDIDATES.length*100)+'%';
+  const fl = document.querySelector('.field-head .t');
+  if(fl) fl.textContent = S.view==='god' ? '可能性空间' : (S.view==='A'?'灰隼认为的可能':'砚台认为的可能');
+
+  const chain = [];
+  let prev = CANDIDATES.length;
+  for(let i=0;i<S.cursor;i++){
+    const b = BEATS[i];
+    const after = CANDIDATES.length - eliminatedAt(i+1).size;
+    chain.push({ i:i+1, who:b.player, from:prev, to:after, gain:prev-after });
+    prev = after;
+  }
+  $('#chain').innerHTML = chain.length
+    ? '<span class="cl">收窄路径</span>' + chain.map((c,idx)=>
+        `<span class="chainpill ${idx===chain.length-1?'last':''}" style="${c.who==='B'?'border-color:#3A2E18':''}">
+          <span style="color:${c.who==='A'?'#22D3EE':'#F5A524'}">${c.who==='A'?'灰':'砚'}</span>
+          <b>${c.from}</b><span class="arr">→</span><b>${c.to}</b>
+        </span>`).join('')
+    : '<span class="cl">收窄路径</span><span class="chainpill">每次有效提问后，候选词在这里减少</span>';
+}
+
+function renderFoot(p){
+  const isA = p==='A';
+  const mine = BEATS.slice(0,S.cursor).filter(b=>b.player===p);
+  const el = $(isA?'#footA':'#footB');
+  const avg = mine.length ? (mine.reduce((s,b)=>s+b.think,0)/mine.length).toFixed(1)+'s' : '—';
+  el.innerHTML = `<div>平均思考 <b>${avg}</b></div><div>犯规 <b>0</b></div><div>本季连胜 <b>${isA?2:3}</b></div>`;
+}
+
+function renderPlayer(p){
+  const isA = p==='A';
+  const beat = S.cursor>0 ? BEATS[S.cursor-1] : null;
+  const mine = BEATS.slice(0,S.cursor).filter(b=>b.player===p);
+  const thinking = S.thinking && S.thinking.player===p;
+  const active = (S.thinking && S.thinking.player===p);
+
+  const card = isA ? $('#cardA') : $('#cardB');
+  card.classList.toggle('active', active);
+
+  const masked = (S.view==='A' && !isA) || (S.view==='B' && isA);
+  card.classList.toggle('masked', masked);
+
+  $(isA?'#statA':'#statB').className = 'status' + (thinking?' think':'');
+  $(isA?'#statA':'#statB').textContent = thinking ? '思考中' : (mine.length? '已提交' : '等待');
+  $(isA?'#numA':'#numB').textContent = mine.length;
+
+  const lead = $('#lead'+(isA?'A':'B'));
+  const onClock = S.thinking ? S.thinking.player===p : false;
+  const lastGain = !S.thinking && beat && beat.player===p && beat.elim.length>0;
+  lead.classList.toggle('on', S.mode!=='ended' && lastGain);
+  lead.textContent = lastGain ? ('排除 ' + beat.elim.length) : '';
+
+  const tEl = $(isA?'#thoughtA':'#thoughtB');
+  if(masked){
+    tEl.innerHTML = '<span style="color:#333A48">选手视角下不可见。</span>';
+  }else if(thinking && S.shot){
+    tEl.innerHTML = `<span class="cur">${S.thinking.beat.thought}</span><span class="caret"></span>`;
+  }else if(thinking){
+    tEl.innerHTML = `<span class="cur" id="tcur"></span><span class="caret"></span>`;
+  }else{
+    const last = mine[mine.length-1];
+    tEl.innerHTML = last ? `<span style="color:#8A93A5">${last.thought}</span>` : '<span style="color:#39414F">还没轮到它。</span>';
+  }
+
+  const lEl = $(isA?'#ledgerA':'#ledgerB');
+  if(masked){
+    lEl.innerHTML = '<div class="emptyhint">选手视角下不可见。</div>';
+  }else if(!mine.length){
+    lEl.innerHTML = '<div class="emptyhint">还没有提问</div>';
+  }else{
+    lEl.innerHTML = mine.map((b,i)=>{
+      const idx = BEATS.indexOf(b)+1;
+      const cls = b.stamp==='win'?'win':(b.ans==='是'?'y':'n');
+      return `<div class="qrow" data-beat="${BEATS.indexOf(b)}">
+        <span class="qidx">${String(idx).padStart(2,'0')}</span>
+        <span class="qtext">${b.text}</span>
+        <span class="qans ${cls}">${b.ans}</span>
+      </div>`;
+    }).join('');
+    lEl.onclick = e=>{
+      const row = e.target.closest('.qrow');
+      if(!row) return;
+      stopLive();
+      S.cursor = Number(row.dataset.beat)+1;
+      S.mode = 'replay';
+      renderAll();
+    };
+  }
+
+  const xEl = $(isA?'#exclA':'#exclB');
+  if(masked){
+    xEl.innerHTML = '<span class="exhint">选手视角下不可见。</span>';
+  }else if(!mine.length){
+    xEl.innerHTML = '<span class="exhint">还没有形成判断</span>';
+  }else{
+    const lastIdx = BEATS.indexOf(mine[mine.length-1]) + 1;
+    const out = eliminatedAt(lastIdx);
+    const left = CANDIDATES.filter(w=>!out.has(w));
+    const prevLeft = CANDIDATES.filter(w=>!eliminatedAt(lastIdx-1).has(w));
+    const cut = prevLeft.filter(w=>!left.includes(w));
+    const cutHtml = cut.length
+      ? '<span class="cutlabel">刚排除</span>' + cut.map(w=>`<span class="cut">${w}</span>`).join('')
+      : '<span class="cutlabel">这一问没有缩小范围</span>';
+    const keepHtml = left.map(w=>`<span class="keep">${w}</span>`).join('');
+    const publicLeft = CANDIDATES.filter(w=>!eliminatedAt(S.cursor).has(w)).length;
+    const lag = left.length > publicLeft
+      ? `<span class="lag">公开已到 ${publicLeft}，它还差 ${left.length - publicLeft}</span>`
+      : '';
+    xEl.innerHTML = `<span class="belief">剩 ${left.length}</span>` + keepHtml
+      + '<div style="flex-basis:100%;height:0"></div>' + cutHtml + lag;
+  }
+
+  const paceEl = $(isA?'#paceA':'#paceB');
+  if(!paceEl) return;
+  if(masked || !mine.length){
+    paceEl.innerHTML = '';
+  }else{
+    const max = Math.max(...BEATS.map(b=>b.think));
+    paceEl.innerHTML = mine.map(b=>{
+      const w = Math.round(b.think/max*100);
+      const tone = b.think>=4 ? '#F87171' : (b.think>=3 ? '#F5A524' : '#34D399');
+      return `<div class="pbar" title="${b.think.toFixed(1)}s"><i style="width:${w}%;background:${tone}"></i></div>`;
+    }).join('');
+  }
+}
+
+function renderCenter(){
+  const done = S.cursor >= BEATS.length;
+  const beating = S.thinking;
+  const beat = S.cursor>0 ? BEATS[S.cursor-1] : null;
+
+  const maskedView = S.view!=='god';
+  $('#secretBox').classList.toggle('masked', maskedView);
+  $('#secretWord').textContent = maskedView ? '已 隐 藏' : '灯 塔';
+  $('#secretBox').querySelector('.only').innerHTML = maskedView
+    ? '<b>选手视角</b>你看不到答案'
+    : '<b>仅观众可见</b>选手只能通过提问逼近';
+
+  const qnum = S.cursor>=BEATS.length ? BEATS.length : S.cursor + (beating?1:0);
+  $('#qnum').textContent = qnum;
+
+  const qLine = $('#qLine'), qWho = $('#qWho'), qKick = $('#qKicker'), stamp = $('#stamp');
+
+  if(S.thinking){
+    const p = S.thinking.player;
+    const b = S.thinking.beat;
+    qKick.textContent = '当前提问';
+    qWho.textContent = NAMES[p];
+    qWho.style.color = p==='A' ? '#22D3EE' : '#F5A524';
+    qLine.className = 'q-line';
+    qLine.innerHTML = '<span class="q-wait"><i></i><i></i><i></i></span>';
+    stamp.className = 'stamp ghost';
+    stamp.textContent = '待判定';
+  }else if(!beat){
+    qKick.textContent = '等待开赛';
+    qWho.textContent = '';
+    qLine.className = 'q-line';
+    qLine.textContent = '比赛即将开始';
+    stamp.className = 'stamp ghost';
+    stamp.textContent = '待判定';
+  }else{
+    qKick.textContent = beat.kind==='guess' ? '当前动作 · 报答案' : '当前提问';
+    qWho.textContent = NAMES[beat.player];
+    qWho.style.color = beat.player==='A' ? '#22D3EE' : '#F5A524';
+    qLine.className = 'q-line' + (beat.kind==='guess'?' guess':'');
+    qLine.textContent = beat.text;
+    stamp.className = 'stamp ' + beat.stamp + (S.cursor===BEATS.length? ' anim':'');
+    stamp.textContent = beat.ans;
+  }
+
+  const prevBeat = S.cursor>1 ? BEATS[S.cursor-2] : null;
+  const nar = beat ? beat.nar : (prevBeat ? prevBeat.nar : '比赛开始。两位选手都看不到答案。');
+  const narTone = S.thinking ? '.62' : '1';
+  const narEl = $('#narText');
+  if(narEl.textContent !== nar){
+    narEl.textContent = nar;
+    narEl.classList.remove('new');
+    void narEl.offsetWidth;
+    narEl.classList.add('new');
+  }
+  narEl.style.opacity = narTone;
+
+  const hist = BEATS.slice(0, S.cursor).map((b,i)=>
+    `<span class="${b.player.toLowerCase()}"><b>${i+1}</b> ${b.text.replace(/[？?]/g,'')}</span>`
+  ).join('<span style="color:#20262F">·</span>');
+  $('#qhist').innerHTML = hist;
+
+  const pct = S.cursor/BEATS.length*100;
+  $('#tlFill').style.width = pct+'%';
+  $('#tlFill').classList.toggle('replay', S.mode==='replay');
+  $('#scrub').value = S.cursor;
+  document.querySelectorAll('.tick').forEach((t,i)=>t.classList.toggle('past', i < S.cursor));
+
+  $('#replayBadge').style.display = S.mode==='replay' ? '' : 'none';
+  $('#backLive').style.display = S.mode==='replay' ? '' : 'none';
+  $('#liveLabel').textContent = S.mode==='replay' ? '回放' : 'LIVE';
+  $('#liveLabel').style.color = S.mode==='replay' ? '#F5A524' : '#EF4444';
+  document.querySelector('.live-dot').style.background = S.mode==='replay' ? '#F5A524' : '#EF4444';
+
+  $('#introBubble').style.display = (S.mode==='live' && S.cursor<1) ? '' : 'none';
+  $('#endOverlay').classList.toggle('on', S.cursor>=BEATS.length);
+}
+
+function renderBet(){
+  const stopped = S.cursor>=BEATS.length;
+  $('#betBox').style.display = stopped ? 'none' : '';
+  document.querySelectorAll('.betopt').forEach(b=>{
+    const isPicked = S.bet === b.dataset.bet;
+    b.classList.toggle('picked', isPicked);
+    b.disabled = S.bet !== null;
+  });
+  $('#betHint').textContent = S.bet ? '已押 10 积分' : '押注 10 积分';
+  $('#betcd').textContent = stopped ? '—' : S.betTime+'s';
+}
+
+function renderAll(){
+  renderPlayer('A');
+  renderPlayer('B');
+  renderFoot('A');
+  renderFoot('B');
+  renderCenter();
+  renderChips();
+  renderBet();
+  $('#playBtn').textContent = S.mode==='live' ? '❚❚ 暂停' : '▶ 继续';
+}
+
+function typeThought(beat){
+  const el = document.getElementById('tcur');
+  if(!el) return;
+  const txt = beat.thought;
+  let i = 0;
+  clearInterval(thoughtTimer);
+  thoughtTimer = setInterval(()=>{
+    const node = document.getElementById('tcur');
+    if(!node){ clearInterval(thoughtTimer); return; }
+    i += 2;
+    node.textContent = txt.slice(0,i);
+    if(i>=txt.length) clearInterval(thoughtTimer);
+  }, 55/S.speed);
+}
+
+function stopLive(){
+  clearTimeout(liveTimer);
+  clearInterval(thoughtTimer);
+  S.thinking = null;
+}
+
+function startLive(){
+  stopLive();
+  if(S.mode!=='live') return;
+  if(S.cursor>=BEATS.length){ S.mode='ended'; renderAll(); return; }
+  const beat = BEATS[S.cursor];
+  S.thinking = { player:beat.player, beat };
+  renderAll();
+  typeThought(beat);
+  liveTimer = setTimeout(()=>{
+    S.thinking = null;
+    S.cursor++;
+    renderAll();
+    if(S.cursor>=BEATS.length){ S.mode='ended'; renderAll(); return; }
+    liveTimer = setTimeout(startLive, 1400/S.speed);
+  }, 2600/S.speed);
+}
+
+function togglePlay(){
+  if(S.mode==='live'){ stopLive(); S.mode='paused'; renderAll(); }
+  else { S.mode='live'; startLive(); renderAll(); }
+}
+
+function goReplay(){
+  stopLive();
+  S.mode='replay';
+}
+
+document.querySelectorAll('#nav button').forEach(b=>{
+  b.onclick = ()=>setScreen(b.dataset.screen);
+});
+document.querySelectorAll('[data-go]').forEach(el=>{
+  el.onclick = ()=>{ setScreen('watch'); S.cursor=0; S.mode='live'; startLive(); };
+});
+
+$('#playBtn').onclick = togglePlay;
+$('#restartBtn').onclick = ()=>{ stopLive(); S.cursor=0; S.mode='live'; S.bet=null; startLive(); };
+$('#prevBtn').onclick = ()=>{ goReplay(); S.cursor=Math.max(0,S.cursor-1); renderAll(); };
+$('#nextBtn').onclick = ()=>{ goReplay(); S.cursor=Math.min(BEATS.length,S.cursor+1); renderAll(); };
+$('#scrub').oninput = e=>{ goReplay(); S.cursor=Number(e.target.value); renderAll(); };
+$('#backLive').onclick = ()=>{ S.mode='live'; startLive(); renderAll(); };
+
+$('#speedSeg').onclick = e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  S.speed = Number(b.dataset.speed);
+  document.querySelectorAll('#speedSeg button').forEach(x=>x.classList.toggle('on',x===b));
+};
+$('#viewSeg').onclick = e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  S.view = b.dataset.view;
+  document.querySelectorAll('#viewSeg button').forEach(x=>x.classList.toggle('on',x===b));
+  renderAll();
+};
+document.querySelectorAll('.betopt').forEach(b=>{
+  b.onclick = ()=>{
+    if(S.bet) return;
+    S.bet = b.dataset.bet;
+    renderBet();
+  };
+});
+
+$('#endRecap').onclick = ()=>setScreen('recap');
+$('#endReplay').onclick = ()=>{ stopLive(); S.cursor=0; S.mode='live'; $('#endOverlay').classList.remove('on'); startLive(); };
+
+document.addEventListener('keydown', e=>{
+  if(e.code==='Space'){ e.preventDefault(); togglePlay(); }
+  else if(e.key==='ArrowLeft'){ goReplay(); S.cursor=Math.max(0,S.cursor-1); renderAll(); }
+  else if(e.key==='ArrowRight'){ goReplay(); S.cursor=Math.min(BEATS.length,S.cursor+1); renderAll(); }
+  else if(e.key==='l'||e.key==='L'){ S.mode='live'; startLive(); renderAll(); }
+  else if(e.key==='g'||e.key==='G'){ S.view='god'; document.querySelectorAll('#viewSeg button').forEach(x=>x.classList.toggle('on',x.dataset.view==='god')); renderAll(); }
+  else if(e.key==='1'){ S.view='A'; document.querySelectorAll('#viewSeg button').forEach(x=>x.classList.toggle('on',x.dataset.view==='A')); renderAll(); }
+  else if(e.key==='2'){ S.view='B'; document.querySelectorAll('#viewSeg button').forEach(x=>x.classList.toggle('on',x.dataset.view==='B')); renderAll(); }
+});
+
+(function initTicks(){
+  const el = $('#ticks');
+  el.innerHTML = BEATS.map((b,i)=>{
+    const left = ((i+0.5)/BEATS.length*100).toFixed(2);
+    return `<div class="tick ${b.kind==='guess'?'big':''}" style="left:${left}%"></div>`;
+  }).join('');
+})();
+
+function startBetClock(){
+  clearInterval(betTimer);
+  betTimer = setInterval(()=>{
+    if(S.cursor>=BEATS.length){ clearInterval(betTimer); renderBet(); return; }
+    S.betTime = Math.max(0,S.betTime-1);
+    if(S.betTime===0) S.betTime=30;
+    renderBet();
+  },1000);
+}
+
+window.addEventListener('resize', fitsStage);
+(function shotMode(){
+  S.shot = /[?&]shot/.test(location.search);
+  if(!S.shot) return;
+  const st=document.createElement('style');
+  st.textContent='*{transition:none !important;animation:none !important}';
+  document.head.appendChild(st);
+})();
+(function fromHash(){
+  const h=(location.hash||'').replace('#','');
+  if(h && ['lobby','watch','recap','profile'].includes(h)) setScreen(h);
+  const q=new URLSearchParams(location.search);
+  const v=q.get('view');
+  if(v && ['A','B','god'].includes(v)){
+    S.view=v;
+    document.querySelectorAll('#viewSeg button').forEach(x=>x.classList.toggle('on',x.dataset.view===v));
+    renderAll();
+  }
+})();
+fitsStage();
+renderAll();
+startLive();
+startBetClock();
+</script>
+</body>
+</html>

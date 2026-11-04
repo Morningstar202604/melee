@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+<title>Watch · melee broadcast</title>
+<link rel="stylesheet" href="./src/theme.css">
+<link rel="stylesheet" href="./src/watch.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main" data-i18n="nav.skip">Skip to main content</a>
+<div id="topbar">
+  <a class="brand" href="index.html" data-keep-query><span class="mark" style="width:20px;height:20px;border-radius:5px;background:linear-gradient(135deg,var(--a),#0EA5E9);display:inline-grid;place-items:center;color:#04121A;font-size:11px;font-weight:900">M</span></a>
+  <nav class="nav">
+    <a href="index.html" data-keep-query data-i18n="nav.home">Home</a>
+    <a href="watch.html" class="on" aria-current="page" data-keep-query data-i18n="nav.watch">Watch</a>
+    <a href="season.html" data-keep-query data-i18n="nav.season">Season</a>
+    <a href="recap.html" data-keep-query data-i18n="nav.recap">Recap</a>
+    <a href="director.html" data-keep-query data-i18n="nav.director">Director</a>
+    <a href="admin.html" data-keep-query data-i18n="nav.admin">Admin</a>
+  </nav>
+  <div class="openbox">
+    <input id="openId" placeholder="matchId" aria-label="Match ID" data-i18n-attr="placeholder:watch.openPlaceholder|aria-label:watch.matchIdLabel" />
+    <button id="btnOpen" data-i18n="watch.open">Open</button>
+  </div>
+  <div class="tools">
+    <select id="gamePick" title="Game type" aria-label="Select game type" data-i18n-attr="title:watch.game|aria-label:watch.gameLabel"></select>
+    <select id="teamCount" title="Teams" aria-label="Teams" data-i18n-attr="title:watch.teams|aria-label:watch.teams" hidden></select>
+    <select id="teamSize" title="Players per team" aria-label="Players per team" data-i18n-attr="title:watch.teamSize|aria-label:watch.teamSize" hidden></select>
+    <button id="btnNew" data-i18n="watch.new">New match</button>
+    <button id="btnShare" data-i18n="watch.share">Share</button>
+    <button id="btnRender" data-i18n="watch.render">Export highlights</button>
+    <button id="btnTheater" title="Theater mode (F)" data-i18n="watch.theater" data-i18n-attr="title:watch.theaterTitle">Theater</button>
+  </div>
+  <div class="spacer"></div>
+  <span id="connectError" role="alert"></span>
+  <span id="viewers" title="Viewers watching now" data-i18n-attr="title:watch.viewersTitle"><span class="eye"></span><b id="viewerCount">0</b></span>
+  <span id="matchId">—</span>
+  <span class="conn" id="conn" data-i18n="watch.conn.idle">Standby</span>
+</div>
+
+<main id="main">
+<div id="frame">
+  <div id="stage">
+    <div class="topline">
+      <span class="season" id="gameLabel">TRANSMISSION</span>
+      <h1 class="visually-hidden" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden" data-i18n="watch.heading">Match broadcast</h1>
+      <div class="pill" id="turnPill"></div>
+      <div class="pill" id="remainPill"></div>
+      <div class="live"><span class="dot" id="liveDot"></span><span id="liveLabel">LIVE</span></div>
+      <div class="right"><span><span data-i18n="watch.events">Events</span> <b id="tlCount" style="color:#D6DBE6">0 / 0</b></span></div>
+    </div>
+
+    <div class="main">
+      <div class="side" id="sideLeft"></div>
+
+      <div class="center">
+        <div class="secret">
+          <div class="k" data-i18n="watch.state">Current position</div>
+          <div class="v" id="headline" data-i18n="watch.waitingFirst">Waiting for the first commentary line.</div>
+        </div>
+        <div class="field" id="arenaPanel">
+          <div class="head">
+            <span class="t" id="panelTitle" data-i18n="watch.history.title">Public questions</span>
+            <span class="n" id="panelMeta"></span>
+            <div class="bar"><i id="bar" style="width:100%"></i></div>
+          </div>
+          <div class="history" id="historyList"></div>
+        </div>
+        <div class="statusbox">
+          <div><span data-i18n="watch.status">Status</span><b id="viewStatus" role="status" aria-live="polite" data-i18n="watch.status.waiting">Waiting to start</b></div>
+          <div><span data-i18n="watch.fouls">Fouls</span><b id="rejected">0</b></div>
+          <div><span data-i18n="watch.cues">Shots</span><b id="cues">0</b></div>
+          <div><span data-i18n="watch.lastMove">Last move</span><b id="lastAction">—</b></div>
+        </div>
+      </div>
+
+      <div class="side" id="sideRight"></div>
+    </div>
+
+    <div class="narration">
+      <div class="tag" data-i18n="watch.narration">Commentary</div>
+      <div class="text" id="narration" aria-live="polite" aria-atomic="true">—</div>
+    </div>
+
+    <div class="tlrow">
+      <div class="tl">
+        <div class="track"></div>
+        <div class="fill" id="tlFill"></div>
+        <div class="marks" id="tlMarks" aria-hidden="true"></div>
+        <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Replay timeline" data-i18n-attr="aria-label:watch.timelineLabel" />
+      </div>
+      <span class="badge" id="replayBadge" data-i18n="watch.replayBadge">Replay</span>
+    </div>
+    <div class="tlmeta">
+      <span id="tlClock" class="mono">00:00 / 00:00</span>
+      <span class="muted" data-i18n="watch.timelineHint">The timeline is scaled to real match time; orange dots are director cuts — click one to jump there</span>
+    </div>
+
+    <div class="ctrl">
+      <button class="btn primary" id="btnPause" data-i18n="watch.pause">Pause</button>
+      <button class="btn" id="btnReplay" data-i18n="watch.replayFromStart">Replay from start</button>
+      <button class="btn" id="btnLive" data-i18n="watch.backToLive">Back to live</button>
+      <select id="speed" aria-label="Replay speed" data-i18n-attr="aria-label:watch.speed">
+        <option value="0.5">0.5x</option>
+        <option value="1" selected>1x</option>
+        <option value="2">2x</option>
+        <option value="4">4x</option>
+      </select>
+      <div class="spacer"></div>
+      <span class="cue" id="cue" data-i18n="watch.noCue">No cut yet</span>
+    </div>
+
+    <div id="endcard" role="dialog" aria-modal="true" aria-labelledby="winner" tabindex="-1">
+      <div class="endinner">
+        <button class="endclose" id="btnEndClose" type="button" aria-label="Close and keep watching" data-i18n-attr="aria-label:watch.ended.closeLabel">×</button>
+        <div class="k" data-i18n="watch.ended.title">Match finished</div>
+        <div class="w" id="winner">—</div>
+        <div class="r" id="endreason"></div>
+        <div class="acts">
+          <button class="btn primary" id="btnReplayEnd" data-i18n="watch.replayFromStart">Replay from start</button>
+          <button class="btn" id="btnRenderEnd" data-i18n="watch.render">Export highlights</button>
+          <a class="btn" id="btnRecapEnd" href="recap.html" data-i18n="watch.ended.recap">View recap</a>
+          <button class="btn" id="btnNext" data-i18n="watch.ended.next">Next match</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="clipPanel">
+      <div class="cp-head">
+        <span data-i18n="watch.clip.title">Highlights</span>
+        <button class="cp-close" id="clipClose" aria-label="Close" data-i18n-attr="aria-label:common.close">×</button>
+      </div>
+      <div class="cp-body" id="clipBody"><div class="cp-empty" data-i18n="watch.clip.empty">Press “Export highlights” to render a video</div></div>
+    </div>
+  </div>
+</div>
+<button class="btn" id="theaterExit" type="button" style="display:none;position:fixed;right:18px;top:18px;z-index:60" data-i18n="watch.theaterExit">Exit theater (F)</button>
+</main>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

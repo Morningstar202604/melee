@@ -1,0 +1,29 @@
+# 运行时依赖：只装服务真正 import 的东西。
+# 测试、lint、审计、代码生成工具在 requirements-dev.txt，不进镜像。
+fastapi==0.143.3
+uvicorn==0.54.0
+pydantic==2.14.1
+sse-starlette==3.5.0
+jsonschema==4.26.0
+# 契约校验热路径：把 schema 编译成 Python 函数，约快 20 倍；
+# 未安装时 contract.py 自动退回 jsonschema，功能不降级。
+fastjsonschema==2.22.2
+httpx==0.28.1
+# MCP 官方 SDK：melee mcp 子命令的 stdio 服务器（2.x 改了 API，锁定 1.x）
+mcp==1.30.0
+# 运行时实际依赖（此前漏在 requirements 外，换机会直接 ImportError）
+cryptography==50.0.2
+Pillow==13.0.0
+openskill==6.2.0
+# 可选：装了才注册 TextArena 赛制
+textarena==0.7.4
+# 可选：MELEE_BROADCAST=redis 时才需要
+redis==5.2.1
+# 用成熟库替代手写实现（限流 / 票据 / 指标 / 调度 / 配置）
+limits==5.8.0
+itsdangerous==2.2.0
+prometheus-fastapi-instrumentator==8.1.0
+# 路由层直接 from prometheus_client import Gauge：显式声明，不靠传递依赖
+prometheus-client==0.26.0
+apscheduler==3.11.3
+pydantic-settings==2.16.0
