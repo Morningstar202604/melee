@@ -46,7 +46,13 @@ def push_cue(
     if any(event["type"] == "match.ended" for event in events):
         raise CueError("比赛已结束，不能再切镜")
 
-    trigger = f"人工：{note}" if note else "人工"
+    # 切镜原因走消息目录：英文界面里出现「人工：xxx」是同一类"模板没跟
+    # 语言走"的缺陷。事件里存模板键 + 参数，读取时按语言渲染。
+    from .messages import format_message
+
+    trigger_key = "cue.manual_with_note" if note else "cue.manual"
+    trigger_params = {"note": note} if note else {}
+    trigger = format_message(trigger_key, trigger_params, lang="en")
 
     for _attempt in range(attempts):
         log = EventLog.open(db_path, match_id)
@@ -58,6 +64,8 @@ def push_cue(
                     "target": target,
                     "durationMs": duration_ms,
                     "trigger": trigger[:200],
+                    "triggerKey": trigger_key,
+                    "triggerParams": trigger_params,
                 },
             )
         except sqlite3.IntegrityError:
@@ -69,12 +77,26 @@ def push_cue(
     raise CueError("写入 cue 失败：并发冲突重试次数已用尽")
 
 
+def _is_manual_cue(payload: dict[str, Any]) -> bool:
+    """判断一条 cue 是不是人工切镜。
+
+    必须看模板键而不是文案：文案会随语言变，旧实现靠
+    `trigger.startswith("人工")` 判断，一旦切镜原因本地化就全部失效
+    （实测 recent_cues 直接返回空、后台"人工切镜"计数归零）。
+    老事件没有 triggerKey，退回旧的中文前缀判断。
+    """
+    key = str(payload.get("triggerKey") or "")
+    if key:
+        return key.startswith("cue.manual")
+    return str(payload.get("trigger", "")).startswith("人工")
+
+
 def recent_cues(db_path: str | Path, match_id: str, limit: int = 20) -> list[dict[str, Any]]:
     """按时间倒序列出这场比赛的人工 cue。"""
     cues = [
         event
         for event in read_match(db_path, match_id)
-        if event["type"] == "director.cue" and str(event["payload"].get("trigger", "")).startswith("人工")
+        if event["type"] == "director.cue" and _is_manual_cue(event["payload"])
     ]
     return list(reversed(cues))[:limit]
 
@@ -119,7 +141,7 @@ def auto_cue_summary(db_path: str | Path, match_id: str) -> dict[str, int]:
     for event in read_match(db_path, match_id):
         if event["type"] != "director.cue":
             continue
-        if str(event["payload"].get("trigger", "")).startswith("人工"):
+        if _is_manual_cue(event["payload"]):
             counts["manual"] += 1
         else:
             counts["auto"] += 1

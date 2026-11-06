@@ -1,7 +1,7 @@
 {
   "name": "melee-web",
   "private": true,
-  "version": "1.8.3",
+  "version": "1.8.4",
   "type": "module",
   "scripts": {
     "start": "python -m http.server 8088",

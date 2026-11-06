@@ -234,6 +234,9 @@ MESSAGES: dict[str, dict[str, str]] = {
     "cue.few_left": {"en": "only {remaining} candidates left — close-up", "zh": "只剩 {remaining} 个候选，切特写"},
     "cue.big_sweep": {"en": "{narrowed} candidates eliminated — close-up", "zh": "一次排除 {narrowed} 个候选，切特写"},
     "cue.long_thinking": {"en": "long reasoning or question detected", "zh": "思考中出现较长的推理或疑问"},
+    # 人工切镜：note 是用户输入，模板必须语言无关。
+    "cue.manual": {"en": "manual cut", "zh": "人工切镜"},
+    "cue.manual_with_note": {"en": "manual cut: {note}", "zh": "人工：{note}"},
     # ---- 动作类型（战报"最慢一手"里用） ----
     "action.kind.ask": {"en": "asked", "zh": "提问"},
     "action.kind.guess": {"en": "guessed", "zh": "报答案"},

@@ -93,9 +93,23 @@ def _reset_settings(monkeypatch):
 
     `settings()` 有进程级缓存，monkeypatch 改环境变量后必须清缓存，
     否则测试会读到上一个测试的配置。
+
+    默认**注入一把有效密钥**：绝大多数测试走"带凭据封存"的正常路径。
+    要验证"没有密钥"的用例用 `no_secret_key` fixture 显式声明——
+    旧实现靠 `delenv` 删，但 autouse 又塞回去，于是那些测试只能靠
+    执行顺序碰运气（表现是单跑绿、全量偶尔红）。
     """
     if "MELEE_SECRET_KEY" not in os.environ:
         monkeypatch.setenv("MELEE_SECRET_KEY", generate_key())
+    reset_settings()
+    yield
+    reset_settings()
+
+
+@pytest.fixture()
+def no_secret_key(monkeypatch):
+    """显式声明"本用例运行在没有密钥的环境里"。"""
+    monkeypatch.delenv("MELEE_SECRET_KEY", raising=False)
     reset_settings()
     yield
     reset_settings()

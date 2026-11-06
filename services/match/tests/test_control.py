@@ -62,7 +62,12 @@ def test_push_cue_appends_event():
     event = push_cue(db, match_id, shot="close", target="A", duration_ms=900, note="看这里")
     assert event["type"] == "director.cue"
     assert event["payload"]["shot"] == "close"
-    assert event["payload"]["trigger"].startswith("人工")
+    # 事件里存英文兜底文本 + 模板键；中文由读取时渲染。
+    assert event["payload"]["triggerKey"] == "cue.manual_with_note"
+    assert event["payload"]["triggerParams"]["note"] == "看这里"
+    from services.match.messages import localize_payload
+
+    assert localize_payload(event["payload"], "zh")["trigger"].startswith("人工")
 
 
 def test_cue_is_persisted_and_readable():

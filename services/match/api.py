@@ -154,7 +154,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
     app = FastAPI(
         title="melee match service",
-        version="1.8.3",
+        version="1.8.4",
         lifespan=lifespan,
         # token 模式下不公开接口表：/docs 与 /openapi.json 之前无需鉴权即可读。
         docs_url=None if auth_config().mode != "off" else "/docs",

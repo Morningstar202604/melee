@@ -62,7 +62,8 @@ def test_director_routes_on_live_match(client):
     cue = client.post(f"/director/{match_id}/cue", json={"shot": "close", "durationMs": 900, "note": "看这里"})
     if cue.status_code == 200:
         assert cue.json()["event"]["type"] == "director.cue"
-        assert cue.json()["event"]["payload"]["trigger"].startswith("人工")
+        # 切镜原因走消息目录：事件存模板键 + 参数（英文兜底），中文读取时渲染。
+        assert cue.json()["event"]["payload"]["triggerKey"] == "cue.manual_with_note"
     else:
         # 比赛可能已经结束（快棋），那也是正确的拒绝
         assert cue.status_code == 400

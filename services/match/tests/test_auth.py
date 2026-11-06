@@ -60,26 +60,21 @@ def test_fingerprint_is_stable_and_short():
     assert len(fingerprint("sk-abc")) == 8
 
 
-def test_cipher_from_env_warns_without_key(monkeypatch):
+def test_cipher_from_env_warns_without_key(no_secret_key):
     """没配密钥时 cipher 关闭。
 
     必须清 settings() 的 lru_cache：前面的测试设过 MELEE_SECRET_KEY，
     缓存会让这里读到上一个测试的配置——单独跑绿、全量跑红，
     是典型的测试顺序依赖，不是产品缺陷。
     """
-    from services.match.settings import reset_settings
-
-    monkeypatch.delenv("MELEE_SECRET_KEY", raising=False)
-    reset_settings()
     cipher = cipher_from_env()
     assert cipher.enabled is False
 
 
-def test_enqueue_external_key_requires_encryption(tmp_path, monkeypatch):
+def test_enqueue_external_key_requires_encryption(tmp_path, no_secret_key):
     from services.match import workqueue
     from services.match.worker import enqueue_match
 
-    monkeypatch.delenv("MELEE_SECRET_KEY", raising=False)
     db_path = tmp_path / "jobs.db"
     with pytest.raises(RuntimeError, match="MELEE_SECRET_KEY"):
         enqueue_match(

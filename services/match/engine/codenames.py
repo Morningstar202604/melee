@@ -446,6 +446,16 @@ class Codenames:
             winner = _winner_after_forfeit(next_state, team)
             return winner, f"翻到刺客「{raw}」，{_label(team)}立即判负"
         if color != team:
+            # 翻到中立词：中立不是参赛方，不能当胜者。规则上"把中立词翻完"
+            # 是对翻牌方的惩罚——最后一张中立词被翻开时，翻牌方出局。
+            # 旧实现返回 winner="neutral"，战报随即报"胜者不在参赛名单里"，
+            # 赛季也不给任何人记分（实测 23 场里出现 1 次）。
+            if color == TEAM_NEUTRAL:
+                neutral_left = _own_left(next_state, TEAM_NEUTRAL)
+                if neutral_left == 0:
+                    return _winner_after_forfeit(next_state, team), "中立词被翻完"
+                _pass_turn(next_state)
+                return None, ""
             # 对手翻掉了你最后一个词，等于你的词全被翻开——该队直接获胜。
             # 旧实现只换手，0 个剩余词的一方永远赢不了，最后只能靠 max_turns 收场。
             if _own_left(next_state, color) == 0:

@@ -555,3 +555,31 @@ def test_forfeit_from_non_red_team_does_not_always_favour_red():
     for out_team, winner in winners.items():
         assert winner is not None and winner != out_team, f"{out_team} 弃权后胜者异常：{winners}"
     assert len(set(winners.values())) == 3, f"不同队弃权应判给不同队伍：{winners}"
+
+
+def test_neutral_team_can_never_win():
+    """中立不是参赛方，赢家不能是它。
+
+    旧实现把"中立词被翻完"判给 neutral：战报随即报"胜者不在参赛名单里"，
+    赛季也不给任何人记分。实测 23 场里出现 1 次。
+    """
+    import tempfile
+    from pathlib import Path
+
+    from services.match.eventlog import EventLog
+    from services.match.runner import Runner
+
+    for seed in range(12):
+        game = Codenames()
+        players = ["r1", "b1", "r2", "b2"]
+        state = game.init(seed=seed, players=players, config={})
+        log = EventLog.open(Path(tempfile.mkdtemp()) / f"neutral{seed}.db", f"mn{seed}")
+        try:
+            log.create_match(game="codenames", seed=seed, players=players)
+            Runner(game, log, {p: CodenamesAgent(p) for p in players}).play(state)
+            events = log.read()
+        finally:
+            log.close()
+        end = next((e for e in events if e["type"] == "match.ended"), None)
+        assert end is not None
+        assert end["payload"]["winner"] != "neutral", f"seed={seed} 判中立获胜"
