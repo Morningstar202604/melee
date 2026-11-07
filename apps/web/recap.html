@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+<title>Recap · melee broadcast</title>
+<script src="./src/theme-boot.js"></script>
+<link rel="stylesheet" href="./src/theme.css">
+<style>
+.hero{margin:6px 0 22px}
+.hero .kick{font-size:10.5px;letter-spacing:.22em;color:var(--faint);text-transform:uppercase}
+.hero h1{font-size:40px;margin-top:10px}
+.hero .line{font-size:16px;color:var(--dim);margin-top:12px;line-height:1.7;max-width:820px}
+.hero .meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:22px}
+@media (max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 17px}
+.stat b{display:block;font-size:26px;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat span{font-size:11px;color:var(--faint);letter-spacing:.08em}
+.timing{display:flex;gap:20px;flex-wrap:wrap;align-items:baseline;margin-top:14px;padding:12px 16px;
+border:1px solid var(--line);border-radius:10px;background:var(--sunken);font-size:12px;color:var(--dim)}
+.timing b{color:var(--txt);font-variant-numeric:tabular-nums;font-size:16px;margin-right:4px}
+.timing .slow{color:var(--b)}
+.hl{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+@media (max-width:820px){.hl{grid-template-columns:1fr}}
+.hlc{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 17px;position:relative;overflow:hidden}
+.hlc.hot{border-color:var(--warn-line);background:var(--warn-bg)}
+.hlc .k{font-size:10px;letter-spacing:.14em;color:var(--faint);text-transform:uppercase;display:flex;gap:8px;align-items:center}
+.hlc .t{font-size:15.5px;color:var(--txt);font-weight:650;margin:8px 0 5px}
+.hlc .d{font-size:12.5px;color:var(--dim);line-height:1.65}
+.hlc .w{position:absolute;right:14px;top:14px;font-size:11px;color:var(--ghost);font-variant-numeric:tabular-nums}
+.players{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px}
+.pcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.pcard .n{font-size:15px;font-weight:650}
+.pcard .row{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);padding:4px 0;border-bottom:1px solid var(--line-soft)}
+.pcard .row:last-child{border-bottom:none}
+.pcard .row b{color:var(--txt);font-variant-numeric:tabular-nums}
+.clips{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:12px}
+@media (max-width:820px){.clips{grid-template-columns:1fr}}
+.clip-preview{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--panel)}
+.clip-preview .cp-k{font-size:9.5px;letter-spacing:.14em;color:var(--faint);text-transform:uppercase}
+.clip-preview .cp-t{font-size:15px;font-weight:650;color:var(--txt);margin-top:6px}
+.clip-preview .cp-d{font-size:12.5px;color:var(--dim);margin-top:5px;line-height:1.6}
+.clip-preview .cp-m{font-size:11px;color:var(--faint);margin-top:8px;font-variant-numeric:tabular-nums}
+.clip video{width:100%;border-radius:10px;background:#000;border:1px solid var(--line)}
+.clip .m{font-size:11.5px;color:var(--faint);margin-top:7px}
+.render-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+.render-bar .input{width:auto;min-width:190px;height:36px}
+.render-label{font-size:11px;letter-spacing:.1em;color:var(--faint);text-transform:uppercase}
+.verify{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:10px;border:1px solid var(--ok-line);background:var(--ok-bg);color:var(--ok);font-size:12.5px;margin-top:16px}
+.verify.bad{border-color:var(--bad-line);background:var(--bad-bg);color:var(--bad)}
+[hidden]{display:none !important}
+</style>
+</head>
+<body>
+<main id="main">
+<div class="wrap">
+  <div class="hero">
+    <div class="kick" id="kick" data-i18n="recap.kicker">Match recap</div>
+    <h1 id="winner" data-i18n="common.loading">Loading…</h1>
+    <p class="line" id="oneLine"></p>
+    <div class="meta">
+      <span class="tag" id="gameTag">—</span>
+      <span class="tag mono" id="matchTag">—</span>
+      <a class="btn sm" id="btnWatch" href="watch.html" data-i18n="recap.watchBack">Rewatch</a>
+      <button class="btn sm" id="btnShare" type="button" data-i18n="common.share">Share</button>
+      <a class="btn sm ghost" id="btnSharePage" href="#" target="_blank" rel="noreferrer noopener" data-i18n="recap.sharePage">Share page</a>
+    </div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+  <div class="timing" id="timing" hidden></div>
+
+  <h2 style="margin-top:30px" data-i18n="recap.moments">Three moments</h2>
+  <div class="hl" id="highlights"></div>
+
+  <h2 style="margin-top:30px" data-i18n="recap.playerStats">Player data</h2>
+  <div class="players" id="players"></div>
+
+  <h2 style="margin-top:30px" data-i18n="recap.clips">Highlight videos</h2>
+  <div class="render-bar">
+    <label class="render-label" for="template" data-i18n="recap.template">Template</label>
+    <select class="input" id="template" aria-label="Highlight template" data-i18n-attr="aria-label:recap.templateLabel">
+      <option value="broadcast" data-i18n="recap.template.broadcast">Broadcast (most detail)</option>
+      <option value="spotlight" data-i18n="recap.template.spotlight">Spotlight (one line + big numbers)</option>
+      <option value="scorecard" data-i18n="recap.template.scorecard">Scorecard (side by side)</option>
+    </select>
+    <button class="btn sm primary" id="render" type="button" data-i18n="recap.render">Render</button>
+    <span class="muted" id="renderHint" data-i18n="recap.renderHint">Requires ffmpeg on the server; a few seconds per clip.</span>
+  </div>
+  <div class="clips" id="clips"><div class="muted" data-i18n="recap.clipsLoading">Loading clip manifest…</div></div>
+
+  <div class="verify" id="verify" hidden></div>
+  <div id="error" class="notice warn" style="display:none;margin-top:16px"></div>
+  <div class="footer-slot"></div>
+</div>
+</main>
+<script type="module" src="./src/recap.js"></script>
+</body>
+</html>

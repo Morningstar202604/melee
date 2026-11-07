@@ -1,0 +1,610 @@
+from __future__ import annotations
+
+import pytest
+
+from services.match.agents.scripted import CodenamesAgent
+from services.match.engine.base import Move
+from services.match.engine.codenames import (
+    GRID_SIZE,
+    LAYOUT,
+    TEAM_ASSASSIN,
+    TEAM_BLUE,
+    TEAM_NEUTRAL,
+    TEAM_RED,
+    Codenames,
+)
+
+
+def start(seed: int = 3, *, red_first: bool = False):
+    """造一局 4 人代号。
+
+    先手现在由 seed 轮转（公平性修复）。依赖"红队先手"的旧测试传
+    red_first=True，由这里挑一个让红队先手的 seed——测试意图不变，
+    但不再假设"红队永远先手"这个错误前提。
+    """
+    game = Codenames()
+    if red_first:
+        for candidate in range(64):
+            state = game.init(seed=candidate, players=["A", "B", "C", "D"], config={})
+            if state["turn"] == "red":
+                return game, state
+        raise AssertionError("找不到让红队先手的 seed")
+    state = game.init(seed=seed, players=["A", "B", "C", "D"], config={})
+    return game, state
+
+
+# ---------- 初始化 ----------
+
+def test_board_has_25_distinct_words():
+    _game, state = start()
+    assert len(state["words"]) == GRID_SIZE
+    assert len(set(state["words"])) == GRID_SIZE
+
+
+def test_colors_match_layout():
+    _game, state = start()
+    colors = state["colors"]
+    # 先手队拿 9 个（官方补偿），先手由 seed 决定，不再固定红队。
+    first = state["turn"]
+    other = TEAM_BLUE if first == TEAM_RED else TEAM_RED
+    assert colors.count(first) == LAYOUT[TEAM_RED]
+    assert colors.count(other) == LAYOUT[TEAM_BLUE]
+    assert colors.count(TEAM_NEUTRAL) == LAYOUT[TEAM_NEUTRAL]
+    assert colors.count(TEAM_ASSASSIN) == LAYOUT[TEAM_ASSASSIN]
+
+
+def test_same_seed_gives_same_board():
+    _g1, a = start(7)
+    _g2, b = start(7)
+    assert a["words"] == b["words"]
+    assert a["colors"] == b["colors"]
+
+
+def test_different_seed_gives_different_board():
+    _g1, a = start(1)
+    _g2, b = start(2)
+    assert a["words"] != b["words"] or a["colors"] != b["colors"]
+
+
+def test_requires_four_players():
+    game = Codenames()
+    with pytest.raises(ValueError):
+        game.init(seed=1, players=["A", "B"], config={})
+
+
+# ---------- 隐藏信息（本赛制的核心） ----------
+
+def test_captain_sees_colors_agent_does_not():
+    game, state = start()
+    captain = game.observe(state, "A")   # 红队队长
+    agent = game.observe(state, "C")     # 红队队员
+    assert "secretColors" in captain
+    assert "secretColors" not in agent
+
+
+def test_public_board_hides_unrevealed_colors():
+    game, state = start()
+    public = game.public_state(state)
+    assert all(row["color"] is None for row in public["board"])
+
+
+def test_public_board_reveals_color_after_pick():
+    game, state = start(red_first=True)
+    # 队长给线索 → 队员翻一个词
+    r1 = game.apply(state, "A", Move("guess", "hint:测试 2"))
+    state = r1.next_state
+    word = state["words"][0]
+    r2 = game.apply(state, "C", Move("guess", f"pick:{word}"))
+    state = r2.next_state
+
+    public = game.public_state(state)
+    assert public["board"][0]["color"] is not None
+
+
+def test_agent_observation_never_contains_full_palette():
+    """队员视角不能推断出任何未翻开词的颜色。
+
+    用结构断言而不是字符串计数：颜色可能作为 team / turn 的取值正常出现，
+    真正的判据是"没有一份与棋盘等长的配色数组"。
+    """
+    game, state = start()
+    observation = game.observe(state, "C")
+
+    assert "secretColors" not in observation
+    # 任何字段都不能是长度 25、元素为颜色名的列表
+    palette = {TEAM_RED, TEAM_BLUE, TEAM_NEUTRAL, TEAM_ASSASSIN}
+    for value in observation.values():
+        if not isinstance(value, list) or len(value) != GRID_SIZE:
+            continue
+        flat = [item for item in value if isinstance(item, str)]
+        assert not any(item in palette for item in flat), "发现了整盘配色"
+    # 公开棋盘里未翻开的词一律无颜色
+    assert all(row["color"] is None for row in observation["publicBoard"])
+
+
+# ---------- 回合与动作 ----------
+
+def test_red_captain_starts_with_hint_phase():
+    game, state = start(red_first=True)
+    # 先手随 seed 轮转；这里断言"轮到的是某一支真实队伍且是线索阶段"。
+    assert state["turn"] in {TEAM_RED, TEAM_BLUE}
+    assert state["phase"] == "hint"
+    assert state["phase"] == "hint"
+    assert game.current_player(state) == "A"
+
+
+def test_hint_cannot_be_a_board_word():
+    game, state = start()
+    word = state["words"][0]
+    result = game.apply(state, "A", Move("guess", f"hint:{word} 1"))
+    assert not result.legal
+
+
+def test_hint_requires_number():
+    game, state = start()
+    result = game.apply(state, "A", Move("guess", "hint:测试"))
+    assert not result.legal
+
+
+def test_hint_number_out_of_range_rejected():
+    game, state = start()
+    captain = game.current_player(state)
+    assert not game.apply(state, captain, Move("guess", "hint:测试 0")).legal
+    assert not game.apply(state, captain, Move("guess", "hint:测试 99")).legal
+
+
+def test_valid_hint_moves_to_guess_phase():
+    game, state = start()
+    result = game.apply(state, game.current_player(state), Move("guess", "hint:测试 2"))
+    assert result.legal
+    assert result.next_state["phase"] == "guess"
+    # 线索之后由"给线索那一队的队员"猜，不能写死红队队员 C。
+    captain = game.current_player(state)
+    assert game.current_player(result.next_state) != captain
+
+
+def test_wrong_player_cannot_act():
+    game, state = start()
+    current = game.current_player(state)
+    # 随便找一个不是当前行动者的选手（先手随 seed 轮转，不能写死名字）。
+    other = next(p for p in state["players"] if p != current)
+    result = game.apply(state, other, Move("guess", "hint:测试 2"))
+    assert not result.legal
+
+
+def test_pick_unknown_word_rejected():
+    game, state = start()
+    state = game.apply(state, game.current_player(state), Move("guess", "hint:测试 2")).next_state
+    result = game.apply(state, game.current_player(state), Move("guess", "pick:不存在的词"))
+    assert not result.legal
+
+
+def test_cannot_pick_same_word_twice():
+    game, state = start(red_first=True)
+    state = game.apply(state, game.current_player(state), Move("guess", "hint:测试 3")).next_state
+    word = state["words"][0]
+    picker = game.current_player(state)
+    state = game.apply(state, picker, Move("guess", f"pick:{word}")).next_state
+
+    # 猜中己方词会继续由同一队猜；再猜同一个已翻开的词必须被拒。
+    if game.current_player(state) == picker:
+        assert not game.apply(state, picker, Move("guess", f"pick:{word}")).legal
+
+
+# ---------- 胜负 ----------
+
+def test_hitting_assassin_loses_immediately():
+    game, state = start(red_first=True)
+    assassin_index = state["colors"].index(TEAM_ASSASSIN)
+    word = state["words"][assassin_index]
+
+    state = game.apply(state, game.current_player(state), Move("guess", "hint:测试 3")).next_state
+    picker_team = _team_of_player(game, state, game.current_player(state))
+    result = game.apply(state, game.current_player(state), Move("guess", f"pick:{word}"))
+    assert result.legal
+    assert result.next_state["finished"] is True
+    # 翻到刺客的队伍出局，胜者来自其余队伍。
+    assert result.next_state["winner"] not in {picker_team, TEAM_ASSASSIN}
+
+
+def test_wrong_guess_switches_turn():
+    game, state = start(red_first=True)
+    first = state["turn"]
+    other = TEAM_BLUE if first == TEAM_RED else TEAM_RED
+    # 找对手队伍的词：猜错才会换手。
+    other_index = state["colors"].index(other)
+    word = state["words"][other_index]
+
+    state = game.apply(state, game.current_player(state), Move("guess", "hint:测试 3")).next_state
+    result = game.apply(state, game.current_player(state), Move("guess", f"pick:{word}"))
+    assert result.legal
+    assert result.next_state["turn"] == other
+    assert result.next_state["phase"] == "hint"
+
+
+def test_forfeit_hands_win_to_other_team():
+    game, state = start(red_first=True)
+    forfeiter_team = state["turn"]
+    expected = TEAM_BLUE if forfeiter_team == TEAM_RED else TEAM_RED
+    result = game.apply(state, game.current_player(state), Move("forfeit", ""))
+    assert result.legal
+    assert result.next_state["winner"] == expected
+
+
+# ---------- 默认选手能打完 ----------
+
+@pytest.mark.parametrize("seed", [1, 2, 3, 4, 5])
+def test_default_agent_finishes_without_illegal_moves(seed):
+    game, state = start(seed)
+    steps = 0
+    for _ in range(400):
+        if state["finished"]:
+            break
+        current = game.current_player(state)
+        observation = game.observe(state, current)
+        output = CodenamesAgent(current).act(observation, [])
+        result = game.apply(state, current, output.move)
+        assert result.legal, f"第 {steps} 步非法：{result.reason}"
+        state = result.next_state
+        steps += 1
+
+    assert state["finished"] is True
+    assert state["winner"] in {TEAM_RED, TEAM_BLUE}
+
+
+# ---------- 解说密度 ----------
+
+def _play_with_narrator(seed: int = 3):
+    import tempfile
+    from pathlib import Path
+
+    from services.match.eventlog import EventLog
+    from services.match.narrator import RuleNarrator
+    from services.match.runner import Runner
+
+    game = Codenames()
+    state = game.init(seed=seed, players=["A", "B", "C", "D"], config={})
+    log = EventLog.open(Path(tempfile.mkdtemp()) / "m.db", "m")
+    log.create_match(game.game_id, seed, ["A", "B", "C", "D"])
+    Runner(
+        game,
+        log,
+        {p: CodenamesAgent(p) for p in ["A", "B", "C", "D"]},
+        narrator=RuleNarrator(),
+    ).play(state)
+    events = log.read()
+    log.close()
+    return events
+
+
+def test_every_applied_action_gets_a_narration_line():
+    """解说密度：每一步都该有话说，不能只在终局开口。"""
+    events = _play_with_narrator()
+    applied = [e for e in events if e["type"] == "action.applied"]
+    lines = [e for e in events if e["type"] == "narration.line"]
+    assert applied, "这一局必须有动作"
+    assert len(lines) >= len(applied), f"动作 {len(applied)} 条，解说只有 {len(lines)} 条"
+
+
+def _narration_msgs(events):
+    """解说事件的模板键列表：断言模板键比断言某种语言的成品句子更稳。
+
+    文案是产品面向用户的措辞，会随语言与文案打磨变化；`msg` 键才是契约。
+    纯文本老事件没有 msg，这里忽略。
+    """
+    return [
+        e["payload"]["msg"]
+        for e in events
+        if e["type"] == "narration.line" and e["payload"].get("msg")
+    ]
+
+
+def test_hint_is_narrated():
+    events = _play_with_narrator()
+    assert "narr.hint" in _narration_msgs(events)
+
+
+def test_reveal_is_narrated():
+    events = _play_with_narrator()
+    reveal_msgs = {"narr.reveal.own", "narr.reveal.other", "narr.reveal.assassin"}
+    assert reveal_msgs & set(_narration_msgs(events))
+
+
+def test_situation_reports_leader_correctly():
+    from services.match.narrator import RuleNarrator
+
+    narrator = RuleNarrator()
+    blue_leads = narrator.situation({"remaining": {"red": 9, "blue": 8}}, game_id="codenames")
+    assert blue_leads["msg"] == "narr.situation.leading"
+    # 队伍名存语言无关引用键，渲染时才翻译。
+    assert blue_leads["params"]["team"] == "team.blue"
+    assert blue_leads["params"]["own"] == 8
+
+    red_leads = narrator.situation({"remaining": {"red": 7, "blue": 9}}, game_id="codenames")
+    assert red_leads["msg"] == "narr.situation.leading"
+    assert red_leads["params"]["team"] == "team.red"
+
+    tied = narrator.situation({"remaining": {"red": 5, "blue": 5}}, game_id="codenames")
+    assert tied["msg"] == "narr.situation.tied"
+    assert tied["params"]["count"] == 5
+
+
+def test_situation_is_not_emitted_every_step():
+    """局势播报要有节制：不能每条动作后面都跟一句。"""
+    events = _play_with_narrator()
+    situations = [
+        e for e in events
+        if e["type"] == "narration.line" and e["payload"].get("tone") == "turn"
+    ]
+    applied = [e for e in events if e["type"] == "action.applied"]
+    assert len(situations) < len(applied)
+
+
+# ---------- 历史记录 ----------
+
+def test_history_records_every_action():
+    """选手卡要用 history 显示动作记录，必须每步都写。"""
+    import tempfile
+    from pathlib import Path
+
+    from services.match.eventlog import EventLog
+    from services.match.runner import Runner
+
+    game = Codenames()
+    state = game.init(seed=5, players=["A", "B", "C", "D"], config={})
+    log = EventLog.open(Path(tempfile.mkdtemp()) / "m.db", "m")
+    log.create_match(game.game_id, 5, ["A", "B", "C", "D"])
+    Runner(game, log, {p: CodenamesAgent(p) for p in ["A", "B", "C", "D"]}).play(state)
+    events = log.read()
+    log.close()
+
+    last = [e for e in events if e["type"] == "state.changed"][-1]
+    history = last["payload"]["publicState"]["history"]
+    applied = [e for e in events if e["type"] == "action.applied"]
+
+    assert len(history) == len(applied), f"动作 {len(applied)} 条，history 只有 {len(history)} 条"
+
+
+def test_history_has_hint_and_pick_kinds():
+    import tempfile
+    from pathlib import Path
+
+    from services.match.eventlog import EventLog
+    from services.match.runner import Runner
+
+    game = Codenames()
+    state = game.init(seed=5, players=["A", "B", "C", "D"], config={})
+    log = EventLog.open(Path(tempfile.mkdtemp()) / "m.db", "m")
+    log.create_match(game.game_id, 5, ["A", "B", "C", "D"])
+    Runner(game, log, {p: CodenamesAgent(p) for p in ["A", "B", "C", "D"]}).play(state)
+    events = log.read()
+    log.close()
+
+    history = [e for e in events if e["type"] == "state.changed"][-1]["payload"]["publicState"]["history"]
+    kinds = {item["kind"] for item in history}
+    assert "hint" in kinds and "pick" in kinds
+
+
+def test_legal_moves_exclude_revealed_words():
+    """已翻开的词不能再进可选列表：模型照着选会连犯两次规然后弃权。"""
+    game, state = start(red_first=True)
+    r1 = game.apply(state, game.current_player(state), Move("guess", "hint:测试 2"))
+    state = r1.next_state
+    # 挑一个"对手颜色"的词：猜错才会换手，才能推进到下一轮猜词阶段。
+    my_team = state["turn"]
+    other = TEAM_BLUE if my_team == TEAM_RED else TEAM_RED
+    word = state["words"][state["colors"].index(other)]
+    r2 = game.apply(state, game.current_player(state), Move("guess", f"pick:{word}"))
+    assert r2.legal, r2.reason
+    state = r2.next_state
+
+    assert not state["finished"], "猜错对手词不该终局"
+    hint_giver = game.current_player(state)
+    r3 = game.apply(state, hint_giver, Move("guess", "hint:测试 1"))
+    state = r3.next_state
+    picker = game.current_player(state)
+    options = game.legal_moves(state, picker)
+
+    assert f"pick:{word}" not in options
+    remaining = {
+        w for w, revealed in zip(state["words"], state["revealed"], strict=True) if not revealed
+    }
+    assert {opt.split(":", 1)[1] for opt in options} == remaining
+
+
+def test_layout_numbers_are_absolute_not_self_referential():
+    """配色数量必须写死成规则值：只断言 counts == LAYOUT 时，改常量也测不出来。"""
+    game, state = start(red_first=True)
+    colors = state["colors"]
+    first = state["turn"]
+    second = TEAM_BLUE if first == TEAM_RED else TEAM_RED
+    assert colors.count(first) == 9
+    assert colors.count(second) == 8
+    assert colors.count(TEAM_NEUTRAL) == 7
+    assert colors.count(TEAM_ASSASSIN) == 1
+    assert len(colors) == 25
+    assert GRID_SIZE == 25
+
+
+def test_board_always_has_exactly_25_words():
+    """棋盘少一格会让 UI 的 5×5 网格错位。"""
+    for seed in (1, 2, 3, 99):
+        game = Codenames()
+        state = game.init(seed=seed, players=list("ABCD"), config={})
+        assert len(state["words"]) == 25
+        assert len(set(state["words"])) == 25
+
+
+def test_own_word_highlight_requires_color_match():
+    """翻中己方词才有 own_word；翻中对方词不该记成己方。"""
+    from services.match.recap import find_highlights
+
+    def reveal(color, team):
+        return [{"seq": 1, "matchId": "m", "type": "action.applied", "at": "2026-01-01T00:00:00Z",
+                 "player": "C",
+                 "payload": {"action": {"kind": "guess", "value": "pick:灯塔"},
+                             "effects": [{"kind": "reveal", "word": "灯塔", "color": color, "team": team}]}}]
+
+    assert any(h.kind == "own_word" for h in find_highlights(reveal("red", "red"), limit=5))
+    assert not any(h.kind == "own_word" for h in find_highlights(reveal("blue", "red"), limit=5))
+
+
+def test_current_player_respects_phase_and_team():
+    """轮到谁：线索阶段是队长，猜词阶段是队员；换队后跟着换。"""
+    game, state = start(red_first=True)
+    assert game.current_player(state) == "A"  # 红队队长
+    r1 = game.apply(state, "A", Move("guess", "hint:海 1"))
+    state = r1.next_state
+    assert game.current_player(state) == "C"  # 红队队员
+
+
+# ---------- 默认选手的有效性：不能整局重复同一个线索 ----------
+
+def test_captain_never_repeats_a_used_clue():
+    """队长必须挑一个"还有己方词没翻开"的目标，且线索不能重复。
+
+    旧实现固定取 mine[0]、再加「相关」后缀：一旦那个词被翻开，
+    整局就会反复给出同一个线索「XX相关 1」，队员反复猜同一个词、
+    15 次线索只翻出 5 个词，观感上是"AI 卡住了"。
+    """
+    game, state = start(seed=7)
+    seen_clues: list[str] = []
+    for _ in range(400):
+        if state["finished"]:
+            break
+        current = game.current_player(state)
+        observation = game.observe(state, current)
+        output = CodenamesAgent(current).act(observation, [])
+        if observation["phase"] == "hint":
+            seen_clues.append(output.move.value)
+        result = game.apply(state, current, output.move)
+        assert result.legal, f"非法动作：{result.reason}"
+        state = result.next_state
+
+    assert state["finished"]
+    assert len(seen_clues) == len(set(seen_clues)), f"线索重复：{seen_clues}"
+
+
+def test_captain_targets_an_unrevealed_own_word():
+    """线索必须指向一个还没翻开的己方词，而不是已翻开的那个。"""
+    game, state = start(seed=3)
+    # 手动翻掉红队第一个词，再看队长给什么线索
+    captain = state["players"][0]
+    colors = state["colors"]
+    words = state["words"]
+    first_red = next(i for i, color in enumerate(colors) if color == TEAM_RED)
+    state["revealed"][first_red] = True
+    state["phase"] = "hint"
+    state["turn"] = TEAM_RED
+
+    observation = game.observe(state, captain)
+    output = CodenamesAgent(captain).act(observation, [])
+    clue = output.move.value.replace("hint:", "").rsplit(" ", 1)[0]
+    # 线索不能是已翻开那个词直接派生的（旧实现会给出「<已翻开词>相关」）
+    revealed_word = words[first_red]
+    assert clue != f"{revealed_word}相关", f"线索仍指向已翻开的词 {revealed_word}"
+
+
+def _team_of_player(game, state, player) -> str | None:
+    """从该选手的观察里读队伍；观察不带 team 时退回席位表。"""
+    obs = game.observe(state, player)
+    team = obs.get("team")
+    if team:
+        return team
+    names = state.get("teamNames") or []
+    size = int(state.get("teamSize") or 2)
+    index = state["players"].index(player)
+    return names[index // size] if names and index // size < len(names) else None
+
+
+def test_first_turn_rotates_with_seed():
+    """先手必须随 seed 轮转，不能固定某一队。
+
+    旧实现写死 `"turn": TEAM_RED`：代号是唯一"同一选手永远同席位"的赛制，
+    而其它 10 个赛制都随 seed 轮转。固定先手 = 固定席位优势。
+    """
+    firsts = set()
+    for seed in range(12):
+        _game, state = start(seed)
+        firsts.add(state["turn"])
+    assert firsts == {TEAM_RED, TEAM_BLUE}, f"先手没有轮转：{firsts}"
+
+
+def test_forfeit_from_non_red_team_does_not_always_favour_red():
+    """3 队时任一队弃权，胜者不能一律是红队。
+
+    旧实现 `TEAM_BLUE if team == TEAM_RED else TEAM_RED`：
+    team3 弃权也判红队赢。超时复用同一条路径，等于把故障送给固定一方。
+    """
+    game = Codenames()
+    state = game.init(seed=0, players=[f"p{i}" for i in range(6)],
+                      config={"teams": 3, "teamSize": 2})
+    winners = {}
+    for team in ("red", "blue", "team3"):
+        # 弃权只对"当前行动者"合法，所以把 state 的先手与阶段摆到该队。
+        probe = dict(state)
+        probe["turn"] = team
+        probe["phase"] = "hint"
+        probe["finished"] = False
+        probe["winner"] = None
+        result = game.apply(probe, game.current_player(probe), Move("forfeit", ""))
+        assert result.legal, result.reason
+        winners[team] = result.next_state["winner"]
+    # 核心断言：胜者永远不是弃权方自己，且不同队弃权得到不同胜者
+    # （旧实现一律把非红队的弃权判给红队，set 只会有一个值）。
+    for out_team, winner in winners.items():
+        assert winner is not None and winner != out_team, f"{out_team} 弃权后胜者异常：{winners}"
+    assert len(set(winners.values())) == 3, f"不同队弃权应判给不同队伍：{winners}"
+
+
+def test_neutral_team_can_never_win():
+    """中立不是参赛方，赢家不能是它。
+
+    旧实现把"中立词被翻完"判给 neutral：战报随即报"胜者不在参赛名单里"，
+    赛季也不给任何人记分。实测 23 场里出现 1 次。
+    """
+    import tempfile
+    from pathlib import Path
+
+    from services.match.eventlog import EventLog
+    from services.match.runner import Runner
+
+    for seed in range(12):
+        game = Codenames()
+        players = ["r1", "b1", "r2", "b2"]
+        state = game.init(seed=seed, players=players, config={})
+        log = EventLog.open(Path(tempfile.mkdtemp()) / f"neutral{seed}.db", f"mn{seed}")
+        try:
+            log.create_match(game="codenames", seed=seed, players=players)
+            Runner(game, log, {p: CodenamesAgent(p) for p in players}).play(state)
+            events = log.read()
+        finally:
+            log.close()
+        end = next((e for e in events if e["type"] == "match.ended"), None)
+        assert end is not None
+        assert end["payload"]["winner"] != "neutral", f"seed={seed} 判中立获胜"
+
+def test_language_is_recorded_in_state_so_replay_rebuilds_the_same_board():
+    """语言决定词表，词表决定棋盘。state 里不记 lang，重放就会用默认中文
+    词表重建另一张棋盘——真实事故：英文局重放到第 18 手报"场上没有这个词"，
+    整场无法 /state、无法续跑、无法导出重放。
+    """
+    from services.match.engine.codenames import Codenames
+
+    game = Codenames()
+    english = game.init(seed=11, players=["A", "B", "C", "D"], config={"lang": "en", "teams": 2, "teamSize": 2})
+    assert english["lang"] == "en"
+
+    # 用记录的 state 里的 lang 重建，棋盘必须逐词相同
+    replay = game.init(
+        seed=english["seed"],
+        players=english["players"],
+        config={"lang": english["lang"], "teams": english["teams"], "teamSize": english["teamSize"]},
+    )
+    assert replay["words"] == english["words"]
+    assert replay["colors"] == english["colors"]
+
+    # 而用默认语言重建会得到另一张棋盘（这正是修复前的重放行为）
+    fallback = game.init(seed=english["seed"], players=english["players"], config={"teams": 2, "teamSize": 2})
+    assert fallback["words"] != english["words"]
+

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+<title>Director · melee broadcast</title>
+<script src="./src/theme-boot.js"></script>
+<link rel="stylesheet" href="./src/theme.css">
+<style>
+.layout{display:grid;grid-template-columns:290px 1fr 340px;gap:0;height:calc(100vh - 56px)}
+@media (max-width:1000px){.layout{grid-template-columns:1fr;height:auto}}
+.col{overflow:auto;padding:16px 18px;border-right:1px solid var(--line-soft);min-height:0}
+.col:last-child{border-right:none;border-left:1px solid var(--line-soft)}
+.mi{padding:11px 13px;border-radius:9px;border:1px solid var(--line);background:var(--panel);cursor:pointer;margin-bottom:8px;
+  transition:border-color .15s;width:100%;text-align:left}
+.mi:hover{border-color:var(--line-strong)}
+.mi.on{border-color:var(--a);box-shadow:inset 2px 0 0 var(--a)}
+.mi .id{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.mi .p{font-size:13px;color:var(--txt);margin-top:3px}
+.mi .m{font-size:11px;color:var(--faint);margin-top:4px;display:flex;gap:10px}
+.shots{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.shot{padding:12px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);cursor:pointer;text-align:center;font-size:12.5px;color:var(--dim)}
+.shot:hover{border-color:var(--line-strong);background:var(--panel-2)}
+.shot.on{border-color:var(--a);background:var(--a-soft);color:var(--a)}
+.shot small{display:block;font-size:10px;color:var(--faint);margin-top:3px}
+.shot.on small{color:var(--a)}
+.field-row{display:flex;gap:8px;margin-bottom:10px}
+.field-row .input{flex:1}
+.log{font-family:var(--mono);font-size:11.5px;line-height:1.75;color:var(--dim);white-space:pre-wrap;word-break:break-all;
+  background:var(--sunken);border:1px solid var(--line-soft);border-radius:10px;padding:10px 12px;height:240px;overflow:auto}
+.log b{color:var(--a)}
+.log .t{color:var(--faint)}
+.cue-row{padding:8px 10px;border-radius:7px;background:var(--sunken);border:1px solid var(--line-soft);margin-bottom:6px;font-size:11.5px}
+.cue-row .k{color:var(--a)}
+.manual{color:var(--b)}
+.dir-kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.dkpi{padding:12px 13px;border-radius:11px;border:1px solid var(--line);background:linear-gradient(180deg,var(--card-top),var(--card-bottom))}
+.dkpi b{display:block;font-size:24px;font-weight:750;font-variant-numeric:tabular-nums;line-height:1.15}
+.dkpi span{font-size:10px;letter-spacing:.1em;color:var(--faint)}
+.hotkeys{font-size:11px;color:var(--faint);line-height:1.9}
+.hotkeys kbd{display:inline-block;min-width:20px;text-align:center;padding:1px 6px;border-radius:5px;border:1px solid var(--line);
+  background:var(--panel);font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+/* 手机端：触屏没有键盘，快捷键区是纯噪音；场次列表压缩成可横滑的一排。 */
+@media (max-width:1000px){
+  .col{padding:12px 14px;border-right:none;border-left:none;border-bottom:1px solid var(--line-soft)}
+  .col:last-child{border-left:none}
+  .hotkeys-block{display:none}
+  #matchList{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+  #matchList .mi{min-width:200px;margin-bottom:0;flex:none}
+  .log{height:180px}
+  /* 切镜是这台机器上唯一的"写"操作，滚到哪儿都得能按到。 */
+  #actionBar{position:sticky;bottom:0;z-index:20;background:linear-gradient(180deg,var(--bg),var(--bg) 30%);
+    padding:10px 0 6px;margin:0 -14px;padding-left:14px;padding-right:14px;box-shadow:0 -1px 0 var(--line-soft)}
+  .shots{grid-template-columns:repeat(3,1fr)}
+  .shot{padding:10px 6px}
+  .shot small{display:none}
+  #push{min-height:44px}
+}
+</style>
+</head>
+<body>
+<main id="main">
+<h1 class="visually-hidden" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden" data-i18n="director.heading">Director</h1>
+<div class="layout">
+  <div class="col">
+    <h2 style="margin-top:0" data-i18n="director.live">Live now</h2>
+    <div id="matchList"><div class="muted" data-i18n="common.loading">Loading…</div></div>
+    <button class="btn" id="refresh" style="width:100%;margin-top:6px" data-i18n="director.refreshList">Refresh list</button>
+
+    <div class="hotkeys-block">
+      <h2 style="margin-top:22px" data-i18n="director.hotkeys">Keyboard shortcuts</h2>
+      <div class="hotkeys">
+      <div><kbd>1</kbd>–<kbd>5</kbd> <span data-i18n="director.hotkey.select">1–5 select camera</span></div>
+      <div><kbd>Enter</kbd> · <kbd>Esc</kbd> <span data-i18n="director.hotkey.cut">Enter cuts · Esc clears the note</span></div>
+        <div><kbd>R</kbd> <span data-i18n="director.hotkey.refresh">R refreshes this match</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="field-row">
+      <input class="input" id="matchId" placeholder="matchId" aria-label="Match ID" data-i18n-attr="placeholder:director.openPlaceholder|aria-label:watch.matchIdLabel" />
+      <button class="btn" id="open" data-i18n="watch.open">Open</button>
+      <a class="btn" id="btnWatch" href="watch.html" target="_blank" rel="noreferrer noopener" data-i18n="director.watchPage">Watch page</a>
+    </div>
+
+    <div id="actionBar">
+    <h2 data-i18n="director.shots">Cameras</h2>
+    <div class="shots" id="shots">
+      <div class="shot" data-shot="wide" role="button" tabindex="0"><span data-i18n="shot.wide">Wide</span><small data-i18n="director.shot.default">default</small></div>
+      <div class="shot" data-shot="close" role="button" tabindex="0"><span data-i18n="shot.close">Close-up</span><small data-i18n="director.shot.watchPlayer">one player</small></div>
+      <div class="shot" data-shot="thought" role="button" tabindex="0"><span data-i18n="shot.thought">Inner monologue</span><small data-i18n="director.shot.expand">expand thinking</small></div>
+      <div class="shot" data-shot="reveal" role="button" tabindex="0"><span data-i18n="shot.reveal">Reveal</span><small data-i18n="director.shot.keyInfo">key info</small></div>
+      <div class="shot" data-shot="slowmo" role="button" tabindex="0"><span data-i18n="shot.slowmo">Slow motion</span><small data-i18n="director.shot.wrap">wrap up</small></div>
+    </div>
+
+    <div class="field-row">
+      <input class="input" id="target" placeholder="Target player (optional)" aria-label="Target player (optional)" data-i18n-attr="placeholder:director.target|aria-label:director.target" />
+      <input class="input" id="duration" value="1200" style="width:96px" inputmode="numeric" aria-label="Duration (ms)" data-i18n-attr="aria-label:director.duration" />
+    </div>
+    <div class="field-row">
+      <input class="input" id="note" placeholder="Note for replay (optional)" aria-label="Note" data-i18n-attr="placeholder:director.note|aria-label:director.noteLabel" />
+      <button class="btn primary" id="push" data-i18n="director.cut">Cut</button>
+    </div>
+    <div class="muted" id="status" role="status"></div>
+    </div>
+
+    <h2 data-i18n="director.events">Live events</h2>
+    <div class="log" id="log" data-i18n="director.eventsEmpty">Pick a match to see live events here.</div>
+  </div>
+
+  <div class="col">
+    <h2 style="margin-top:0" data-i18n="director.stats">This match</h2>
+    <div class="dir-kpis">
+      <div class="dkpi"><b id="autoCount">0</b><span data-i18n="director.autoCount">Automatic cuts</span></div>
+      <div class="dkpi"><b id="manualCount" style="color:var(--b)">0</b><span data-i18n="director.manualCount">Manual cuts</span></div>
+      <div class="dkpi"><b id="eventCount">0</b><span data-i18n="director.eventCount">Events</span></div>
+      <div class="dkpi"><b id="conn" class="muted" style="font-size:13px" data-i18n="watch.conn.idle">Standby</b><span data-i18n="director.conn">Connection</span></div>
+    </div>
+
+    <h2 data-i18n="director.manualLog">Manual log</h2>
+    <div id="cueList"><div class="muted" data-i18n="director.noCues">No manual cuts yet.</div></div>
+  </div>
+</div>
+</main>
+<script type="module" src="./src/director.js"></script>
+</body>
+</html>

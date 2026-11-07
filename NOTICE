@@ -1,0 +1,46 @@
+# NOTICE — 第三方依赖台账
+
+本项目运行时依赖与其许可证。新增依赖必须在同一提交里追加一行。
+
+| 包 | 版本 | 许可证 | 用途 |
+|---|---|---|---|
+| fastapi | 0.143.3 | MIT | HTTP 层 |
+| uvicorn | 0.54.0 | BSD-3-Clause | ASGI 服务器 |
+| pydantic | 2.14.1 | MIT | 请求/事件模型 |
+| sse-starlette | 3.5.0 | BSD-3-Clause | SSE 帧、心跳、断连处理 |
+| jsonschema | 4.26.0 | MIT | 事件契约校验（参考实现） |
+| fastjsonschema | 2.22.2 | BSD-3-Clause | 事件契约校验（编译版，约快 20 倍） |
+| httpx | 0.28.1 | BSD-3-Clause | 模型端点调用 |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | Fernet 凭据封存 |
+| Pillow | 13.0.0 | MIT-CMU | 高光帧绘制 |
+| openskill | 6.2.0 | MIT | 赛季积分（PlackettLuce） |
+| mcp | 1.30.0 | MIT | MCP 官方 SDK：melee mcp 工具服务器 |
+| textarena | 0.7.4 | MIT | 可选：确定性棋类环境 |
+| redis | 5.2.1 | MIT | 可选：跨副本广播 |
+| pytest | 9.1.1 | MIT | 测试 |
+| datamodel-code-generator | 0.86.0 | MIT | 契约代码生成 |
+
+## 原则
+
+1. 运行时依赖禁止 GPL / AGPL：`apps/web` 与 `services/match` 都不引入。
+2. 可选依赖（textarena、redis）缺失时服务必须照常启动，只在对应功能上降级。
+3. 修改第三方源码必须 fork 并在此记录来源与改动；本项目当前无 fork。
+4. 前端零构建，无 npm 运行时依赖；`apps/web/package.json` 只用于 `node --check`。
+
+## 前端
+
+前端没有打包器、没有 node_modules 运行时依赖，所有代码为原生 ES module。
+| limits | 5.8.0 | MIT | 限流（滑动窗口 + 内存/Redis 后端） |
+| itsdangerous | 2.2.0 | BSD-3-Clause | 签名票据（SSE / 媒体） |
+| prometheus-fastapi-instrumentator | 8.1.0 | ISC | HTTP 指标与 /metrics |
+| prometheus-client | 0.26.0 | Apache-2.0 AND BSD-2-Clause | 指标导出（instrumentator 依赖） |
+| apscheduler | 3.11.3 | MIT | 赛程调度 |
+| pydantic-settings | 2.16.0 | MIT | 配置集中与环境变量解析 |
+
+## 前端
+
+| 包 | 版本 | 许可证 | 用途 |
+|---|---|---|---|
+| lit-html | 3.3.3 | BSD-3-Clause | 模板渲染（vendored，无构建） |
+
+`lit-html` 以单文件 vendored 到 `apps/web/vendor/lit-html.js`（8KB），许可证随文件放在同目录。
