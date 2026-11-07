@@ -2,6 +2,7 @@
 // 用 DOM API 构建而不是 innerHTML：页面名来自常量，但仍然不给注入留口子。
 import { applyI18n, getLang, resolveLang, setLang, t } from './i18n.js'
 import { mountThemeSwitch } from './theme.js'
+import { installFatalHandlers } from './fatal.js'
 
 const PAGES = [
   { href: 'index.html', key: 'nav.home' },
@@ -35,6 +36,8 @@ export function mountLangSwitch(parent) {
 }
 
 export function mountTopbar({ active = '', tools = null } = {}) {
+  // 全局兜底在最早时机装上：晚于页面脚本的话，前期的 rejection 会丢失。
+  installFatalHandlers()
   const bar = document.createElement('header')
   bar.className = 'topbar'
 

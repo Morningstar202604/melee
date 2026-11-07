@@ -5,6 +5,7 @@ import {
   api, configure, el, gameMeta, propagateQuery, relativeTime, formatDuration, winnerLabel, shareUrl, toast,
 } from './api.js'
 import { mountTopbar, mountFooter } from './nav.js'
+import { onFatal } from './fatal.js'
 import { trapFocus } from './a11y.js'
 import { applyI18n, getLang, resolveLang, setLang, t } from './i18n.js'
 
@@ -12,6 +13,10 @@ setLang(resolveLang())
 configure()
 propagateQuery()
 mountTopbar({ active: 'home' })
+// 未捕获异常降级成一条可读提示：静默失败最伤信任。
+onFatal((message) => {
+  toast(t('common.error') + ' — ' + message, 'bad')
+})
 mountFooter()
 document.title = t('home.title')
 applyI18n()

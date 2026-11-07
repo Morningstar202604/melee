@@ -74,3 +74,20 @@ def test_watch_css_uses_tokens_only():
     css = (WEB / "src" / "watch.css").read_text(encoding="utf-8")
     hits = [literal for literal in COLOR_PATTERN.findall(css) if literal not in ALLOWED_LITERALS]
     assert not hits, f"watch.css 写死了颜色 {hits[:8]}"
+
+def test_every_page_installs_fatal_handlers():
+    """未捕获异常必须有兜底。
+
+    真实痛点：async 函数漏 catch 时 rejection 静默消失，
+    用户只看到"点了没反应"。兜底至少留下结构化日志（含页面名）与可见提示。
+    """
+    nav = (WEB / "src" / "nav.js").read_text(encoding="utf-8")
+    assert "installFatalHandlers" in nav, "全站顶栏没有安装全局兜底"
+    watch = (WEB / "src" / "main.js").read_text(encoding="utf-8")
+    assert "installFatalHandlers" in watch, "观战页（不走 mountTopbar）没有安装全局兜底"
+    fatal = (WEB / "src" / "fatal.js").read_text(encoding="utf-8")
+    assert "unhandledrejection" in fatal
+    assert "window.addEventListener('error'" in fatal
+    # 去重：同一个错误不该把界面刷满提示
+    assert "DEDUPE_MS" in fatal
+

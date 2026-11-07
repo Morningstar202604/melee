@@ -288,9 +288,10 @@ async def events(
     request: Request,
     after: int = Query(default=-1, ge=-1),
     reveal: bool = Query(default=False, description="赛后揭秘：比赛结束后才可读私有事件"),
+    limit: int = Query(default=0, ge=0, le=5000, description="最多返回多少条；0 表示不限制"),
 ) -> dict[str, Any]:
     guard(request, "read")
-    items = events_of(db_path_of(request), match_id, after=after, reveal=reveal)
+    items = events_of(db_path_of(request), match_id, after=after, reveal=reveal, limit=limit or None)
     lang = request_lang(request)
     if lang in MESSAGE_LANGS:
         # 解说事件存的是模板键 + 参数，这里按请求语言重新展开；

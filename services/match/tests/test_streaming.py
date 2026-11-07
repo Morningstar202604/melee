@@ -74,3 +74,38 @@ def test_non_streaming_path_still_works():
 
     assert output.move.value == "烟囱"
     assert server.requests[0]["body"].get("stream") is not True
+
+def test_events_endpoint_honours_limit(client):
+    """limit 必须真的少读，而不是查完再切。
+
+    大对局（几千条事件）一次全量返回会把整场塞进内存和网络；
+    分页的价值就在"少读"，所以 SQL 层必须带上 LIMIT。
+    """
+    created = client.post("/matches", json={"game": "tic-tac-toe", "seed": 3,
+                                            "players": [{"id": "A"}, {"id": "B"}]}).json()
+    match_id = created["matchId"]
+    deadline = __import__("time").time() + 60
+    while __import__("time").time() < deadline:
+        events = client.get(f"/matches/{match_id}/events").json()["events"]
+        if any(e["type"] == "match.ended" for e in events):
+            break
+        __import__("time").sleep(0.5)
+
+    full = client.get(f"/matches/{match_id}/events").json()
+    assert len(full["events"]) > 10
+
+    part = client.get(f"/matches/{match_id}/events?limit=5").json()
+    assert len(part["events"]) == 5
+    assert part["events"] == full["events"][:5]
+
+    # 游标 + 上限组合：从第 8 条起再取 3 条
+    tail = client.get(f"/matches/{match_id}/events?after=7&limit=3").json()
+    assert [e["seq"] for e in tail["events"]] == [8, 9, 10]
+
+
+def test_events_limit_is_capped(client):
+    """上限要有天花板：传 100000 不该真去读十万条。"""
+    created = client.post("/matches", json={"game": "nim", "players": [{"id": "A"}, {"id": "B"}]}).json()
+    response = client.get(f"/matches/{created['matchId']}/events?limit=100000")
+    assert response.status_code == 422
+

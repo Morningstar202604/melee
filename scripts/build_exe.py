@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 BUILD_DIR = ROOT / "build"
 
-APP_VERSION = "1.9.0"
+APP_VERSION = "1.9.1"
 
 README_SHORT = r"""\
 melee broadcast studio — portable distribution
