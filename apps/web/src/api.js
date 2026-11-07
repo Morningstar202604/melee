@@ -73,7 +73,12 @@ export const api = {
     return request(`/archive?${params}`)
   },
   createMatch: (body) => request('/matches', { method: 'POST', body }),
-  events: (matchId, after = -1) => request(`/matches/${encodeURIComponent(matchId)}/events?after=${after}`),
+  events: (matchId, after = -1, limit = 0) => {
+    const query = new URLSearchParams({ after: String(after) })
+    // limit=0 表示"服务端不限"：保持旧调用行为，分页只在新代码里显式传。
+    if (limit) query.set('limit', String(limit))
+    return request(`/matches/${encodeURIComponent(matchId)}/events?${query}`)
+  },
   state: (matchId) => request(`/matches/${encodeURIComponent(matchId)}/state`),
   recap: (matchId) => request(`/matches/${encodeURIComponent(matchId)}/recap`),
   presence: (matchId) => request(`/matches/${encodeURIComponent(matchId)}/presence`),

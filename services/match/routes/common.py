@@ -133,6 +133,7 @@ def events_of(
     after: int = -1,
     viewer: str | None = None,
     reveal: bool = False,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """从日志读一场事件；不存在时 404，已登记但未开写时返回空列表。
 
@@ -145,9 +146,11 @@ def events_of(
 
     `reveal=True` 是赛后揭秘：比赛必须先结束，否则拒绝。揭秘不改变事件本身，
     只是不再过滤——所以"直播期看不到、赛后能回看"这一条由服务端保证。
+
+    `limit` 下推到 SQL：分页要真的少读，不能在内存里切。
     """
     try:
-        events = read_match(db_path, match_id, after)
+        events = read_match(db_path, match_id, after, limit)
     # aqg: top-level boundary
     except Exception:  # noqa: BLE001 - 表不存在等一律视为没有这场
         events = []

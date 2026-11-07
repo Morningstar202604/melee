@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -34,6 +35,9 @@ from .settings import settings
 from .worker import ensure_inline_worker, stop_inline_worker
 
 logger = logging.getLogger("melee.match")
+
+# 413 时丢弃请求体的时间上限（秒）。给慢客户端设硬边界，避免拖住工作线程。
+_BODY_DRAIN_SECONDS = 2.0
 
 _SENSITIVE_FIELDS = {"apikey", "api_key", "authorization", "secret", "password", "token", "credential"}
 
@@ -105,7 +109,31 @@ def _apply_security_headers(app: FastAPI) -> None:
         limit = settings().max_body_bytes
         length = request.headers.get("content-length")
         if length and length.isdigit() and int(length) > limit:
-            return JSONResponse(status_code=413, content={"detail": f"请求体超过 {limit} 字节上限"})
+            # 413 要"可读"，但**不能死等**。
+            #
+            # 协议事实：客户端发完整个 body 才会去读响应；服务端若不把 body
+            # 读走就关闭，内核会给客户端 RST，客户端只看到 ConnectionResetError，
+            # 永远读不到"请求体太大"这句话。而同步读满 3MB 又可能被慢客户端挂住。
+            #
+            # 折中：丢弃时给两个硬边界——最多丢 `content-length` 声明的大小
+            # （它是客户端承诺要发的总量，多读无意义）、最多等 2 秒。
+            # 关键：必须把**声明长度的全部**读走才能干净关闭，只读 limit 会剩
+            # 余数据留在内核缓冲，客户端读响应时照样 RST（实测）。
+            declared = int(length)
+            dropped = 0
+            deadline = asyncio.get_running_loop().time() + _BODY_DRAIN_SECONDS
+            try:
+                async for chunk in request.stream():
+                    dropped += len(chunk)
+                    if dropped >= declared or asyncio.get_running_loop().time() > deadline:
+                        break
+            except Exception:  # noqa: BLE001 - 客户端提前断开是正常路径
+                pass
+            return JSONResponse(
+                status_code=413,
+                content={"detail": f"请求体超过 {limit} 字节上限"},
+                headers={"Connection": "close"},
+            )
         response = await call_next(request)
         # 限流头由 guard() 挂在 request.state 上，这里统一落到响应：
         # 逐个端点写会漏（33 个端点，新增一个就漏一个）。
@@ -158,7 +186,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
     app = FastAPI(
         title="melee match service",
-        version="1.9.0",
+        version="1.9.1",
         lifespan=lifespan,
         # token 模式下不公开接口表：/docs 与 /openapi.json 之前无需鉴权即可读。
         docs_url=None if auth_config().mode != "off" else "/docs",

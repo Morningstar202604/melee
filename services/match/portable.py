@@ -104,51 +104,124 @@ def import_match(db_path: str | Path, document: dict[str, Any], *, new_match_id:
     保留原 matchId 会让两实例的 id 冲突（导入两份同 id 的导出会互相覆盖），
     所以默认生成新 id，并在事件里替换 matchId 以维持"事件属于这一场"。
     """
-    from .eventlog import EventLog, has_match
+    from .eventlog import has_match
 
-    if document.get("format") != EXPORT_FORMAT:
-        raise ValueError("unsupported export format")
-    if not isinstance(document.get("events"), list) or not document["events"]:
-        raise ValueError("export has no events")
+    problems = validate_export(document)
+    if problems:
+        # 一次把全部问题说清楚：调用方拿到的是"第 37 条事件 seq 应为 37"，
+        # 而不是笼统的 unsupported export format——后者让人无从下手。
+        raise ValueError("invalid export: " + "; ".join(problems[:5]))
 
     match_id = new_match_id or _new_id()
+    if has_match(Path(db_path), match_id):
+        raise ValueError("match id already exists")
+
+    # 先整体校验再写：旧实现边校验边 append，每条 append 都 commit，
+    # 遇到第 500 条坏数据时前 499 条已经落库，留下永远无法重放的半场。
+    events = document["events"]
     conn = sqlite3.connect(str(db_path), timeout=30.0)
     try:
-        ensure = _ensure_tables(conn, Path(db_path))
+        _ensure_tables(conn, Path(db_path))
+        created = dict(events[0]["payload"])
+        created["players"] = document.get("players", created.get("players", []))
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(
+                "INSERT INTO matches (match_id, game, seed, players, created_at) VALUES (?,?,?,?,?)",
+                (match_id, document["game"], int(document.get("seed") or 0), _json_players(created), _now()),
+            )
+            for event in events:
+                conn.execute(
+                    "INSERT INTO events (match_id, seq, type, player, at, payload, visibility) VALUES (?,?,?,?,?,?,?)",
+                    (
+                        match_id,
+                        int(event["seq"]),
+                        event["type"],
+                        event.get("player"),
+                        event.get("at") or _now(),
+                        json.dumps(event["payload"], ensure_ascii=False),
+                        _visibility_json(event.get("visibility")),
+                    ),
+                )
+            if document.get("endedAt"):
+                conn.execute("UPDATE matches SET ended_at = ? WHERE match_id = ?", (_now(), match_id))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
     finally:
         conn.close()
-    _ = ensure
 
-    log = EventLog.open(Path(db_path), match_id)
-    try:
-        if has_match(Path(db_path), match_id):
-            raise ValueError("match id already exists")
-        first = document["events"][0]
-        created = dict(first["payload"])
-        created["players"] = document.get("players", created.get("players", []))
-        log.create_match(document["game"], document.get("seed") or 0, created.get("players", []))
-        last_seq = -1
-        for event in document["events"]:
-            seq = int(event["seq"])
-            if seq != last_seq + 1:
-                raise ValueError("event seqs must be contiguous starting at 0")
-            last_seq = seq
-            payload = event["payload"]
-            at = event.get("at")
-            # 导入是回放：at 原样保留，重放时间线不漂移。
-            log.append(
-                event["type"],
-                payload,
-                player=event.get("player"),
-                at=at,
-                visibility=event.get("visibility") or "public",
-            )
-        if document.get("endedAt"):
-            log.mark_ended()
-    finally:
-        log.close()
+    return {"matchId": match_id, "events": len(events), "fingerprint": _fingerprint(document)}
 
-    return {"matchId": match_id, "events": len(document["events"]), "fingerprint": _fingerprint(document)}
+
+# 导入上限：一份导出文件是"一场比赛"，恶意或误操作的大文件不该把库撑爆。
+MAX_IMPORT_EVENTS = 200_000
+MAX_IMPORT_BYTES = 64 * 1024 * 1024
+
+EVENT_ENVELOPE_REQUIRED = ("seq", "type", "payload")
+
+
+def validate_export(document: Any) -> list[str]:
+    """校验一份导出文档，返回问题清单（空列表 = 可以使用）。
+
+    宁可一次列全，也不要写一半才失败。只做结构校验：语义（引擎规则）
+    由回放时的 reducer 负责，导入不重跑引擎。
+    """
+    problems: list[str] = []
+    if not isinstance(document, dict):
+        return ["document must be a JSON object"]
+    if document.get("format") != EXPORT_FORMAT:
+        problems.append(f"format must be {EXPORT_FORMAT!r}, got {document.get('format')!r}")
+    game = document.get("game")
+    if not isinstance(game, str) or not game.strip():
+        problems.append("game must be a non-empty string")
+    players = document.get("players")
+    if not isinstance(players, list) or not all(isinstance(p, str) and p for p in players):
+        problems.append("players must be a list of non-empty strings")
+
+    events = document.get("events")
+    if not isinstance(events, list):
+        problems.append("events must be a list")
+        return problems
+    if not events:
+        problems.append("events must not be empty")
+        return problems
+    if len(events) > MAX_IMPORT_EVENTS:
+        problems.append(f"events exceeds {MAX_IMPORT_EVENTS}")
+        return problems
+
+    for index, event in enumerate(events):
+        if not isinstance(event, dict):
+            problems.append(f"event[{index}] must be an object")
+            continue
+        missing = [key for key in EVENT_ENVELOPE_REQUIRED if key not in event]
+        if missing:
+            problems.append(f"event[{index}] missing {','.join(missing)}")
+        if "seq" in event and not isinstance(event["seq"], int):
+            problems.append(f"event[{index}].seq must be an integer")
+        if "type" in event and not isinstance(event["type"], str):
+            problems.append(f"event[{index}].type must be a string")
+        if "payload" in event and not isinstance(event["payload"], dict):
+            problems.append(f"event[{index}].payload must be an object")
+        if problems and len(problems) >= 20:
+            problems.append("... more problems omitted")
+            break
+        # seq 必须从 0 连续：断了就说明文件被截断或拼接过
+        if isinstance(event.get("seq"), int) and event["seq"] != index:
+            problems.append(f"event[{index}].seq should be {index}, got {event['seq']}")
+            break
+    return problems
+
+
+def _json_players(created: dict[str, Any]) -> str:
+    return json.dumps(list(created.get("players") or []), ensure_ascii=False)
+
+
+def _visibility_json(value: Any) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, ensure_ascii=False) if isinstance(value, dict) else str(value)
 
 
 def _new_id() -> str:

@@ -183,3 +183,35 @@ def test_frontend_is_served_from_same_origin(client):
     assert client.get("/season.html").status_code == 200
     assert client.get("/games").status_code == 200
     assert client.get("/health").status_code == 200
+
+def test_oversized_body_returns_a_readable_413(client):
+    """413 必须可读，不能把连接直接断掉。
+
+    真实缺陷：中间件看到 content-length 超限就直接 return，客户端还在写，
+    内核发 RST——调用方看到的是 ConnectionResetError，不知道是自己发大了。
+
+    修法的关键细节：必须把**声明长度的全部**读走再回 413。只读到上限就停，
+    剩余字节留在内核缓冲，客户端读响应时照样被 RST（两次实测都踩过）。
+    """
+    huge = {"game": "nim", "players": [{"id": "A"}, {"id": "B"}], "x": "a" * (3 * 1024 * 1024)}
+    response = client.post("/matches", json=huge)
+    assert response.status_code == 413
+    assert "上限" in response.json()["detail"]
+    assert response.headers.get("connection") == "close"
+
+
+def test_body_drain_has_a_time_budget():
+    """慢客户端不能把工作线程挂住：排空必须有时间上限。
+
+    这是那条 413 修复的另一半——只强调"读完"会引入 DoS：
+    攻击者声明 1GB 然后一个字一个字发，服务端就一直等。
+    """
+    import inspect
+
+    from services.match import api as api_module
+
+    source = inspect.getsource(api_module._apply_security_headers)
+    assert "_BODY_DRAIN_SECONDS" in source, "排空请求体没有时间上限"
+    assert "_BODY_DRAIN_SECONDS" in dir(api_module) or hasattr(api_module, "_BODY_DRAIN_SECONDS")
+    assert 0 < api_module._BODY_DRAIN_SECONDS <= 5, api_module._BODY_DRAIN_SECONDS
+

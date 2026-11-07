@@ -219,13 +219,14 @@ class Season:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
-    """旧库补列：CREATE TABLE IF NOT EXISTS 不会给已存在的表加字段。"""
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(seasons)")}
-    if "game" not in columns:
-        conn.execute("ALTER TABLE seasons ADD COLUMN game TEXT NOT NULL DEFAULT 'twenty-questions'")
-    if "status" not in columns:
-        conn.execute("ALTER TABLE seasons ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
-    conn.commit()
+    """旧库补列：走统一的迁移框架（版本号 + 有序步骤）。
+
+    旧实现在这里单独探查列，和 eventlog 各改各的；现在两处都由
+    `migrations.migrate` 按 user_version 统一推进，重复调用是幂等的。
+    """
+    from .migrations import migrate
+
+    migrate(conn)
 
 
 def persist(conn: sqlite3.Connection, season: Season, *, replace: bool = False) -> None:

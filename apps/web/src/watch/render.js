@@ -6,7 +6,7 @@ import { paint as litRender } from '../paint.js'
 import { el, gameMeta, teamLabel } from '../api.js'
 import { t } from '../i18n.js'
 import { latestThoughtOf, currentCue } from '../view.js'
-import { elapsedAt, formatClock, marksOf, ratioAt } from './timeline.js'
+import { elapsedAt, formatClock, marksOf, materializePoints, ratioAt } from './timeline.js'
 
 // 多队配色：预置 8 色板，超出自动编号；未翻开的格子仍是深色。
 const DYNAMIC_TEAM_COLORS = [
@@ -191,7 +191,7 @@ export function renderTimeline(events, mode, cursor, timeline = null) {
   el('replayBadge').style.display = mode === 'replay' ? 'inline-flex' : 'none'
   el('scrub').disabled = events.length === 0
 
-  if (!timeline || !timeline.points.length) {
+  if (!timeline || materializePoints(timeline).length === 0) {
     fill.style.width = `${(position / total) * 100}%`
     return
   }

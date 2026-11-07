@@ -69,18 +69,6 @@ class EventLogError(ValueError):
     pass
 
 
-def _migrate_visibility(conn: sqlite3.Connection) -> None:
-    """旧库补 visibility 列。
-
-    私有事件（如隐藏信息赛制的内心戏）需要按玩家过滤；旧库没有这一列，
-    不加迁移会让升级后的第一次写入直接报 no such column。
-    """
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
-    if "visibility" not in columns:
-        conn.execute("ALTER TABLE events ADD COLUMN visibility TEXT")
-        conn.commit()
-
-
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -132,10 +120,13 @@ class EventLog:
         # DDL 与 journal_mode 都只在本进程首次打开这个库时做：
         # journal_mode 是库级持久设置，每次 open 重切要抢写锁（SSE 回查最热）。
         from .db import ensure_schema
+        from .migrations import migrate
 
         if ensure_schema(conn, path, SCHEMA, "eventlog"):
             _enable_wal(conn)
-            _migrate_visibility(conn)
+        # 迁移每次都检查 user_version（一次 PRAGMA 读）：库可能是别的进程建的，
+        # 也可能是上一版程序建的。版本号超前会抛 SchemaTooNewError 拒绝启动。
+        migrate(conn)
         conn.execute("PRAGMA synchronous=NORMAL")
         row = conn.execute(
             "SELECT COALESCE(MAX(seq) + 1, 0) FROM events WHERE match_id = ?", (match_id,)
@@ -300,13 +291,22 @@ class EventLog:
         )
         self.conn.commit()
 
-    def read(self, after: int = -1) -> list[dict[str, Any]]:
+    def read(self, after: int = -1, limit: int | None = None) -> list[dict[str, Any]]:
+        """读事件；after 是排他下界，limit 是 SQL 级上限。
+
+        limit 必须下推到 SQL：旧实现"全查再切片"在大对局上仍会把整场
+        读进内存，分页就只是把问题从网络挪到了内存。
+        """
+        sql = (
+            "SELECT seq, type, player, at, payload, visibility FROM events "
+            "WHERE match_id = ? AND seq > ? ORDER BY seq ASC"
+        )
+        params: tuple[Any, ...] = (self.match_id, after)
+        if limit is not None:
+            sql += " LIMIT ?"
+            params = (self.match_id, after, int(limit))
         with self.lock:
-            rows = self.conn.execute(
-                "SELECT seq, type, player, at, payload, visibility FROM events "
-                "WHERE match_id = ? AND seq > ? ORDER BY seq ASC",
-                (self.match_id, after),
-            ).fetchall()
+            rows = self.conn.execute(sql, params).fetchall()
         events = []
         for seq, event_type, player, at, payload, visibility in rows:
             event: dict[str, Any] = {
@@ -357,14 +357,15 @@ def _visibility_load(raw: str | None) -> Any:
         return None
 
 
-def read_match(path: str | Path, match_id: str, after: int = -1) -> list[dict[str, Any]]:
+def read_match(path: str | Path, match_id: str, after: int = -1, limit: int | None = None) -> list[dict[str, Any]]:
     """不依赖进程内注册表，直接从日志读某一场的事件。
 
     赛季批量跑出来的比赛没有进程内对象，观战与战报仍要能读。
+    `limit` 是 SQL 级上限，用于分页；None 表示不限制（战报/回放需要全量）。
     """
     log = EventLog.open(path, match_id)
     try:
-        return log.read(after)
+        return log.read(after, limit)
     finally:
         log.close()
 

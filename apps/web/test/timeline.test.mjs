@@ -2,7 +2,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  buildTimeline, cursorAt, ratioAt, elapsedAt, formatClock, marksOf,
+  appendToTimeline, buildTimeline, cursorAt, ratioAt, elapsedAt, formatClock, marksOf,
 } from '../src/watch/timeline.js'
 
 const ev = (seq, at, type = 'action.applied') => ({ seq, at, type, payload: {} })
@@ -103,3 +103,47 @@ test('空流不抛异常', () => {
   assert.equal(ratioAt(tl, 3), 0)
   assert.deepEqual(marksOf(tl, []), [])
 })
+
+test('增量追加与整条重建结果一致', () => {
+  const all = [
+    ev(0, '2026-01-01T00:00:00Z'),
+    ev(1, '2026-01-01T00:00:01Z'),
+    ev(2, '2026-01-01T00:00:02Z'),
+    ev(3, '2026-01-01T00:00:03Z'),
+  ]
+  const full = buildTimeline(all)
+  // 逐条追加：模拟直播里"每来一条重建一次"的真实路径
+  let incremental = buildTimeline([all[0]])
+  for (let i = 1; i < all.length; i += 1) {
+    incremental = appendToTimeline(incremental, all.slice(0, i + 1), all.slice(0, i + 1))
+  }
+  assert.deepEqual(incremental.points.map((p) => p.seq), full.points.map((p) => p.seq))
+  // 首尾时间变了会退回整条重建，所以结果必须逐点一致
+  for (let i = 0; i < full.points.length; i += 1) {
+    assert.ok(Math.abs(incremental.points[i].t - full.points[i].t) < 1e-9, `point ${i}`)
+  }
+  assert.equal(incremental.durationMs, full.durationMs)
+})
+
+test('末尾时间不变时只处理新增事件', () => {
+  const base = [ev(0, '2026-01-01T00:00:00Z'), ev(1, '2026-01-01T00:00:10Z')]
+  const timeline = buildTimeline(base)
+  // 新事件与已有时刻相同：结尾没变，可以走增量
+  const next = [...base, ev(2, '2026-01-01T00:00:10Z')]
+  const grown = appendToTimeline(timeline, next, next)
+  assert.equal(grown.points.length, 3)
+  assert.ok(grown.points[2].t >= grown.points[1].t, '时间轴必须单调')
+})
+
+test('没有新增事件时原样返回同一个时间轴', () => {
+  const events = [ev(0, '2026-01-01T00:00:00Z'), ev(1, '2026-01-01T00:00:05Z')]
+  const timeline = buildTimeline(events)
+  assert.equal(appendToTimeline(timeline, events, events), timeline)
+})
+
+test('空流追加等价于整条重建', () => {
+  const events = [ev(0, '2026-01-01T00:00:00Z'), ev(1, '2026-01-01T00:00:05Z')]
+  const grown = appendToTimeline(buildTimeline([]), events, events)
+  assert.deepEqual(grown.points, buildTimeline(events).points)
+})
+

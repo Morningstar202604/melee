@@ -21,7 +21,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-APP_VERSION = "1.9.0"
+APP_VERSION = "1.9.1"
 
 
 
@@ -45,9 +45,14 @@ def _request(
         headers["Accept-Language"] = lang
     data = json.dumps(body).encode("utf-8") if body is not None else None
     # 结构门禁：拦 file:/ 自定义 scheme 与 userinfo（DNS 级校验太慢，CLI 逐次调用不划算）。
-    from .outbound import check_url_components
+    # 校验失败要转成"干净的 CLI 错误"：直接把 OutboundAddressError 抛出去，
+    # 用户看到的是 Python 栈回溯，而不是"这个地址不支持"。
+    from .outbound import OutboundAddressError, check_url_components
 
-    check_url_components(base)
+    try:
+        check_url_components(base)
+    except OutboundAddressError as exc:
+        raise SystemExit(f"error: {exc}") from None
     request = urllib.request.Request(
         base.rstrip("/") + path, data=data, headers=headers, method=method
     )
