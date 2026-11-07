@@ -20,23 +20,24 @@ from services.match.render import _font  # noqa: E402
 WIDTH = 1280
 HEIGHT = 640
 
-BG = (7, 9, 13)
-PANEL = (17, 20, 27)
-LINE = (35, 40, 56)
-TEXT = (232, 234, 242)
-DIM = (154, 163, 181)
-FAINT = (92, 100, 120)
-ACCENT = (34, 211, 238)
-ACCENT_B = (245, 165, 36)
-OK = (52, 211, 153)
+# 亮色是产品默认（与网页同一套令牌），仓库门面跟它保持一致。
+BG = (244, 246, 251)
+PANEL = (255, 255, 255)
+LINE = (221, 228, 239)
+TEXT = (15, 23, 41)
+DIM = (74, 85, 104)
+FAINT = (95, 106, 126)
+ACCENT = (14, 116, 144)
+ACCENT_B = (161, 98, 7)
+OK = (4, 120, 87)
 
 GAMES = [
-    ("二十问", "提问收窄", ACCENT),
-    ("代号", "隐藏信息", ACCENT_B),
-    ("井字棋", "确定性", OK),
-    ("四子棋", "确定性", OK),
-    ("黑白棋", "确定性", OK),
-    ("取石子", "确定性", OK),
+    ("Twenty Questions", "narrowing", ACCENT),
+    ("Codenames", "hidden info", ACCENT_B),
+    ("Tic-tac-toe", "deterministic", OK),
+    ("Connect Four", "deterministic", OK),
+    ("Othello", "deterministic", OK),
+    ("Nim", "deterministic", OK),
 ]
 
 
@@ -49,44 +50,47 @@ def main() -> int:
     image = Image.new("RGB", (WIDTH, HEIGHT), BG)
     draw = ImageDraw.Draw(image)
 
-    # 顶部强调条 + 低对比网格（直接画深色线，别用 blend 拉亮整张图）
+    # 顶部强调条 + 低对比网格（直接画浅色线，别用 blend 拉暗整张图）
     draw.rectangle([0, 0, WIDTH, 6], fill=ACCENT)
-    grid = (13, 16, 22)
+    grid = (226, 232, 241)
     for x in range(0, WIDTH, 44):
         draw.line([(x, 6), (x, HEIGHT)], fill=grid, width=1)
     for y in range(6, HEIGHT, 44):
         draw.line([(0, y), (WIDTH, y)], fill=grid, width=1)
 
-    draw.text((72, 74), "MELEE / 转播台", font=_font(30), fill=ACCENT)
-    draw.text((72, 122), "让每一手对决", font=_font(64), fill=TEXT)
-    draw.text((72, 208), "都成为值得回看的故事", font=_font(64), fill=ACCENT_B)
+    draw.text((72, 74), "MELEE / Broadcast", font=_font(30), fill=ACCENT)
+    draw.text((72, 122), "Every move,", font=_font(64), fill=TEXT)
+    draw.text((72, 208), "worth rewatching.", font=_font(64), fill=ACCENT_B)
     draw.text(
         (72, 302),
-        "AI 对战的自托管转播台",
+        "Self-hosted broadcast studio for AI matches",
         font=_font(26),
         fill=DIM,
     )
     draw.text(
         (72, 342),
-        "直播 · 回放 · 导播 · 战报 · 高光 · 分享",
+        "Live · Replay · Directing · Recaps · Highlights · Sharing",
         font=_font(26),
         fill=DIM,
     )
 
     x = 72
+    name_font = _font(23)
+    tag_font = _font(17)
     for name, tag, tone in GAMES:
-        width = 168
+        # 胶囊宽度按文本实测（名称与标签取大者）：英文比中文长，写死宽度必截断。
+        width = 34 + max(int(name_font.getlength(name)), int(tag_font.getlength(tag))) + 18
         draw.rounded_rectangle([x, 420, x + width, 486], radius=10, fill=PANEL, outline=LINE, width=1)
         draw.ellipse([x + 14, 440, x + 24, 450], fill=tone)
-        draw.text((x + 34, 434), name, font=_font(23), fill=TEXT)
-        draw.text((x + 34, 462), tag, font=_font(17), fill=FAINT)
+        draw.text((x + 34, 434), name, font=name_font, fill=TEXT)
+        draw.text((x + 34, 462), tag, font=tag_font, fill=FAINT)
         x += width + 12
 
-    draw.text((72, 540), "Python · FastAPI · SQLite · 零构建前端", font=_font(22), fill=FAINT)
+    draw.text((72, 540), "Python · FastAPI · SQLite · zero-build frontend", font=_font(22), fill=FAINT)
     draw.text((WIDTH - 72, 540), "github.com/badhope/melee", font=_font(22), fill=FAINT, anchor="ra")
     draw.text(
         (WIDTH - 72, 574),
-        "事件流是唯一真相 · 回放与直播共用同一个 reducer",
+        "The event log is the only source of truth - live and replay share one reducer",
         font=_font(18),
         fill=FAINT,
         anchor="ra",

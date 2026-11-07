@@ -49,6 +49,39 @@ def test_rehydrate_matches_live_result():
     assert rebuilt.public_state()["remainingPublic"] == end["payload"]["finalState"]["remainingPublic"]
 
 
+def test_rehydrate_works_when_seed_is_not_in_the_event_log():
+    """默认 secure 模式不把种子写进事件，但重放仍然必须可用。
+
+    这是真实回归：种子从公开事件里移除后，`rehydrate` 直接 KeyError，
+    导致 `/state` 500、worker 无法续跑、所有默认建场的比赛都打不完。
+    种子属于服务端数据（`matches.seed` 列，不出现在任何 API 响应里），
+    重放应当从那里取。
+    """
+    path = Path(tempfile.mkdtemp()) / "secure.db"
+    game = TwentyQuestions()
+    state = game.init(seed=99, players=["A", "B"], config={})
+    log = EventLog.open(path, "m_secure")
+    log.create_match(game.game_id, 99, ["A", "B"])
+    # 模拟 secure 模式：事件里没有 seed
+    Runner(
+        game,
+        log,
+        {"A": GreedyAgent("A", CATALOG), "B": GreedyAgent("B", CATALOG)},
+        narrator=RuleNarrator(),
+        director=Director(),
+        seed_mode="secure",
+    ).play(state)
+    events = log.read()
+    log.close()
+
+    created = next(e for e in events if e["type"] == "match.created")
+    assert "seed" not in created["payload"], "secure 模式不应把种子写进公开事件"
+
+    rebuilt = rehydrate(path, "m_secure")
+    assert rebuilt.state["seed"] == 99
+    assert rebuilt.finished
+
+
 def test_rehydrate_rejects_unknown_match():
     path = Path(tempfile.mkdtemp()) / "m.db"
     with pytest.raises(RehydrateError):

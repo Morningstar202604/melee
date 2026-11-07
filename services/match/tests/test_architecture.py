@@ -113,3 +113,30 @@ def test_version_matches_changelog_head():
         f"FastAPI version={app.version!r} 与 CHANGELOG 顶部 {match.group(1)!r} 不一致；"
         "升版本时两处必须同时改"
     )
+
+
+def test_every_version_carrier_matches_the_changelog():
+    """四处版本号必须一致：API、CLI、打包脚本、前端 package.json。
+
+    以前只校验 API 与 CHANGELOG，另外三处靠人记——`melee --version` 与
+    便携包内嵌版本因此可能悄悄落后于实际发布版本，用户看到的版本号是假的。
+    """
+    import json
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    expected = re.search(r"^## \[(\d+\.\d+\.\d+)\]", changelog, re.MULTILINE).group(1)
+
+    cli = (root / "services" / "match" / "cli.py").read_text(encoding="utf-8")
+    build = (root / "scripts" / "build_exe.py").read_text(encoding="utf-8")
+    web = json.loads((root / "apps" / "web" / "package.json").read_text(encoding="utf-8"))
+
+    carriers = {
+        "cli.py APP_VERSION": re.search(r'APP_VERSION = "(\d+\.\d+\.\d+)"', cli).group(1),
+        "build_exe.py APP_VERSION": re.search(r'APP_VERSION = "(\d+\.\d+\.\d+)"', build).group(1),
+        "apps/web/package.json": web["version"],
+    }
+    for name, value in carriers.items():
+        assert value == expected, f"{name}={value} 与 CHANGELOG 顶部 {expected} 不一致"

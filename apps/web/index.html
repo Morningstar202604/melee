@@ -11,36 +11,37 @@
 <meta property="og:type" content="website">
 <meta property="og:image" content="./docs-social-card.png">
 <meta name="twitter:card" content="summary_large_image">
+<script src="./src/theme-boot.js"></script>
 <link rel="stylesheet" href="./src/theme.css">
 <style>
 .hero-grid{display:grid;grid-template-columns:1.35fr .9fr;gap:18px}
 @media (max-width:980px){.hero-grid{grid-template-columns:1fr}}
 .poster{position:relative;border-radius:16px;border:1px solid var(--line);overflow:hidden;
-  background:linear-gradient(180deg,#0E131C,#080A0F);padding:18px;display:flex;flex-direction:column;gap:10px}
+  background:linear-gradient(180deg,var(--card-top),var(--card-bottom));padding:18px;display:flex;flex-direction:column;gap:10px}
 .poster .ph{display:flex;align-items:center;gap:8px;font-size:10px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase}
-.poster .stage{flex:1;border-radius:12px;border:1px solid #1B2130;background:
-  radial-gradient(90% 120% at 50% 0%,rgba(34,211,238,.10),transparent 60%),#0A0D13;
+.poster .stage{flex:1;border-radius:12px;border:1px solid var(--line);background:
+  radial-gradient(90% 120% at 50% 0%,var(--a-soft),transparent 60%),var(--sunken);
   padding:14px;display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:8px;min-height:230px}
 .poster .col{display:flex;flex-direction:column;gap:8px}
-.poster .pc{flex:1;border-radius:9px;border:1px solid #1B2130;background:#0E121A;padding:8px;display:flex;flex-direction:column;gap:5px;position:relative;overflow:hidden}
+.poster .pc{flex:1;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);padding:8px;display:flex;flex-direction:column;gap:5px;position:relative;overflow:hidden}
 .poster .pc::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--tone)}
 .poster .pc .nm{font-size:11px;font-weight:700}
-.poster .pc .th{height:3px;border-radius:2px;background:#232838}
+.poster .pc .th{height:3px;border-radius:2px;background:var(--line)}
 .poster .pc .th.b{background:var(--tone);opacity:.65}
 .poster .pc .th.s{width:60%}
 .poster .mid{display:flex;flex-direction:column;gap:8px}
-.poster .board{flex:1;border-radius:9px;border:1px solid #1B2130;background:#0B0E14;display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding:8px}
-.poster .board i{border-radius:4px;background:#151B26}
-.poster .board i.on{background:rgba(245,165,36,.75)}
-.poster .board i.on2{background:rgba(248,113,113,.7)}
-.poster .board i.on3{background:rgba(96,165,250,.7)}
-.poster .ticker{border-radius:9px;border:1px solid #1B2130;background:#0B0E14;padding:8px 10px;font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.poster .tl{height:16px;border-radius:6px;background:#0B0E14;border:1px solid #1B2130;position:relative;overflow:hidden}
-.poster .tl i{position:absolute;left:0;top:0;bottom:0;width:62%;background:linear-gradient(90deg,var(--a),#67E8F9);opacity:.6}
+.poster .board{flex:1;border-radius:9px;border:1px solid var(--line);background:var(--sunken);display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding:8px}
+.poster .board i{border-radius:4px;background:var(--panel-3)}
+.poster .board i.on{background:color-mix(in srgb,var(--b) 75%,transparent)}
+.poster .board i.on2{background:color-mix(in srgb,var(--red) 70%,transparent)}
+.poster .board i.on3{background:color-mix(in srgb,var(--blue) 70%,transparent)}
+.poster .ticker{border-radius:9px;border:1px solid var(--line);background:var(--sunken);padding:8px 10px;font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.poster .tl{height:16px;border-radius:6px;background:var(--sunken);border:1px solid var(--line);position:relative;overflow:hidden}
+.poster .tl i{position:absolute;left:0;top:0;bottom:0;width:62%;background:linear-gradient(90deg,var(--a),var(--a-hover));opacity:.6}
 .games-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px}
-.gcard{padding:15px 16px;border-radius:13px;border:1px solid var(--line);background:linear-gradient(180deg,#10141C,#0A0D13);
+.gcard{padding:15px 16px;border-radius:13px;border:1px solid var(--line);background:linear-gradient(180deg,var(--card-top),var(--card-bottom));
   cursor:pointer;transition:border-color .15s,transform .15s;text-align:left}
-.gcard:hover{border-color:#35405A;transform:translateY(-2px)}
+.gcard:hover{border-color:var(--line-strong);transform:translateY(-2px)}
 .gcard .g{display:flex;align-items:center;gap:9px}
 .gcard .glyph{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-size:14px;font-weight:800;
   background:var(--game-bg);color:var(--game-tone);border:1px solid var(--line)}
@@ -53,8 +54,8 @@
 .bars{display:flex;align-items:flex-end;gap:6px;height:70px;border-bottom:1px solid var(--line-soft);padding-bottom:1px}
 /* 零值柱：不能完全不可见（会像图表没渲染），也不能填满整高（会被读成"每天都满"）。
    做成 5px 的矮桩 + 明显区别于数据柱的灰蓝底色，一眼能看出"这天为 0"。 */
-.bars i{flex:1;background:linear-gradient(180deg,var(--a),rgba(34,211,238,.15));border-radius:3px 3px 0 0;min-height:3px;opacity:.8}
-.bars i.zero{background:#2A3448;opacity:1;height:5px!important;min-height:5px}
+.bars i{flex:1;background:linear-gradient(180deg,var(--a),var(--a-soft));border-radius:3px 3px 0 0;min-height:3px;opacity:.8}
+.bars i.zero{background:var(--line-strong);opacity:1;height:5px!important;min-height:5px}
 /* 柱状图缺日期轴时，14 根柱子读不出哪根是哪天；只标首/中/末三个刻度。 */
 .bars-axis{display:flex;justify-content:space-between;font-size:10.5px;color:var(--faint);margin-top:6px;font-variant-numeric:tabular-nums}
 .leader{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line-soft);font-size:12.5px}
@@ -65,7 +66,7 @@
 </style>
 </head>
 <body>
-<noscript><div style="padding:20px;background:#211d12;color:#E8C98A" data-i18n="home.noscript">This page needs JavaScript to load the match library and live data.</div></noscript>
+<noscript><div style="padding:20px;background:var(--warn-bg);color:var(--warn-ink)" data-i18n="home.noscript">This page needs JavaScript to load the match library and live data.</div></noscript>
 
 <main id="main">
 <div class="wrap" style="padding-top:24px">
@@ -92,13 +93,13 @@
       <div class="ph"><span class="dot-live"></span> LIVE PREVIEW</div>
       <div class="stage">
         <div class="col">
-          <div class="pc" style="--tone:#22D3EE"><div class="nm">Grey Falcon</div><div class="th" style="width:80%"></div><div class="th b"></div><div class="th s"></div><div class="th" style="width:45%"></div></div>
-          <div class="pc" style="--tone:#F5A524"><div class="nm">Inkstone</div><div class="th" style="width:66%"></div><div class="th" style="width:88%"></div><div class="th b s"></div></div>
+          <div class="pc" style="--tone:var(--tone-a)"><div class="nm">Grey Falcon</div><div class="th" style="width:80%"></div><div class="th b"></div><div class="th s"></div><div class="th" style="width:45%"></div></div>
+          <div class="pc" style="--tone:var(--tone-b)"><div class="nm">Inkstone</div><div class="th" style="width:66%"></div><div class="th" style="width:88%"></div><div class="th b s"></div></div>
         </div>
         <div class="mid">
-          <div style="border-radius:9px;border:1px solid #1B2130;background:#0B0E14;padding:10px 12px">
-            <div style="font-size:9px;letter-spacing:.18em;color:#3E4658">POSITION</div>
-            <div style="font-size:13px;font-weight:600;margin-top:3px;color:#E8EAF2">Narrowed to 4 candidates. Your guess.</div>
+          <div style="border-radius:9px;border:1px solid var(--line);background:var(--sunken);padding:10px 12px">
+            <div style="font-size:9px;letter-spacing:.18em;color:var(--ghost)">POSITION</div>
+            <div style="font-size:13px;font-weight:600;margin-top:3px;color:var(--txt)">Narrowed to 4 candidates. Your guess.</div>
           </div>
           <div class="board">
             <i></i><i class="on2"></i><i></i><i class="on"></i><i></i>
@@ -111,8 +112,8 @@
           <div class="tl"><i></i></div>
         </div>
         <div class="col">
-          <div class="pc" style="--tone:#22D3EE"><div class="nm">Observer</div><div class="th" style="width:70%"></div><div class="th b" style="width:52%"></div><div class="th"></div></div>
-          <div class="pc" style="--tone:#F5A524"><div class="nm">Auditor</div><div class="th" style="width:58%"></div><div class="th" style="width:84%"></div><div class="th b s"></div></div>
+          <div class="pc" style="--tone:var(--tone-a)"><div class="nm">Observer</div><div class="th" style="width:70%"></div><div class="th b" style="width:52%"></div><div class="th"></div></div>
+          <div class="pc" style="--tone:var(--tone-b)"><div class="nm">Auditor</div><div class="th" style="width:58%"></div><div class="th" style="width:84%"></div><div class="th b s"></div></div>
         </div>
       </div>
     </div>

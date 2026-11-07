@@ -38,14 +38,20 @@ _PAGE = """<!DOCTYPE html>
 <meta name="twitter:description" content="{description}">
 <meta name="twitter:image" content="{image}">
 <style>
-body{{margin:0;background:#07090D;color:#E8EAF2;font-family:"Segoe UI","PingFang SC",system-ui,sans-serif;
+/* 分享落地页与产品同一套配色：亮色默认，meta 里声明深色偏好时跟随。
+   这个页面由爬虫抓取，不能依赖 JS 切换主题，只能用 prefers-color-scheme。 */
+:root{{--bg:#F4F6FB;--panel:#FFFFFF;--txt:#0F1729;--dim:#4A5568;--line:#DDE4EF;--a:#0E7490;--on-a:#FFFFFF}}
+@media (prefers-color-scheme:dark){{
+:root{{--bg:#07090D;--panel:#11141B;--txt:#E8EAF2;--dim:#9AA3B5;--line:#232838;--a:#22D3EE;--on-a:#05070A}}
+}}
+body{{margin:0;background:var(--bg);color:var(--txt);font-family:"Segoe UI","PingFang SC",system-ui,sans-serif;
 display:flex;align-items:center;justify-content:center;min-height:100vh}}
 .card{{max-width:760px;padding:32px;text-align:center}}
 h1{{font-size:32px;margin:0 0 12px}}
-p{{color:#9AA3B5;line-height:1.7}}
-a{{display:inline-block;margin-top:20px;padding:10px 20px;border-radius:8px;background:#22D3EE;color:#05070A;
+p{{color:var(--dim);line-height:1.7}}
+a{{display:inline-block;margin-top:20px;padding:10px 20px;border-radius:8px;background:var(--a);color:var(--on-a);
 font-weight:700;text-decoration:none}}
-img{{width:100%;border-radius:12px;border:1px solid #232838;margin-top:20px}}
+img{{width:100%;border-radius:12px;border:1px solid var(--line);margin-top:20px}}
 </style>
 </head>
 <body>

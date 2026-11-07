@@ -15,10 +15,15 @@ import { createPlayer } from './watch/player.js'
 import { buildTimeline, cursorAt, elapsedAt, formatClock, marksOf, ratioAt } from './watch/timeline.js'
 import { trapFocus } from './a11y.js'
 import { applyI18n, getLang, resolveLang, setLang, t } from './i18n.js'
+import { mountLangSwitch } from './nav.js'
+import { mountThemeSwitch } from './theme.js'
 
 setLang(resolveLang())
 document.title = t('watch.title')
 applyI18n()
+// 观战页顶栏是静态 HTML（首帧就要有舞台），语言与主题按钮手动挂进去。
+if (el('themeSwitch')) mountThemeSwitch(el('themeSwitch'))
+if (el('langSwitch')) mountLangSwitch(el('langSwitch'))
 
 const params = new URLSearchParams(location.search)
 configure()
@@ -158,8 +163,8 @@ async function attach(matchId) {
       el('matchId').textContent = '—'
       el('connectError').textContent = t('watch.loadFailed.detail', { error: String(error.message || error) })
       litRender(
-        html`<div class="card" style="--tone:#F87171;align-items:center;justify-content:center;text-align:center">
-          <div class="pname" style="font-size:15px;color:#F87171">${t('watch.loadFailed.title')}</div>
+        html`<div class="card" style="--tone:var(--bad);align-items:center;justify-content:center;text-align:center">
+          <div class="pname" style="font-size:15px;color:var(--bad)">${t('watch.loadFailed.title')}</div>
           <div class="muted" style="margin-top:8px;line-height:1.7">${String(error.message || error)}</div>
           <div style="display:flex;gap:8px;margin-top:14px">
             <a class="btn" href="index.html">${t('watch.idle.cta')}</a>

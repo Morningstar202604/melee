@@ -23,6 +23,7 @@ from ..auth import (
     check_and_consume,
 )
 from ..eventlog import has_match, read_match
+from ..ratelimit import _DEFAULT, PROFILES
 from ..ratelimit import check as rate_check
 from ..season import Season, load
 
@@ -65,15 +66,37 @@ def db_path_of(request: Request) -> Path:
 
 
 def guard(request: Request, profile: str) -> tuple[Principal, int]:
-    """限流 + 鉴权，返回（身份，剩余额度）。"""
+    """限流 + 鉴权，返回（身份，剩余额度）。
+
+    429 与成功响应都带 IETF RateLimit 头（draft-ietf-httpapi-ratelimit-headers）：
+    `RateLimit: "profile";r=<剩余>;t=<窗口剩余秒>` 与 `RateLimit-Policy`。
+    客户端据此可以主动退避，不用先撞一次 429 才知道被限流。
+    这些头是附赠信息——没有它们功能照样能用，所以渲染失败也不能影响响应。
+    """
     allowed, remaining = rate_check(request, profile)
+    headers = rate_limit_headers(profile, remaining)
     if not allowed:
-        raise HTTPException(status_code=429, detail="请求过于频繁", headers={"Retry-After": "60"})
+        headers["Retry-After"] = "60"
+        raise HTTPException(status_code=429, detail="请求过于频繁", headers=headers)
     try:
         principal = authenticate(auth_config(), request.headers.get("authorization"))
     except AuthError as exc:
-        raise HTTPException(status_code=exc.status, detail=str(exc)) from None
+        raise HTTPException(status_code=exc.status, detail=str(exc), headers=headers) from None
+    # 把本次限流信息挂到 request 上，中间件统一写进响应头：
+    # FastAPI 的路由签名里没有 response 参数，逐端点加会漏。
+    request.state.rate_limit = headers
     return principal, remaining
+
+
+def rate_limit_headers(profile: str, remaining: int) -> dict[str, str]:
+    """按 IETF 草案渲染限流头。未知 profile 就退回默认档位的说明。"""
+    expression = PROFILES.get(profile, _DEFAULT)
+    count, _, window = expression.partition("/")
+    seconds = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}.get(window.strip(), 60)
+    return {
+        "RateLimit-Policy": f'"{profile}";q={count};w={seconds}',
+        "RateLimit": f'"{profile}";r={max(0, int(remaining))};t={seconds}',
+    }
 
 
 def quota(db_path: Path, principal: Principal, kind: str, *, amount: int = 1) -> None:

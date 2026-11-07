@@ -2,6 +2,55 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循语义化版本。
 
+## [1.9.0] — 2026-11-07
+
+这一版的主题是**把界面做成默认可读的产品**，外加三个只有实跑才暴露的运行期缺陷。
+
+### 新增
+
+- **亮色主题（默认）**：全站改为亮场演播室配色，深色保留为可切换的"暗场"。
+  所有颜色收进 `apps/web/src/theme.css` 的语义令牌（`--bg`/`--txt`/`--accent`/
+  `--game-N`/`--team-N` 等），组件不再写死色值；顶栏有主题切换按钮，
+  选择记在 `localStorage`，也支持 `?theme=dark` 直接分享。
+- **主题不闪烁**：`src/theme-boot.js` 是同步脚本且排在样式表之前，
+  首帧就是最终主题；写成 `type="module"` 会晚一帧执行，用户会看到闪白。
+- **分享卡双主题**：`GET /matches/{id}/card.png?theme=dark`，亮/暗两张独立缓存。
+- **对比度门禁**：`scripts/check_contrast.py` 用真实浏览器读 computed style，
+  在亮/暗两套主题下检查 26 个文本组合是否满足 WCAG AA（4.5:1）。
+  已接入 `verify_all.sh` 第 10b 步——改色导致的可读性退化会被拦住。
+- **Idempotency-Key**：`POST /matches` 接受幂等键（draft-ietf-httpapi-idempotency-key-header）。
+  同键同体重放首次结果、同键异体 422、并发 409；不给键时行为完全不变。
+- **标准限流响应头**：成功与 429 响应都带 `RateLimit` / `RateLimit-Policy`
+  （draft-ietf-httpapi-ratelimit-headers），429 另带 `Retry-After`。
+  客户端可以据此提前退避，不必先撞一次限流。
+
+### 修复
+
+- **secure 模式的比赛完全无法重放**（最严重）：公平性改造把种子移出公开事件后，
+  `rehydrate` 仍强制读 `match.created.payload["seed"]`，实测 `/state` 直接 500。
+  后果是默认建场的比赛打不完、导播台拿不到状态、worker 崩溃后无法续跑、
+  导出导入链条断裂。现在种子优先取事件（replay 模式与历史录像），
+  缺失时读服务端 `matches.seed`（不出现在任何 API 响应里）。
+- **契约 schema 与实现不符**：`match.created.payload.required` 仍要求 `seed`，
+  但 secure 模式有意不写，导致每条事件落盘都报"不符合契约"。已改为可选并注明原因。
+- **代号重放用错词表**：`lang` 没进引擎 state，因此没进 `match.created.config`，
+  重放时会按中文词表重建棋盘——英文局重放到第 18 手报"场上没有这个词"。
+  语言现在随 state 落库，重放逐词一致。
+- **英文战报夹中文**（用户直接可见）：胜者参数存的是中文显示名（"红队"），
+  英文模板渲染成「红队 wins: ...」；引擎拼进原因的队伍名与棋盘词也原样进英文。
+  改为参数存语言无关引用键（`team.red` / `team.3`），原因按句式翻译、
+  内容（人名、棋盘词）保留。
+- **排行榜查询全表扫描**：`WHERE type='match.ended' ORDER BY seq DESC`
+  没有可用索引，计划是 `SCAN events` + 临时排序，事件上万后首页越来越慢。
+  补 `idx_events_type_seq (type, seq DESC)`，实测 4.84ms → 0.24ms。
+
+### 验证
+
+- 12 个赛制逐个实跑：建场 → 终局 → 战报 → 高光 → 导出 → 导入回环，
+  每场都断言解说数、切镜数、战报 `problems` 为空、双语一句话。
+  典型：othello 566 事件 / 60 条解说 / 113 次切镜；codenames 316 / 45 / 70。
+- 浏览器审计 39/39（亮色）；对比度 26/26（亮+暗）；外部验收 35/35。
+
 ## [1.8.4] — 2026-11-06
 
 这一版来自"只信外部可观测行为"的验收：把每一项对外承诺写成对运行中服务的

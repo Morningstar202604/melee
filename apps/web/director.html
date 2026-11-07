@@ -5,52 +5,53 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
 <title>Director · melee broadcast</title>
+<script src="./src/theme-boot.js"></script>
 <link rel="stylesheet" href="./src/theme.css">
 <style>
 .layout{display:grid;grid-template-columns:290px 1fr 340px;gap:0;height:calc(100vh - 56px)}
 @media (max-width:1000px){.layout{grid-template-columns:1fr;height:auto}}
-.col{overflow:auto;padding:16px 18px;border-right:1px solid #161A24;min-height:0}
-.col:last-child{border-right:none;border-left:1px solid #161A24}
-.mi{padding:11px 13px;border-radius:9px;border:1px solid var(--line);background:#0C1017;cursor:pointer;margin-bottom:8px;
+.col{overflow:auto;padding:16px 18px;border-right:1px solid var(--line-soft);min-height:0}
+.col:last-child{border-right:none;border-left:1px solid var(--line-soft)}
+.mi{padding:11px 13px;border-radius:9px;border:1px solid var(--line);background:var(--panel);cursor:pointer;margin-bottom:8px;
   transition:border-color .15s;width:100%;text-align:left}
-.mi:hover{border-color:#3A4356}
+.mi:hover{border-color:var(--line-strong)}
 .mi.on{border-color:var(--a);box-shadow:inset 2px 0 0 var(--a)}
 .mi .id{font-family:var(--mono);font-size:11px;color:var(--faint)}
-.mi .p{font-size:13px;color:#D6DBE6;margin-top:3px}
+.mi .p{font-size:13px;color:var(--txt);margin-top:3px}
 .mi .m{font-size:11px;color:var(--faint);margin-top:4px;display:flex;gap:10px}
 .shots{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
-.shot{padding:12px 10px;border-radius:9px;border:1px solid var(--line);background:#0C1017;cursor:pointer;text-align:center;font-size:12.5px;color:#C4CBDA}
-.shot:hover{border-color:#3A4356;background:#111722}
-.shot.on{border-color:var(--a);background:rgba(34,211,238,.08);color:var(--a)}
+.shot{padding:12px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);cursor:pointer;text-align:center;font-size:12.5px;color:var(--dim)}
+.shot:hover{border-color:var(--line-strong);background:var(--panel-2)}
+.shot.on{border-color:var(--a);background:var(--a-soft);color:var(--a)}
 .shot small{display:block;font-size:10px;color:var(--faint);margin-top:3px}
-.shot.on small{color:rgba(34,211,238,.7)}
+.shot.on small{color:var(--a)}
 .field-row{display:flex;gap:8px;margin-bottom:10px}
 .field-row .input{flex:1}
-.log{font-family:var(--mono);font-size:11.5px;line-height:1.75;color:#8A93A5;white-space:pre-wrap;word-break:break-all;
-  background:#0A0D13;border:1px solid var(--line-soft);border-radius:10px;padding:10px 12px;height:240px;overflow:auto}
+.log{font-family:var(--mono);font-size:11.5px;line-height:1.75;color:var(--dim);white-space:pre-wrap;word-break:break-all;
+  background:var(--sunken);border:1px solid var(--line-soft);border-radius:10px;padding:10px 12px;height:240px;overflow:auto}
 .log b{color:var(--a)}
 .log .t{color:var(--faint)}
-.cue-row{padding:8px 10px;border-radius:7px;background:#0A0D13;border:1px solid #171C26;margin-bottom:6px;font-size:11.5px}
+.cue-row{padding:8px 10px;border-radius:7px;background:var(--sunken);border:1px solid var(--line-soft);margin-bottom:6px;font-size:11.5px}
 .cue-row .k{color:var(--a)}
 .manual{color:var(--b)}
 .dir-kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
-.dkpi{padding:12px 13px;border-radius:11px;border:1px solid var(--line);background:linear-gradient(180deg,#10141C,#0B0E14)}
+.dkpi{padding:12px 13px;border-radius:11px;border:1px solid var(--line);background:linear-gradient(180deg,var(--card-top),var(--card-bottom))}
 .dkpi b{display:block;font-size:24px;font-weight:750;font-variant-numeric:tabular-nums;line-height:1.15}
 .dkpi span{font-size:10px;letter-spacing:.1em;color:var(--faint)}
 .hotkeys{font-size:11px;color:var(--faint);line-height:1.9}
 .hotkeys kbd{display:inline-block;min-width:20px;text-align:center;padding:1px 6px;border-radius:5px;border:1px solid var(--line);
-  background:#0C1017;font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+  background:var(--panel);font-family:var(--mono);font-size:10.5px;color:var(--dim)}
 /* 手机端：触屏没有键盘，快捷键区是纯噪音；场次列表压缩成可横滑的一排。 */
 @media (max-width:1000px){
-  .col{padding:12px 14px;border-right:none;border-left:none;border-bottom:1px solid #161A24}
+  .col{padding:12px 14px;border-right:none;border-left:none;border-bottom:1px solid var(--line-soft)}
   .col:last-child{border-left:none}
   .hotkeys-block{display:none}
   #matchList{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
   #matchList .mi{min-width:200px;margin-bottom:0;flex:none}
   .log{height:180px}
   /* 切镜是这台机器上唯一的"写"操作，滚到哪儿都得能按到。 */
-  #actionBar{position:sticky;bottom:0;z-index:20;background:linear-gradient(180deg,rgba(8,10,15,.86),#080A0F 30%);
-    padding:10px 0 6px;margin:0 -14px;padding-left:14px;padding-right:14px;box-shadow:0 -1px 0 #161A24}
+  #actionBar{position:sticky;bottom:0;z-index:20;background:linear-gradient(180deg,var(--bg),var(--bg) 30%);
+    padding:10px 0 6px;margin:0 -14px;padding-left:14px;padding-right:14px;box-shadow:0 -1px 0 var(--line-soft)}
   .shots{grid-template-columns:repeat(3,1fr)}
   .shot{padding:10px 6px}
   .shot small{display:none}

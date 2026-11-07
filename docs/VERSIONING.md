@@ -24,15 +24,17 @@ Pre-1.0 history (`0.x`) was used during initial development and is not governed 
 
 ## Where the version lives
 
-There is exactly one source of truth per surface, and a test keeps them aligned:
+There is exactly one source of truth per surface, and tests keep them aligned. A release bumps **all four carriers at once** — until 1.9.0 only the first two were checked, and `melee --version` / the packaged exe could silently drift behind the real release.
 
-| File | Field |
-|---|---|
-| `services/match/api.py` | `FastAPI(version=...)` — what `/openapi.json` and `/docs` report |
-| `apps/web/package.json` | `version` — the static frontend's own version |
-| `CHANGELOG.md` | the top `## [x.y.z]` heading |
+| File | Field | What reports it to a user |
+|---|---|---|
+| `services/match/api.py` | `FastAPI(version=...)` | `/openapi.json`, `/docs` |
+| `services/match/cli.py` | `APP_VERSION` | `melee --version` |
+| `scripts/build_exe.py` | `APP_VERSION` | the portable zip's INSTALL.txt and the exe's `--version` |
+| `apps/web/package.json` | `version` | the static frontend's own version |
+| `CHANGELOG.md` | the top `## [x.y.z]` heading | the release itself |
 
-`services/match/tests/test_architecture.py` asserts the FastAPI version matches the changelog head, so a bump that forgets one of the two fails the gate.
+`services/match/tests/test_architecture.py` asserts every carrier matches the changelog head, so a bump that forgets one of the five fails the gate.
 
 ## What a release contains
 
@@ -40,7 +42,7 @@ A release commit must contain all of the following. Anything missing means the r
 
 1. **Code** for the change, with tests that would fail without it.
 2. **`CHANGELOG.md` entry** under `## [x.y.z] — YYYY-MM-DD`, using the Keep a Changelog sections: Added / Changed / Deprecated / Removed / Fixed / Security. Only sections that apply.
-3. **Version bump** in the two files listed above.
+3. **Version bump** in the files listed above (all four carriers, not just the API).
 4. **Documentation** updated when behaviour a user can observe changed. If a screenshot shows the changed surface, the screenshot is retaken (`scripts/capture_gallery.py`).
 5. **Green gate**: `bash scripts/verify_all.sh` exits 0 and prints `ALL GREEN`. A `SKIP` line is not a pass and must be explained in the release notes if it covers a required engine.
 6. **Git tag** `vX.Y.Z` on the release commit, pushed with the branch.

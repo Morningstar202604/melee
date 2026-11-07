@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
@@ -17,6 +19,22 @@ from ..broadcast import global_broadcaster, presence_scope
 from ..engine import registry as game_registry
 from ..eventlog import EventLog, has_match, read_match, replay
 from ..fairness import public_payload, resolve_seed
+from ..idempotency import (
+    IdempotencyConflict,
+    IdempotencyInFlight,
+)
+from ..idempotency import (
+    abort as abort_idempotent,
+)
+from ..idempotency import (
+    begin as begin_idempotent,
+)
+from ..idempotency import (
+    complete as complete_idempotent,
+)
+from ..idempotency import (
+    validate_key as validate_idempotency_key,
+)
 from ..messages import LANGS as MESSAGE_LANGS
 from ..messages import localize_payload, localize_recap
 from ..player_specs import PlayerSpec
@@ -141,7 +159,7 @@ def _check_season_game(db_path: Path, season_id: str, game: str) -> None:
 
 
 @router.post("/matches", status_code=201)
-async def create_match(body: CreateMatch, request: Request) -> dict[str, Any]:
+async def create_match(body: CreateMatch, request: Request) -> Any:
     db_path = db_path_of(request)
     principal, remaining = guard(request, "write_match")
     players = _validate_players(body)
@@ -149,6 +167,63 @@ async def create_match(body: CreateMatch, request: Request) -> dict[str, Any]:
         # 先校验赛季存在再写库：否则 404 请求会留下一条永远没人跑的 live 比赛。
         _check_season_game(db_path, body.seasonId, body.game)
 
+    # 幂等：客户端超时重发是常态，没有幂等键时一次重试就多一场比赛、
+    # 多烧一次额度，赛季里还会多一条赛程。
+    idem_key = _idempotency_key(request)
+    if idem_key:
+        try:
+            replayed = begin_idempotent(db_path, "create_match", idem_key, body.model_dump(mode="json"))
+        except IdempotencyConflict:
+            raise HTTPException(
+                status_code=422,
+                detail="Idempotency-Key 已被另一个不同的请求体使用",
+            ) from None
+        except IdempotencyInFlight:
+            raise HTTPException(
+                status_code=409,
+                detail="同一 Idempotency-Key 的请求仍在处理中",
+                headers={"Retry-After": "1"},
+            ) from None
+        if replayed is not None:
+            status, payload = replayed
+            # 落库的是 JSON 文本；解回对象再交给 JSONResponse，
+            # 否则客户端会收到一个被二次编码的字符串。
+            try:
+                decoded = json.loads(payload)
+            except ValueError:
+                decoded = payload
+            return JSONResponse(status_code=status, content=decoded)
+
+    try:
+        result = _create_match_impl(body, request, db_path, principal, remaining, players)
+    except Exception:
+        if idem_key:
+            abort_idempotent(db_path, "create_match", idem_key)
+        raise
+    if idem_key:
+        complete_idempotent(db_path, "create_match", idem_key, 201, result)
+    return result
+
+
+def _idempotency_key(request: Request) -> str:
+    """取出并校验 Idempotency-Key；没给就返回空串（不启用幂等）。"""
+    raw = request.headers.get("idempotency-key", "").strip()
+    if not raw:
+        return ""
+    try:
+        return validate_idempotency_key(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+def _create_match_impl(
+    body: CreateMatch,
+    request: Request,
+    db_path: Path,
+    principal: Any,
+    remaining: int,
+    players: list[str],
+) -> dict[str, Any]:
     match_id = f"m_{uuid.uuid4().hex[:12]}"
     # 种子决定隐藏信息：默认由服务端生成且不公开，否则建场方可以先算出
     # 20Q 的目标 / 代号的配色再参赛（实测可 100% 获胜）。

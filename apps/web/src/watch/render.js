@@ -9,7 +9,10 @@ import { latestThoughtOf, currentCue } from '../view.js'
 import { elapsedAt, formatClock, marksOf, ratioAt } from './timeline.js'
 
 // 多队配色：预置 8 色板，超出自动编号；未翻开的格子仍是深色。
-const DYNAMIC_TEAM_COLORS = ['#F87171', '#60A5FA', '#34D399', '#FBBF24', '#A78BFA', '#FB923C', '#22D3EE', '#F472B6']
+const DYNAMIC_TEAM_COLORS = [
+  'var(--team-1)', 'var(--team-2)', 'var(--team-3)', 'var(--team-4)',
+  'var(--team-5)', 'var(--team-6)', 'var(--team-7)', 'var(--team-8)',
+]
 
 function teamColor(team) {
   const m = /^team(\d+)$/.exec(String(team || ''))
@@ -18,7 +21,7 @@ function teamColor(team) {
 }
 
 const CELL_COLORS = {
-  red: '#F87171', blue: '#60A5FA', neutral: '#6B7280', assassin: '#111827',
+  red: 'var(--cell-red)', blue: 'var(--cell-blue)', neutral: 'var(--cell-neutral)', assassin: 'var(--cell-assassin)',
 }
 
 function playerCard(player, index, shown) {
@@ -26,7 +29,7 @@ function playerCard(player, index, shown) {
   const thought = latestThoughtOf(shown, player)
   const active = shown.activePlayer === player && shown.status !== 'ended'
   const isQuiz = shown.gameKind === 'twenty-questions'
-  const tone = index % 2 === 0 ? '#22D3EE' : '#F5A524'
+  const tone = index % 2 === 0 ? 'var(--tone-a)' : 'var(--tone-b)'
 
   const rows = history.slice(-8).map((item) => {
     if (item.kind === 'ask') {
@@ -35,7 +38,7 @@ function playerCard(player, index, shown) {
         <span class="ans ${item.answer === 'yes' ? 'y' : 'n'}">${item.answer === 'yes' ? t('watch.answer.yes') : t('watch.answer.no')}</span></div>`
     }
     if (item.kind === 'hint') {
-      return html`<div class="qrow"><span class="idx" style="color:#F5A524">${t('watch.answer.hint')}</span>
+      return html`<div class="qrow"><span class="idx" style="color:var(--b)">${t('watch.answer.hint')}</span>
         <span class="q">${item.value}</span></div>`
     }
     if (item.kind === 'pick') {
@@ -44,7 +47,7 @@ function playerCard(player, index, shown) {
         <span class="q">${item.value}</span>
         <span class="ans ${cls}">${teamLabel(item.color)}</span></div>`
     }
-    return html`<div class="qrow"><span class="idx" style="color:#3E4658">${t('watch.answer.step')}</span>
+    return html`<div class="qrow"><span class="idx" style="color:var(--ghost)">${t('watch.answer.step')}</span>
       <span class="q">${item.value}</span></div>`
   })
 
@@ -65,8 +68,8 @@ function playerCard(player, index, shown) {
 export function renderSides(shown) {
   if (!shown.players || !shown.players.length) {
     litRender(
-      html`<div class="card" style="--tone:#22D3EE;align-items:center;justify-content:center;text-align:center">
-        <div class="pname" style="font-size:15px;color:#8A93A5">${t('watch.idle.title')}</div>
+      html`<div class="card" style="--tone:var(--tone-a);align-items:center;justify-content:center;text-align:center">
+        <div class="pname" style="font-size:15px;color:var(--dim)">${t('watch.idle.title')}</div>
         <div class="muted" style="margin-top:8px;line-height:1.7" .innerHTML=${t('watch.idle.body')}></div>
         <a class="btn" href="index.html" style="margin-top:14px">${t('watch.idle.cta')}</a>
       </div>`,
@@ -145,8 +148,8 @@ function renderCodenames(shown) {
         <span class="cnLeft">${t('watch.codenames.remaining', { red: teams.red ?? '—', blue: teams.blue ?? '—' })}</span>
       </div>
       <div class="cnGrid">${board.map((cell) => {
-        const bg = cell.revealed && cell.color ? COLOR[cell.color] || teamColor(cell.color) || '#1C2230' : '#0E121A'
-        const style = cell.revealed ? `background:${bg};border-color:${bg};color:#fff` : ''
+        const bg = cell.revealed && cell.color ? COLOR[cell.color] || teamColor(cell.color) || 'var(--cell-hidden)' : 'var(--cell-hidden)'
+        const style = cell.revealed ? `background:${bg};border-color:${bg};color:var(--cell-ink)` : ''
         return html`<div class="cnCell" style="${style}">${cell.word}</div>`
       })}</div>`,
     el('historyList'),

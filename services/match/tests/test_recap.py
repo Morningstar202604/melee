@@ -166,7 +166,14 @@ def test_board_match_recap_does_not_repeat_the_winner():
 
 
 def test_codenames_team_winner_is_readable_and_highlighted():
-    """代号胜者是 red/blue，战报要翻成人话；翻刺客必须进高光。"""
+    """代号胜者是 red/blue，战报要翻成人话；翻刺客必须进高光。
+
+    断言的是**参数是语言无关的引用键**，再由它渲染出两种语言的句子。
+    旧版本断言"英文模板里出现红队/蓝队"，等于把"半中半英"当成了正确
+    行为固化下来——那正是要修的缺陷。
+    """
+    from services.match.messages import localize_recap
+
     events = _synthetic(
         "codenames",
         "blue",
@@ -174,7 +181,19 @@ def test_codenames_team_winner_is_readable_and_highlighted():
         [{"kind": "reveal", "word": "灯塔", "color": "assassin", "team": "red"}],
     )
     summary = build_recap(events)
-    assert "红队" in summary["oneLine"] and "蓝队" in summary["oneLine"]
+    assert summary["oneLineParams"]["winner"] == "team.blue"
+
+    english = localize_recap(summary, "en")
+    assert "Blue wins" in english["oneLine"]
+    assert "Red" in english["oneLine"] and "assassin" in english["oneLine"]
+    # 文案必须全英文；棋盘词是内容（这里事件里就是中文词"灯塔"），
+    # 不算翻译缺陷——英文对局会由 lang 决定取英文词表。
+    prose = english["oneLine"].replace("灯塔", "")
+    assert not any("一" <= ch <= "鿿" for ch in prose), english["oneLine"]
+
+    chinese = localize_recap(summary, "zh")
+    assert "蓝队" in chinese["oneLine"] and "红队" in chinese["oneLine"]
+
     kinds = {h.kind for h in find_highlights(events)}
     assert "assassin" in kinds
 

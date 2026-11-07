@@ -30,6 +30,8 @@ export const DICT = {
     'common.language': 'Language',
     'common.switchToEnglish': 'English',
     'common.switchToChinese': '中文',
+    'common.theme.light': 'Switch to light',
+    'common.theme.dark': 'Switch to dark',
     'footer.tagline': 'The event log is the only source of truth · live and replay share one reducer',
 
     // ---- 导航 ----
@@ -489,6 +491,8 @@ export const DICT = {
     'common.language': '语言',
     'common.switchToEnglish': 'English',
     'common.switchToChinese': '中文',
+    'common.theme.light': '切换到亮色',
+    'common.theme.dark': '切换到深色',
     'footer.tagline': '事件日志是唯一真相 · 回放与直播共用同一个 reducer',
 
     'nav.home': '首页',

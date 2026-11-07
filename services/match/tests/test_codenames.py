@@ -583,3 +583,28 @@ def test_neutral_team_can_never_win():
         end = next((e for e in events if e["type"] == "match.ended"), None)
         assert end is not None
         assert end["payload"]["winner"] != "neutral", f"seed={seed} 判中立获胜"
+
+def test_language_is_recorded_in_state_so_replay_rebuilds_the_same_board():
+    """语言决定词表，词表决定棋盘。state 里不记 lang，重放就会用默认中文
+    词表重建另一张棋盘——真实事故：英文局重放到第 18 手报"场上没有这个词"，
+    整场无法 /state、无法续跑、无法导出重放。
+    """
+    from services.match.engine.codenames import Codenames
+
+    game = Codenames()
+    english = game.init(seed=11, players=["A", "B", "C", "D"], config={"lang": "en", "teams": 2, "teamSize": 2})
+    assert english["lang"] == "en"
+
+    # 用记录的 state 里的 lang 重建，棋盘必须逐词相同
+    replay = game.init(
+        seed=english["seed"],
+        players=english["players"],
+        config={"lang": english["lang"], "teams": english["teams"], "teamSize": english["teamSize"]},
+    )
+    assert replay["words"] == english["words"]
+    assert replay["colors"] == english["colors"]
+
+    # 而用默认语言重建会得到另一张棋盘（这正是修复前的重放行为）
+    fallback = game.init(seed=english["seed"], players=english["players"], config={"teams": 2, "teamSize": 2})
+    assert fallback["words"] != english["words"]
+

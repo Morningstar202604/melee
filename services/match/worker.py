@@ -24,7 +24,7 @@ from .agents.scripted import GreedyAgent
 from .clips import build_clips
 from .director import Director
 from .engine import registry as game_registry
-from .engine.twenty_questions import CATALOG
+from .engine.twenty_questions import catalog_for
 from .eventlog import EventLog, read_match
 from .narrator import narrator_from_env
 from .render import find_ffmpeg, render_clip
@@ -359,7 +359,7 @@ def _default_agents(players: list[str], game_id: str, lang: str = "zh") -> dict[
     是本地化没做完最明显的信号。
     """
     if game_id == "twenty-questions":
-        return {p: GreedyAgent(p, CATALOG, lang=lang) for p in players}
+        return {p: GreedyAgent(p, catalog_for(lang), lang=lang) for p in players}
     if game_id == "codenames":
         from .agents.scripted import CodenamesAgent
 

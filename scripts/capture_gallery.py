@@ -19,6 +19,7 @@ import argparse
 import json
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -61,15 +62,25 @@ def get(api: str, path: str, lang: str = "") -> dict:
         return json.load(response)
 
 
-def post(api: str, path: str, body: dict) -> dict:
-    request = urllib.request.Request(
-        f"{api}{path}",
-        data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.load(response)
+def post(api: str, path: str, body: dict, attempts: int = 12) -> dict:
+    """建场限流 10/minute：连建多场必撞 429，按 Retry-After 退避重试。"""
+    for attempt in range(attempts):
+        request = urllib.request.Request(
+            f"{api}{path}",
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429 or attempt == attempts - 1:
+                raise
+            wait = min(int(exc.headers.get("Retry-After") or 60), 65)
+            print(f"    (rate limited, waiting {wait}s)")
+            time.sleep(wait)
+    raise RuntimeError("unreachable")
 
 
 def wait_match(api: str, match_id: str, timeout: float = 120.0) -> None:
@@ -82,11 +93,18 @@ def wait_match(api: str, match_id: str, timeout: float = 120.0) -> None:
     raise TimeoutError(match_id)
 
 
-def pick(api: str, limit: int = 100) -> dict[str, str]:
-    """每种赛制挑"事件最多的一场已结束比赛"——截图里内容最丰富。"""
+def pick(api: str, limit: int = 100, names: set[str] | None = None) -> dict[str, str]:
+    """每种赛制挑"事件最多的一场已结束比赛"——截图里内容最丰富。
+
+    names 给定时只在该语言的选手名里挑：双语截图必须各自出自双语对局。
+    旧实现按事件数全局挑，英文套图会复用 seed_demo 建的中文场——
+    界面是英文、选手叫"灰隼"，看起来像本地化只做了一半。
+    """
     best: dict[str, tuple[int, str]] = {}
     for item in get(api, f"/archive?limit={limit}")["items"]:
         if item["status"] != "ended":
+            continue
+        if names and not (names & set(item.get("players") or [])):
             continue
         current = best.get(item["game"])
         if current is None or item["events"] > current[0]:
@@ -95,11 +113,10 @@ def pick(api: str, limit: int = 100) -> dict[str, str]:
 
 
 def ensure_month_of_data(api: str, lang: str = "en") -> None:
-    """赛事库空的时候补一批比赛，避免截到空白页。已有数据就完全不动。"""
-    existing = get(api, "/archive?limit=100")["count"]
-    if existing >= 6:
-        return
+    """保证本语言的每种赛制都有真实对局。按语言建：英文套图不能截到中文场。"""
     names = PLAYERS.get(lang, PLAYERS["en"])
+    wanted_names = {n for group in names.values() for n in group}
+    missing = pick(api, names=wanted_names)
     games = [
         ("codenames", names["codenames"]),
         ("tic-tac-toe", names["duo"]),
@@ -109,6 +126,8 @@ def ensure_month_of_data(api: str, lang: str = "en") -> None:
         ("twenty-questions", names["duo"]),
     ]
     for game, players in games:
+        if game in missing:
+            continue
         result = post(
             api,
             "/matches",
@@ -158,7 +177,7 @@ def capture(lang: str, api: str, season: str, skip_live: bool) -> list[str]:
             live_id = live["matchId"]
 
     ensure_month_of_data(api, lang)
-    picked = pick(api)
+    picked = pick(api, names={n for group in names.values() for n in group})
 
     with sync_playwright() as p:
         browser = launch_browser(p)
@@ -261,6 +280,12 @@ def capture(lang: str, api: str, season: str, skip_live: bool) -> list[str]:
             mobile.wait_for_timeout(1800)
             dismiss(mobile)
             shot(mobile, "12-mobile-watch.png")
+
+        # 13 后台：健康、队列、配额、赛季调度。此前没有这一步，
+        # 13-admin.png 一直停在深色主题时代的旧图——画廊不可复现。
+        page.goto(url("admin.html"), wait_until="networkidle")
+        page.wait_for_timeout(1500)
+        shot(page, "13-admin.png")
 
         browser.close()
 

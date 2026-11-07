@@ -29,7 +29,7 @@ async def media_ticket(match_id: str, request: Request) -> dict[str, Any]:
 
 
 @router.get("/matches/{match_id}/card.png", include_in_schema=False)
-async def match_card(match_id: str, request: Request) -> FileResponse:
+async def match_card(match_id: str, request: Request, theme: str = Query(default="light")) -> FileResponse:
     """分享卡：1200×630 PNG，供 og:image 使用。
 
     爬虫带不了 Authorization：`MELEE_PUBLIC_SHARE=on`（默认）时公开，
@@ -43,7 +43,7 @@ async def match_card(match_id: str, request: Request) -> FileResponse:
         raise HTTPException(status_code=404, detail="比赛不存在")
     cache_dir = db_path.parent / "cards"
     try:
-        path = ensure_card(db_path, match_id, cache_dir)
+        path = ensure_card(db_path, match_id, cache_dir, dark=(theme == "dark"))
     except KeyError:
         raise HTTPException(status_code=404, detail="比赛不存在") from None
     return FileResponse(path, media_type="image/png", headers={"Cache-Control": "public, max-age=60"})

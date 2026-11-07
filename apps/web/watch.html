@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
 <title>Watch · melee broadcast</title>
+<script src="./src/theme-boot.js"></script>
 <link rel="stylesheet" href="./src/theme.css">
 <link rel="stylesheet" href="./src/watch.css">
 </head>
@@ -12,7 +13,7 @@
 
 <a class="skip-link" href="#main" data-i18n="nav.skip">Skip to main content</a>
 <div id="topbar">
-  <a class="brand" href="index.html" data-keep-query><span class="mark" style="width:20px;height:20px;border-radius:5px;background:linear-gradient(135deg,var(--a),#0EA5E9);display:inline-grid;place-items:center;color:#04121A;font-size:11px;font-weight:900">M</span></a>
+  <a class="brand" href="index.html" data-keep-query><span class="mark" style="width:20px;height:20px;border-radius:5px;background:linear-gradient(135deg,var(--a),var(--a-hover));display:inline-grid;place-items:center;color:var(--on-accent);font-size:11px;font-weight:900">M</span></a>
   <nav class="nav">
     <a href="index.html" data-keep-query data-i18n="nav.home">Home</a>
     <a href="watch.html" class="on" aria-current="page" data-keep-query data-i18n="nav.watch">Watch</a>
@@ -39,6 +40,8 @@
   <span id="viewers" title="Viewers watching now" data-i18n-attr="title:watch.viewersTitle"><span class="eye"></span><b id="viewerCount">0</b></span>
   <span id="matchId">—</span>
   <span class="conn" id="conn" data-i18n="watch.conn.idle">Standby</span>
+  <span class="langbox" id="themeSwitch"></span>
+  <span class="langbox" id="langSwitch"></span>
 </div>
 
 <main id="main">
@@ -50,7 +53,7 @@
       <div class="pill" id="turnPill"></div>
       <div class="pill" id="remainPill"></div>
       <div class="live"><span class="dot" id="liveDot"></span><span id="liveLabel">LIVE</span></div>
-      <div class="right"><span><span data-i18n="watch.events">Events</span> <b id="tlCount" style="color:#D6DBE6">0 / 0</b></span></div>
+      <div class="right"><span><span data-i18n="watch.events">Events</span> <b id="tlCount" style="color:var(--txt)">0 / 0</b></span></div>
     </div>
 
     <div class="main">

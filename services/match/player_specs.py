@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 from .agents.llm import LLMAgent, LLMConfig
 from .agents.scripted import BoardAgent, CodenamesAgent, GreedyAgent, ScriptedAgent
 from .engine.base import Move
-from .engine.twenty_questions import CATALOG
+from .engine.twenty_questions import catalog_for
 
 
 class ModelSpec(BaseModel):
@@ -230,7 +230,7 @@ def build_agents(
                 moves.append(Move(kind=kind, value=value))
             agents[spec.id] = ScriptedAgent(spec.id, moves)
         elif default_factory is GreedyAgent:
-            agents[spec.id] = GreedyAgent(spec.id, CATALOG, lang=lang)
+            agents[spec.id] = GreedyAgent(spec.id, catalog_for(lang), lang=lang)
         elif game_id == "codenames":
             agents[spec.id] = CodenamesAgent(spec.id, lang=lang)
         else:

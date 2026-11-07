@@ -193,6 +193,11 @@ class Codenames:
         return {
             "seed": seed,
             "players": list(players),
+            # 语言决定词表：words 是由 lang 选出的词池洗出来的。
+            # 不记进 state，match.created 就漏了 lang，重放会用默认中文词表
+            # 重建另一张棋盘——实测英文局重放到第 18 手报"场上没有这个词"，
+            # 表现为整场无法 /state、无法续跑、无法导出重放。
+            "lang": lang,
             # 编队参数必须进 state：rehydrate 用同一份 state 重放，
             # 不给的话重放会退回默认 4 人排法，事件与引擎立刻对不上。
             # 同时以 teams/teamSize 平铺进 state：match.created 会按这两个键

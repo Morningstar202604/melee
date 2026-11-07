@@ -100,6 +100,30 @@ def test_card_is_real_png(client):
 def test_card_unknown_match_is_404(client):
     assert client.get("/matches/m_nope/card.png").status_code == 404
 
+
+def test_card_light_and_dark_are_different_images(client):
+    """主题不只是网页上的偏好：分享卡也要能出亮色与深色两版，
+    且必须是两张真正不同的图（同尺寸不同像素），否则等于没做。"""
+    from io import BytesIO
+
+    from PIL import Image
+
+    created = create(client)
+    wait_finished(created["matchId"])
+
+    light = client.get(f"/matches/{created['matchId']}/card.png")
+    dark = client.get(f"/matches/{created['matchId']}/card.png?theme=dark")
+    assert light.status_code == dark.status_code == 200
+    PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+    assert light.content.startswith(PNG_MAGIC)
+    assert dark.content.startswith(PNG_MAGIC)
+    assert light.content != dark.content
+
+    light_px = Image.open(BytesIO(light.content)).convert("RGB").getpixel((4, 300))
+    dark_px = Image.open(BytesIO(dark.content)).convert("RGB").getpixel((4, 300))
+    # 亮色底应显著亮于深色底；只断言"不相等"无法排除两张都是深色。
+    assert sum(light_px) > sum(dark_px) + 300, (light_px, dark_px)
+
 def test_share_page_has_open_graph_tags(client):
     created = create(client)
     wait_finished(created["matchId"])
@@ -238,6 +262,42 @@ def test_archive_search_is_fast_with_200_matches(tmp_path):
     assert result["count"] == 200
     best = min(timings)
     assert best < 0.1, f"200 场搜索最快 {best * 1000:.0f}ms（三次：{[round(t * 1000) for t in timings]}ms）"
+
+def test_leaderboard_query_uses_an_index_not_a_full_scan(tmp_path):
+    """排行榜查询必须是索引查找，不能是"扫全表 + 临时排序"。
+
+    真实退化：`WHERE type='match.ended' ORDER BY seq DESC` 没有复合索引时，
+    计划是 `SCAN events` + `USE TEMP B-TREE FOR ORDER BY`——事件表上万后
+    每次打开首页都要把所有事件读一遍。实测 4.84ms → 0.24ms（补索引后）。
+
+    断言用 EXPLAIN QUERY PLAN（结构），不用墙钟（机器负载），
+    所以它在慢机器上也不会误报，在缺索引时会必然变红。
+    """
+    from services.match import archive
+    from services.match.eventlog import EventLog
+
+    db = tmp_path / "plan.db"
+    log = EventLog.open(db, "m_plan")
+    log.create_match("tic-tac-toe", 1, ["A", "B"])
+    log.close()
+
+    archive.overview(db)  # 触发建表与索引
+    conn = archive._connect(db)
+    try:
+        plan = [
+            row[3]
+            for row in conn.execute(
+                "EXPLAIN QUERY PLAN "
+                "SELECT payload FROM events WHERE type = 'match.ended' ORDER BY seq DESC LIMIT 2000"
+            )
+        ]
+    finally:
+        conn.close()
+
+    joined = " | ".join(plan)
+    assert "idx_events_type_seq" in joined, f"排行榜没走索引：{plan}"
+    assert "TEMP B-TREE" not in joined, f"仍在临时排序：{plan}"
+
 
 def test_find_match_returns_single_row(client):
     from services.match.archive import find_match

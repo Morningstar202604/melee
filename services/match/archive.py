@@ -20,6 +20,10 @@ from typing import Any
 SCHEMA = """
 CREATE INDEX IF NOT EXISTS idx_matches_created ON matches (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_created ON events (match_id, seq);
+-- 排行榜要「所有 match.ended，按 seq 倒序取前 N」。没有这条复合索引时
+-- 计划是 SCAN events + TEMP B-TREE 排序：事件表上万后，每次打开首页都要
+-- 把所有事件读一遍再排序。type 在前是等值条件，seq 在后用于跳过排序。
+CREATE INDEX IF NOT EXISTS idx_events_type_seq ON events (type, seq DESC);
 """
 
 

@@ -2,58 +2,65 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-AI 对局的自托管转播台：跑一局，看直播、回放、导播和战报。
+A self-hosted broadcast studio for AI matches: run a match, then watch it live, replay it, direct it, and read the recap — all from one event stream.
 
-![首页](docs/screenshots/en/01-home.png)
+![Home](docs/screenshots/en/01-home.png)
 
-## 安装
+## Install
 
-**Windows** — 下载 [便携包](https://github.com/badhope/melee/releases/latest)，解压后双击 `start.bat`，打开 http://127.0.0.1:8099
+**Windows** — grab [the latest release](https://github.com/badhope/melee/releases/latest):
 
-**源码**
+| File | For |
+|---|---|
+| `melee-setup-<version>-win64.exe` | per-user installer: Start-menu shortcuts, clean uninstaller |
+| `melee-portable-win64.zip` | portable: unzip anywhere, double-click `start.bat` |
+
+Both start the service on [http://127.0.0.1:8099](http://127.0.0.1:8099). No admin rights, no registry keys beyond the uninstaller entry, and your data never leaves the machine — the studio talks only to the model endpoints you configure.
+
+**From source**
 
 ```bash
 python -m pip install -r requirements.txt
 python scripts/serve.py
 ```
 
-## 界面
+## The interface
 
-| 直播 | 战报 |
+| Live | Recap |
 |---|---|
-| ![直播](docs/screenshots/en/02-live.png) | ![战报](docs/screenshots/en/08-recap.png) |
-| 棋盘、选手面板、时间轴拖动 | 结果、关键手、高光剪辑 |
+| ![Live](docs/screenshots/en/02-live.png) | ![Recap](docs/screenshots/en/08-recap.png) |
+| Board, player panels, timeline scrubbing | Result, key moments, highlight clips |
 
-| 导播 | 后台 |
+| Director | Admin |
 |---|---|
-| ![导播](docs/screenshots/en/10-director.png) | ![后台](docs/screenshots/en/13-admin.png) |
-| 自动/手动切镜，切镜也是事件 | 健康、队列、配额、赛季调度 |
+| ![Director](docs/screenshots/en/10-director.png) | ![Admin](docs/screenshots/en/13-admin.png) |
+| Auto & manual cuts — a cut is an event too | Health, queue, quota, season scheduler |
 
-[完整画廊](docs/screenshots/README.md) · [演示视频](docs/video/walkthrough.mp4)
+[Full gallery](docs/screenshots/README.md) · [Walkthrough video](docs/video/walkthrough.mp4) · Light theme by default; dark is one click away.
 
-## 命令
+## Commands
 
 ```bash
-melee serve                          # 起服务
+melee serve                                    # run the studio
 melee match create --game othello --player A --player B --open
-melee match export <id> --out m.json # 单文件导出，可另机重放
-melee mcp                            # MCP server（Claude/Cursor）
+melee match export <id> --out m.json           # single-file export, replays elsewhere
+melee mcp                                      # MCP server (Claude / Cursor)
 ```
 
-API 与 Agent 接入见 [docs/API.md](docs/API.md)、[docs/AGENT-HARNESS.md](docs/AGENT-HARNESS.md)。
+API and agent integration: [docs/API.md](docs/API.md) · [docs/AGENT-HARNESS.md](docs/AGENT-HARNESS.md)
 
-## 一点说明
+## Good to know
 
-- 12 种赛制，全部有解说、切镜、战报和高光。
-- 默认种子由服务端保密：同一场比赛只能看，不能靠种子反推对手信息。
-- 想看可复现的对局就自己指定 `seed`，此时种子会公开。
+- 12 game types, each with commentary, camera cuts, a recap and highlights.
+- By default the seed is generated server-side and never published: a match can be watched but not reverse-engineered from its seed. Pass your own `seed` and the match becomes reproducible.
+- Every colour lives in one token file (`apps/web/src/theme.css`); the light studio theme is default, dark is a toggle, and a CI gate enforces WCAG-AA contrast in both.
 
-## 开发
+## Development
 
 ```bash
-bash scripts/verify_all.sh
+bash scripts/verify_all.sh    # 13 gates: tests, coverage, lint, security, browser audit, contrast, acceptance
 ```
 
-文档：[架构](docs/ARCHITECTURE.md) · [部署](docs/DEPLOY.md) · [公平性](docs/FAIRNESS.md) · [路线图](docs/ROADMAP.md) · [变更](CHANGELOG.md)
+Docs: [Architecture](docs/ARCHITECTURE.md) · [Deploy](docs/DEPLOY.md) · [Fairness](docs/FAIRNESS.md) · [Research](docs/RESEARCH-2026-11-07.md) · [Roadmap](docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
 
-MIT License。
+MIT License.

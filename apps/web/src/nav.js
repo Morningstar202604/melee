@@ -1,6 +1,7 @@
 // 顶栏与页脚是五个页面唯一共享的结构：集中在这里生成，改一次全站一致。
 // 用 DOM API 构建而不是 innerHTML：页面名来自常量，但仍然不给注入留口子。
 import { applyI18n, getLang, resolveLang, setLang, t } from './i18n.js'
+import { mountThemeSwitch } from './theme.js'
 
 const PAGES = [
   { href: 'index.html', key: 'nav.home' },
@@ -11,8 +12,10 @@ const PAGES = [
   { href: 'admin.html', key: 'nav.admin' },
 ]
 
-/** 语言切换按钮：英文↔中文，切换后整页重载以让所有静态与动态文案一起生效。 */
-function mountLangSwitch(parent) {
+/** 语言切换按钮：英文↔中文，切换后整页重载以让所有静态与动态文案一起生效。
+ *  观战页的顶栏是静态 HTML（为了首帧就画出舞台），没有走 mountTopbar，
+ *  所以这里导出，让该页面把同一颗按钮挂到自己的容器里。 */
+export function mountLangSwitch(parent) {
   const button = document.createElement('button')
   button.className = 'btn sm ghost lang-switch'
   button.type = 'button'
@@ -73,6 +76,7 @@ export function mountTopbar({ active = '', tools = null } = {}) {
   const langBox = document.createElement('div')
   langBox.className = 'tools langbox'
   bar.appendChild(langBox)
+  mountThemeSwitch(langBox)
   mountLangSwitch(langBox)
 
   // 已经手写了 skip-link 的页面（观战页）不再重复插入。

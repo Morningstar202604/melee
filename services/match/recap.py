@@ -313,6 +313,21 @@ from .engine.codenames import team_label as _team_label
 _TEAM_LABELS = {"red": "红队", "blue": "蓝队"}
 
 
+def _winner_reference(winner: str | None) -> str:
+    """把胜者转成语言无关的引用键；个人选手名原样返回。
+
+    `red` -> `team.red`，`team3` -> `team.3`。渲染时由 messages 的词条
+    落成当前语言，战报一句话才不会写死某一种语言。
+    """
+    if not isinstance(winner, str):
+        return str(winner)
+    if winner in ("red", "blue", "neutral", "assassin"):
+        return f"team.{winner}"
+    if winner.startswith("team") and winner[4:].isdigit():
+        return f"team.{winner[4:]}"
+    return winner
+
+
 def _winner_label(winner: str | None) -> str:
     """代号/团队赛的胜者是队伍名，战报要翻成人话。
 
@@ -514,11 +529,14 @@ def _one_line(counts: _Counts) -> tuple[str, str, dict[str, Any]]:
     不把某一种语言的成品句子固化进去。
     """
     if not counts.winner:
+        # 原因此外还要能被翻译：参数里存引擎的原始常量，渲染时再本地化。
         params = {"reason": counts.reason or format_message("recap.reason.finished")}
         key = "recap.no_winner"
         return format_message(key, params), key, params
 
-    label = _winner_label(counts.winner)
+    # 参数必须是语言无关的引用键（`team.red`），不能是中文显示名：
+    # 存成"红队"以后，英文渲染出来的就是「红队 wins: ...」这种半中半英。
+    label = _winner_reference(counts.winner)
     last_guess_by_winner = counts.last_guess_correct and counts.guesses > 0
     if last_guess_by_winner:
         key, params = "recap.win.last_guess", {"winner": label, "turns": counts.turns}

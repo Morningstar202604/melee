@@ -188,6 +188,30 @@ def main() -> int:
           end["payload"]["winner"] if end else None)
 
     print()
+    print("== replay ==")
+    # 重放是"同一份日志还能重建同一局"的承诺：secure 模式不公开种子，
+    # 但服务端必须仍能重放（真实事故：/state 直接 500，所有默认建场的
+    # 比赛都打不完、导播台与续跑全部失效）。
+    ended_id = match_id
+    state = get("/matches/" + ended_id + "/state")
+    check("state endpoint replays a secure match", state.get("finished") is True, state.get("source"))
+    check("replayed winner matches recap", state.get("winner") == recap.get("winner"),
+          f"{state.get('winner')} vs {recap.get('winner')}")
+
+    print()
+    print("== visual theme ==")
+    # 亮色是默认；深色可切。两者都必须真的生效，不是只改了个属性。
+    html = urllib.request.urlopen(base + "/index.html", timeout=30).read().decode()
+    check("theme boot script is loaded before styles", html.index("theme-boot.js") < html.index("theme.css"))
+    check("default theme is light", 'data-theme' in html or "theme-boot" in html)
+    light_card = urllib.request.urlopen(base + f"/matches/{ended_id}/card.png", timeout=30).read()
+    dark_card = urllib.request.urlopen(base + f"/matches/{ended_id}/card.png?theme=dark", timeout=30).read()
+    png_magic = bytes([137, 80, 78, 71])
+    check("share card supports light and dark",
+          light_card != dark_card and light_card[:4] == png_magic,
+          f"light={len(light_card)}B dark={len(dark_card)}B")
+
+    print()
     print("== agent harness ==")
     card = get("/.well-known/agent-card.json")
     check("A2A card present", card["name"] == "melee")

@@ -18,15 +18,36 @@ from .render import _font
 WIDTH = 1200
 HEIGHT = 630
 
-BG = (7, 9, 13)
-PANEL = (17, 20, 27)
-LINE = (35, 40, 56)
-TEXT = (232, 234, 242)
-DIM = (154, 163, 181)
-FAINT = (92, 100, 120)
-ACCENT = (34, 211, 238)
-ACCENT_B = (245, 165, 36)
-OK = (52, 211, 153)
+# 亮色是产品默认（与网页同一套令牌），深色卡片留给深色社交场景。
+# 分享卡由爬虫抓取、无法跟随用户主题，所以在 URL 上用 ?theme=dark 显式选择。
+BG = (244, 246, 251)
+PANEL = (255, 255, 255)
+LINE = (221, 228, 239)
+TEXT = (15, 23, 41)
+DIM = (74, 85, 104)
+FAINT = (107, 118, 144)
+ACCENT = (14, 116, 144)
+ACCENT_B = (161, 98, 7)
+OK = (4, 120, 87)
+
+DARK = {
+    "bg": (7, 9, 13),
+    "panel": (17, 20, 27),
+    "line": (35, 40, 56),
+    "text": (232, 234, 242),
+    "dim": (154, 163, 181),
+    "faint": (92, 100, 120),
+    "accent": (34, 211, 238),
+    "accent_b": (245, 165, 36),
+    "ok": (52, 211, 153),
+}
+
+
+def palette(dark: bool = False) -> dict[str, tuple[int, int, int]]:
+    if not dark:
+        return {"bg": BG, "panel": PANEL, "line": LINE, "text": TEXT, "dim": DIM,
+                "faint": FAINT, "accent": ACCENT, "accent_b": ACCENT_B, "ok": OK}
+    return dict(DARK)
 
 from .engine.codenames import team_label as _team_label
 
@@ -55,7 +76,7 @@ def _wrap(text: str, width: int) -> list[str]:
     return lines or [""]
 
 
-def render_card(db_path: str | Path, match_id: str, out_path: str | Path) -> Path:
+def render_card(db_path: str | Path, match_id: str, out_path: str | Path, *, dark: bool = False) -> Path:
     """画一张分享卡；已存在且比数据库旧就复用。"""
     from PIL import Image, ImageDraw
 
@@ -66,30 +87,31 @@ def render_card(db_path: str | Path, match_id: str, out_path: str | Path) -> Pat
     if item is None:
         raise KeyError(match_id)
 
-    image = Image.new("RGB", (WIDTH, HEIGHT), BG)
+    tone = palette(dark)
+    image = Image.new("RGB", (WIDTH, HEIGHT), tone["bg"])
     draw = ImageDraw.Draw(image)
 
-    draw.rectangle([0, 0, WIDTH, 6], fill=ACCENT)
-    draw.rectangle([60, 74, 66, 556], fill=PANEL)
+    draw.rectangle([0, 0, WIDTH, 6], fill=tone["accent"])
+    draw.rectangle([60, 74, 66, 556], fill=tone["panel"])
 
-    draw.text((96, 84), "MELEE / 转播台", font=_font(26), fill=ACCENT)
-    draw.text((96, 128), item["gameLabel"], font=_font(58), fill=TEXT)
-    draw.text((96, 208), " · ".join(item["players"]), font=_font(30), fill=DIM)
+    draw.text((96, 84), "MELEE / Broadcast", font=_font(26), fill=tone["accent"])
+    draw.text((96, 128), item["gameLabel"], font=_font(58), fill=tone["text"])
+    draw.text((96, 208), " · ".join(item["players"]), font=_font(30), fill=tone["dim"])
 
     winner = item.get("winner")
     label = _TEAM.get(winner) or (_team_label(winner) if isinstance(winner, str) and winner.startswith("team") else winner) if winner else ""
     if item["status"] == "ended":
         headline = f"{label} 胜" if label else "无人获胜"
-        color = OK if winner else FAINT
+        color = tone["ok"] if winner else tone["faint"]
     else:
         headline = "直播中"
-        color = ACCENT_B
+        color = tone["accent_b"]
     draw.text((96, 300), headline, font=_font(86), fill=color)
 
     reason = (item.get("reason") or "").strip()
     if reason:
         for index, line in enumerate(_wrap(reason, 22)[:2]):
-            draw.text((96, 410 + index * 44), line, font=_font(30), fill=DIM)
+            draw.text((96, 410 + index * 44), line, font=_font(30), fill=tone["dim"])
 
     stats = [
         ("事件", str(item["events"])),
@@ -98,24 +120,24 @@ def render_card(db_path: str | Path, match_id: str, out_path: str | Path) -> Pat
     ]
     x = 96
     for key, value in stats:
-        draw.text((x, 520), value, font=_font(34), fill=TEXT)
-        draw.text((x, 562), key, font=_font(18), fill=FAINT)
+        draw.text((x, 520), value, font=_font(34), fill=tone["text"])
+        draw.text((x, 562), key, font=_font(18), fill=tone["faint"])
         x += 180
 
-    draw.text((WIDTH - 96, 520), "melee · 把 AI 对抗做成节目", font=_font(22), fill=FAINT, anchor="ra")
-    draw.text((WIDTH - 96, 556), match_id, font=_font(20), fill=FAINT, anchor="ra")
+    draw.text((WIDTH - 96, 520), "melee · AI matches, worth watching", font=_font(22), fill=tone["faint"], anchor="ra")
+    draw.text((WIDTH - 96, 556), match_id, font=_font(20), fill=tone["faint"], anchor="ra")
 
     image.save(out_path, format="PNG", optimize=True)
     return out_path
 
 
-def ensure_card(db_path: str | Path, match_id: str, cache_dir: str | Path) -> Path:
+def ensure_card(db_path: str | Path, match_id: str, cache_dir: str | Path, *, dark: bool = False) -> Path:
     """按需生成并缓存。
 
     已结束的比赛内容不再变化，直接复用磁盘上的 PNG；
     直播中的卡片会随胜负变化，每次重画（一张 1200×630 只要几十毫秒）。
     """
-    cache = Path(cache_dir) / f"{match_id}.png"
+    cache = Path(cache_dir) / (f"{match_id}.dark.png" if dark else f"{match_id}.png")
     item = _find(db_path, match_id)
     if item is None:
         raise KeyError(match_id)
@@ -128,4 +150,4 @@ def ensure_card(db_path: str | Path, match_id: str, cache_dir: str | Path) -> Pa
             last = 0.0
         if cache.stat().st_mtime >= last:
             return cache
-    return render_card(db_path, match_id, cache)
+    return render_card(db_path, match_id, cache, dark=dark)

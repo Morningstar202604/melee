@@ -4,7 +4,7 @@ Every item here has a **checkable acceptance criterion**. If you cannot test it,
 
 Versioning is [semantic](https://semver.org/): the current release line is **1.x**. A minor bump adds capability without breaking the event contract; a major bump would change the event schema or the API in a way existing clients cannot follow.
 
-## Next (1.9)
+## Next (1.10)
 
 | Item | Why | Acceptance |
 |---|---|---|
@@ -12,8 +12,8 @@ Versioning is [semantic](https://semver.org/): the current release line is **1.x
 | Distributed tracing | Only request-level metrics exist; slow requests across worker/queue cannot be located | An OpenTelemetry trace_id follows HTTP → queue → runner and a single match's full path is visible in Jaeger |
 | Mobile replay gestures | Only timeline dragging today | Pinch to zoom the board, swipe left/right to change match |
 | Game types to 16 | Content volume drives retention | At least 4 new deterministic games, each with commentary/cuts/recap, automatically covered by contract tests |
-| Installer experience | Portable zip is developer-grade; enterprise buyers want setup.exe/MSI | A signed installer (Inno Setup or WiX) with service registration option |
 | Webhook delivery log | Failed dispatches are only in server logs | Persisted delivery attempts with status, visible in the admin console, manual re-dispatch |
+| Signed installer | Installer exists but is unsigned; Windows SmartScreen still warns | SignPath or equivalent certificate on `melee-setup.exe`; download runs without a warning |
 
 ## Explicitly out of scope
 
@@ -25,6 +25,28 @@ These are decisions, not backlog. Re-adding them needs a new rationale.
 - Season points for multi-team formats — the standings model assumes two sides.
 
 ## Released
+
+### 1.9.0 — 2026-11-07
+
+| Item | Acceptance | Result |
+|---|---|---|
+| Light theme by default | Every page renders on a light canvas; dark is a toggle, not the only option | Design tokens in `theme.css`; no colour literal outside the token file; `test_theme.py` |
+| No theme flash | The first painted frame is already the chosen theme | `theme-boot.js` synchronous and before the stylesheet; `test_every_page_boots_theme_before_styles_are_used` |
+| Contrast gate | Secondary text readable in both themes | `check_contrast.py`, 26 combinations, WCAG AA; wired as gate 10b |
+| Share card in both themes | `?theme=dark` returns a genuinely different image | `test_card_light_and_dark_are_different_images` (pixel brightness assertion) |
+| Idempotent match creation | A retried POST cannot create a second match | `Idempotency-Key`; 6 tests incl. 422 on key reuse with a different body |
+| Rate-limit headers | Clients can back off before being throttled | `RateLimit` / `RateLimit-Policy` on 200 and 429; 2 tests |
+| Secure matches replayable | A match created in the default secure mode can be replayed from its log | Seed falls back to `matches.seed`; `test_rehydrate_works_when_seed_is_not_in_the_event_log` |
+| All 12 games run end to end | Every game reaches a terminal state with commentary, cues, recap and highlights | 12/12 external run; each asserts narration count, cue count, empty `problems`, bilingual one-liner, export/import roundtrip |
+| Leaderboard query is indexed | Home page does not degrade as the event table grows | `EXPLAIN QUERY PLAN` test; 4.84ms → 0.24ms |
+
+### 1.8.4 — 2026-11-06
+
+| Item | Acceptance | Result |
+|---|---|---|
+| External acceptance suite | Every promise verified by HTTP from outside | `scripts/acceptance.py`, 30 checks (35 as of 1.9.0) |
+| Codenames never declares a non-participant the winner | `winner` is always an entrant | 40 games, 0 violations |
+| Manual cue reason is localised | English UI shows English cue text | `cue.manual` message key; `triggerKey`-based downstream |
 
 ### 1.8.0 — 2026-11-04
 

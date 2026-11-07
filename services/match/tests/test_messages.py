@@ -233,3 +233,37 @@ def test_api_surfaces_localise_game_labels(client):
     zh_labels = {row["label"] for row in zh_stats["byGame"]}
     assert en_labels and all(label.isascii() for label in en_labels)
     assert zh_labels and any(not label.isascii() for label in zh_labels)
+
+def test_end_reason_with_embedded_names_is_translated():
+    """引擎把队伍名/棋盘词拼进终局原因。这些句子以前原样进英文战报，
+    出现「红队 wins: 翻到刺客「Ocean」，红队立即判负.」这种半中半英。
+
+    这类句子只能按句式翻：内容（棋盘词、第 N 队）保留，句式换语言。
+    """
+    from services.match.messages import localize_reason
+
+    cases = {
+        "红队 获胜": "Red won",
+        "第 3 队 获胜": "Team 3 won",
+        "蓝队的词已被翻完": "Blue's words were all taken",
+        "红队翻完全部己方词": "Red revealed all of its own words",
+        "中立词被翻完": "the last neutral word was revealed",
+        "平局": "a draw",
+        "对局结束": "the match ended",
+    }
+    for zh, expected_en in cases.items():
+        assert localize_reason(zh, "en") == expected_en, zh
+        assert localize_reason(zh, "zh") == zh, zh
+
+    assassin = "翻到刺客「Ocean」，红队立即判负"
+    en = localize_reason(assassin, "en")
+    assert "Ocean" in en and "assassin" in en and "红队" not in en
+    assert localize_reason(assassin, "zh") == assassin
+
+
+def test_unknown_end_reason_is_left_untouched():
+    """没见过的原因不能被"翻译"成空串或键名——那比原样显示更糟。"""
+    from services.match.messages import localize_reason
+
+    assert localize_reason("某个新赛制的自定义原因", "en") == "某个新赛制的自定义原因"
+

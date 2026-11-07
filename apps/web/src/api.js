@@ -161,24 +161,46 @@ export function formatDuration(firstIso, lastIso) {
 
 // 赛制视觉标识：颜色与图标只在这里定义，页面不各写一套。
 // label 不写死在这里——赛制名要跟随语言切换，统一走 i18n 的 game.* 词条。
-export const GAME_META = {
-  'twenty-questions': { glyph: '?', tone: '#22D3EE', bg: 'rgba(34,211,238,.10)' },
-  codenames: { glyph: '◈', tone: '#F5A524', bg: 'rgba(245,165,36,.10)' },
-  'tic-tac-toe': { glyph: '#', tone: '#34D399', bg: 'rgba(52,211,153,.10)' },
-  'connect-four': { glyph: '▤', tone: '#60A5FA', bg: 'rgba(96,165,250,.10)' },
-  othello: { glyph: '◐', tone: '#A78BFA', bg: 'rgba(167,139,250,.10)' },
-  nim: { glyph: '◆', tone: '#F87171', bg: 'rgba(248,113,113,.10)' },
-  'reverse-tic-tac-toe': { glyph: '⊘', tone: '#F472B6', bg: 'rgba(244,114,182,.10)' },
-  'kuhn-poker': { glyph: '♠', tone: '#FBBF24', bg: 'rgba(251,191,36,.10)' },
-  'game-of-pure-strategy': { glyph: '♛', tone: '#38BDF8', bg: 'rgba(56,189,248,.10)' },
-  'simple-tak': { glyph: '▦', tone: '#4ADE80', bg: 'rgba(74,222,128,.10)' },
-  'wild-tic-tac-toe': { glyph: '⊗', tone: '#FB7185', bg: 'rgba(251,113,133,.10)' },
-  crusade: { glyph: '♞', tone: '#C084FC', bg: 'rgba(192,132,252,.10)' },
+/* 赛制只声明"用第几号色"，具体色值在 theme.css 的 --game-N / --game-N-bg 里，
+   这样换主题时赛制配色跟着走，不用改一行 JS。 */
+const GAME_TONES = {
+  'twenty-questions': 1,
+  codenames: 2,
+  'tic-tac-toe': 3,
+  'connect-four': 4,
+  othello: 5,
+  nim: 6,
+  'reverse-tic-tac-toe': 7,
+  'kuhn-poker': 8,
+  'game-of-pure-strategy': 9,
+  'simple-tak': 10,
+  'wild-tic-tac-toe': 11,
+  crusade: 12,
+}
+
+const GAME_GLYPHS = {
+  'twenty-questions': '?',
+  codenames: '◈',
+  'tic-tac-toe': '#',
+  'connect-four': '▤',
+  othello: '◐',
+  nim: '◆',
+  'reverse-tic-tac-toe': '⊘',
+  'kuhn-poker': '♠',
+  'game-of-pure-strategy': '♛',
+  'simple-tak': '▦',
+  'wild-tic-tac-toe': '⊗',
+  crusade: '♞',
 }
 
 export function gameMeta(gameId, fallbackLabel = '') {
-  const visual = GAME_META[gameId] || { glyph: '·', tone: '#22D3EE', bg: 'rgba(34,211,238,.10)' }
-  return { ...visual, label: gameLabel(gameId, fallbackLabel) }
+  const index = GAME_TONES[gameId] || 1
+  return {
+    glyph: GAME_GLYPHS[gameId] || '·',
+    tone: `var(--game-${index})`,
+    bg: `var(--game-${index}-bg)`,
+    label: gameLabel(gameId, fallbackLabel),
+  }
 }
 
 // 镜头代号是事件契约里的英文枚举，界面必须翻成当前语言：

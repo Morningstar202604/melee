@@ -107,6 +107,10 @@ def _apply_security_headers(app: FastAPI) -> None:
         if length and length.isdigit() and int(length) > limit:
             return JSONResponse(status_code=413, content={"detail": f"请求体超过 {limit} 字节上限"})
         response = await call_next(request)
+        # 限流头由 guard() 挂在 request.state 上，这里统一落到响应：
+        # 逐个端点写会漏（33 个端点，新增一个就漏一个）。
+        for name, value in getattr(request.state, "rate_limit", {}).items():
+            response.headers.setdefault(name, value)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
@@ -154,7 +158,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
     app = FastAPI(
         title="melee match service",
-        version="1.8.4",
+        version="1.9.0",
         lifespan=lifespan,
         # token 模式下不公开接口表：/docs 与 /openapi.json 之前无需鉴权即可读。
         docs_url=None if auth_config().mode != "off" else "/docs",

@@ -622,3 +622,48 @@ def test_auth_accepts_bare_tokens(monkeypatch):
     assert tokens["token-1"] == "sk-plain-secret"
     # 名字是稳定序号，不携带 token 片段。
     assert "sk-plain-secret" not in " ".join(tokens)
+
+def test_successful_responses_advertise_the_rate_limit(client):
+    """IETF RateLimit 头：客户端要能提前退避，而不是撞一次 429 才知道被限流。
+
+    字段语义（draft-ietf-httpapi-ratelimit-headers）：
+      RateLimit: "<policy>";r=<remaining>;t=<window seconds>
+      RateLimit-Policy: "<policy>";q=<quota>;w=<window seconds>
+    以前剩余额度只出现在建场响应的 JSON 字段里，其它端点完全没有——
+    集成方无法知道何时该停。
+    """
+    response = client.get("/quota")
+    assert response.status_code == 200
+    assert "ratelimit" in {k.lower() for k in response.headers}
+
+    policy = response.headers["ratelimit-policy"]
+    limit = response.headers["ratelimit"]
+    assert 'q=' in policy and 'w=' in policy
+    assert 'r=' in limit and 't=' in limit
+    # 声明的是分钟窗口，单位必须是秒
+    assert 'w=60' in policy and 't=60' in limit
+    remaining = int(limit.split('r=')[1].split(';')[0])
+    assert 0 <= remaining <= 120
+
+
+def test_rate_limited_response_still_carries_headers(client):
+    """429 也必须带限流头与 Retry-After：这时客户端最需要窗口信息。
+
+    只看"出现过 429"是不够的——那证明限流在，不证明客户端拿得到退避依据。
+    """
+    from services.match.ratelimit import limiter
+
+    limiter().reset()
+    limited = None
+    for _ in range(130):
+        response = client.get("/quota")
+        if response.status_code == 429:
+            limited = response
+            break
+    assert limited is not None, "120/minute 的读档位在 130 次请求内必须触发"
+
+    headers = {key.lower(): value for key, value in limited.headers.items()}
+    assert "retry-after" in headers
+    assert "ratelimit" in headers
+    assert "ratelimit-policy" in headers
+

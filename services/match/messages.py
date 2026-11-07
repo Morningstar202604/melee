@@ -195,6 +195,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "team.blue": {"en": "Blue", "zh": "蓝队"},
     "team.neutral": {"en": "Neutral", "zh": "中立"},
     "team.assassin": {"en": "Assassin", "zh": "刺客"},
+    "team.indexed": {"en": "Team {n}", "zh": "第 {n} 队"},
 
     # ---- 分享落地页 ----
     "share.title.win": {
@@ -220,6 +221,17 @@ MESSAGES: dict[str, dict[str, str]] = {
     "reason.guess_wrong": {"en": "guessed wrong — immediate loss", "zh": "猜错，直接判负"},
     "reason.questions_exhausted": {"en": "ran out of questions", "zh": "问满上限，无人猜中"},
     "reason.forfeit": {"en": "forfeit", "zh": "弃权"},
+    "reason.draw": {"en": "a draw", "zh": "平局"},
+    "reason.finished": {"en": "the match ended", "zh": "对局结束"},
+    # 引擎把内容（人名/棋盘词/队伍名）拼进原因，按句式翻
+    "reason.player_wins": {"en": "{winner} won", "zh": "{winner} 获胜"},
+    "reason.assassin": {
+        "en": 'a {team} player turned the assassin "{word}" — immediate loss',
+        "zh": "翻到刺客「{word}」，{team}立即判负",
+    },
+    "reason.neutral_exhausted": {"en": "the last neutral word was revealed", "zh": "中立词被翻完"},
+    "reason.words_taken": {"en": "{team}'s words were all taken", "zh": "{team}的词已被翻完"},
+    "reason.words_cleared": {"en": "{team} revealed all of its own words", "zh": "{team}翻完全部己方词"},
     # ---- 导播切镜触发原因 ----
     "cue.last_move": {"en": "last move — slow motion", "zh": "最后一手，慢镜收尾"},
     "cue.guess_reveal": {"en": "a guess is in — cut to reveal", "zh": "有人报答案，切揭晓"},
@@ -330,13 +342,22 @@ _BOOL_WORDS = {
 # 语言无关的引用型参数：值是消息键，渲染时才翻译。
 # 例如队伍名在事件里存 `team.red`，英文渲染成 "Red"，中文渲染成「红队」。
 _REFERENCE_PREFIXES = ("team.",)
+_INDEXED_TEAM = re.compile(r"team\.(\d+)")
 
 
 def _translate_ref(value: str, lang: str) -> str | None:
-    """如果参数是 `team.xxx` 这类引用键，返回它的译文；否则 None。"""
+    """如果参数是 `team.xxx` 这类引用键，返回它的译文；否则 None。
+
+    `team.3` 这类多队编队的动态队伍没有固定词条，按编号渲染。
+    """
     if not any(value.startswith(prefix) for prefix in _REFERENCE_PREFIXES):
         return None
-    return format_message(value, lang=lang) if value in MESSAGES else None
+    if value in MESSAGES:
+        return format_message(value, lang=lang)
+    m = _INDEXED_TEAM.fullmatch(value)
+    if m:
+        return format_message("team.indexed", {"n": m.group(1)}, lang=lang)
+    return None
 
 
 def _localize_params(params: dict[str, Any], lang: str = LANG_FALLBACK) -> dict[str, Any]:
@@ -368,7 +389,48 @@ _END_REASON_KEYS = {
     "猜错，直接判负": "reason.guess_wrong",
     "问满上限，无人猜中": "reason.questions_exhausted",
     "弃权": "reason.forfeit",
+    "平局": "reason.draw",
+    "对局结束": "reason.finished",
 }
+
+# 引擎会把选手名/队伍名拼进原因里，例如「红队 获胜」「翻到刺客「Ocean」，
+# 红队立即判负」。这些是内容（人名、棋盘词）加固定句式，只能按句式翻，
+# 不能查表。每条是（正则, 消息键, 参数提取）。
+_END_REASON_PATTERNS: list[tuple[Any, str]] = []
+
+
+def _end_reason_patterns() -> list[tuple[Any, str]]:
+    """延迟编译：模块导入时不建正则，避免为一句话付启动成本。"""
+    global _END_REASON_PATTERNS
+    if _END_REASON_PATTERNS:
+        return _END_REASON_PATTERNS
+    _END_REASON_PATTERNS = [
+        # textarena 适配器：`{player} 获胜`
+        (re.compile(r"^(?P<winner>.+) 获胜$"), "reason.player_wins"),
+        # 代号：翻刺客判负
+        (re.compile(r"^翻到刺客「(?P<word>[^」]+)」，(?P<team>.+)立即判负$"), "reason.assassin"),
+        # 代号：中立词被翻完
+        (re.compile(r"^中立词被翻完$"), "reason.neutral_exhausted"),
+        # 代号：某队词被翻完 / 翻完全部己方词（`{team}` 是"红队"这类中文显示名）
+        (re.compile(r"^(?P<team>.+)的词已被翻完$"), "reason.words_taken"),
+        (re.compile(r"^(?P<team>.+)翻完全部己方词$"), "reason.words_cleared"),
+    ]
+    return _END_REASON_PATTERNS
+
+
+def _team_reference(label: str) -> str:
+    """把中文队伍显示名反查成语言无关引用键（`team.red`）。
+
+    引擎状态里队伍本身是 `red`/`blue`/`team3`，但写进 reason 的是显示名。
+    翻回来以后，译文才能用同一套词条（Red / 红队）。
+    """
+    reverse = {"红队": "team.red", "蓝队": "team.blue", "中立": "team.neutral", "刺客": "team.assassin"}
+    if label in reverse:
+        return reverse[label]
+    m = re.fullmatch(r"第 (\d+) 队", label)
+    if m:
+        return f"team.{m.group(1)}"
+    return label
 
 
 def localize_reason(reason: Any, lang: str) -> Any:
@@ -376,7 +438,17 @@ def localize_reason(reason: Any, lang: str) -> Any:
     if not isinstance(reason, str) or lang not in LANGS:
         return reason
     key = _END_REASON_KEYS.get(reason)
-    return format_message(key, lang=lang) if key else reason
+    if key:
+        return format_message(key, lang=lang)
+    for pattern, key in _end_reason_patterns():
+        match = pattern.match(reason)
+        if match:
+            params = match.groupdict()
+            for field in ("team", "winner"):
+                if field in params:
+                    params[field] = _team_reference(params[field])
+            return format_message(key, params, lang=lang)
+    return reason
 
 
 def localize_payload(payload: dict[str, Any], lang: str) -> dict[str, Any]:
@@ -465,7 +537,13 @@ def localize_recap(recap: dict[str, Any], lang: str) -> dict[str, Any]:
     result = dict(recap)
     key = result.get("oneLineKey")
     if isinstance(key, str) and key in MESSAGES:
-        result["oneLine"] = format_message(key, result.get("oneLineParams") or {}, lang=lang)
+        params = dict(result.get("oneLineParams") or {})
+        # reason 参数是引擎常量（"平局"/"翻到刺客「X」，红队立即判负"），
+        # 模板只管句式，句子内部的原因必须自己再过一遍翻译，
+        # 否则会得到「No winner: 平局.」这种半中半英。
+        if isinstance(params.get("reason"), str):
+            params["reason"] = localize_reason(params["reason"], lang)
+        result["oneLine"] = format_message(key, params, lang=lang)
     if "reason" in result:
         result["reason"] = localize_reason(result["reason"], lang)
     # 逐手耗时里的动作类型是枚举，界面上要读成动词。

@@ -12,6 +12,13 @@ import os as _os
 
 import openskill as _openskill
 
+# pathex 必须基于 spec 文件定位，而不是调用时的工作目录：
+# 从仓库根跑 build_exe.py 时 ".." 会解析到仓库的上级，
+# services 包整包漏打，exe 启动即 ModuleNotFoundError（实测发生过）。
+# SPECPATH 由 PyInstaller 注入，恒为 spec 文件所在目录。
+SPEC_DIR = _os.path.abspath(SPECPATH)
+ROOT_DIR = _os.path.dirname(SPEC_DIR)
+
 # TextArena 的 env 是运行时动态装配的（ta.make 按 env_id 找入口），
 # 静态分析只会带顶层包；必须显式收集全部子模块，否则 exe 里
 # 建场成功、worker 却 ImportError。纯 Python，体积代价小。
@@ -26,14 +33,14 @@ for _pyd in _glob.glob(_os.path.join(_sp, "*__mypyc*.pyd")):
     mypyc_hidden.append(_base.split(".cp")[0])
 
 a = Analysis(
-    ["melee_entry.py"],
-    pathex=[".."],
+    [_os.path.join(SPEC_DIR, "melee_entry.py")],
+    pathex=[ROOT_DIR],
     binaries=[],
     datas=[
-        ("../apps/web", "apps/web"),
-        ("../packages/contracts/schema/battle-event.schema.json", "packages/contracts/schema"),
-        ("../LICENSE", "LICENSE"),
-        ("../NOTICE", "NOTICE"),
+        (_os.path.join(ROOT_DIR, "apps", "web"), "apps/web"),
+        (_os.path.join(ROOT_DIR, "packages", "contracts", "schema", "battle-event.schema.json"), "packages/contracts/schema"),
+        (_os.path.join(ROOT_DIR, "LICENSE"), "LICENSE"),
+        (_os.path.join(ROOT_DIR, "NOTICE"), "NOTICE"),
     ],
     hiddenimports=mypyc_hidden + textarena_hidden + [
         # uvicorn 按需动态导入的三个装配点：不点名的 PyInstaller 会漏。

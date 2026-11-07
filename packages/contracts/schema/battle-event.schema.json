@@ -6,30 +6,56 @@
   "$defs": {
     "base": {
       "type": "object",
-      "required": ["seq", "matchId", "type", "at"],
+      "required": [
+        "seq",
+        "matchId",
+        "type",
+        "at"
+      ],
       "properties": {
         "seq": {
           "type": "integer",
           "minimum": 0,
           "description": "从 0 开始、严格单调递增、无空洞。断线重连与回放的锚点。"
         },
-        "matchId": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "at": { "type": "string", "format": "date-time" },
+        "matchId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
         "visibility": {
           "description": "public = 所有人可见；players = 仅列出的选手可见（服务端发送前过滤）。",
           "oneOf": [
-            { "const": "public" },
+            {
+              "const": "public"
+            },
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["players"],
+              "required": [
+                "players"
+              ],
               "properties": {
-                "players": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+                "players": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  }
+                }
               }
             }
           ]
         },
-        "player": { "type": "string", "minLength": 1, "maxLength": 64 }
+        "player": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
       }
     }
   },
@@ -37,27 +63,68 @@
     {
       "title": "MatchCreated",
       "allOf": [
-        { "$ref": "#/$defs/base" },
+        {
+          "$ref": "#/$defs/base"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["seq", "matchId", "type", "at", "payload"],
+          "required": [
+            "seq",
+            "matchId",
+            "type",
+            "at",
+            "payload"
+          ],
           "properties": {
-            "seq": { "type": "integer", "minimum": 0 },
-            "matchId": { "type": "string" },
-            "at": { "type": "string", "format": "date-time" },
-            "visibility": { "type": ["string", "object"] },
-            "player": { "type": "string" },
-            "type": { "const": "match.created" },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchId": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "visibility": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "player": {
+              "type": "string"
+            },
+            "type": {
+              "const": "match.created"
+            },
             "payload": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["game", "players", "seed"],
+              "required": [
+                "game",
+                "players"
+              ],
               "properties": {
-                "game": { "type": "string" },
-                "players": { "type": "array", "minItems": 2, "items": { "type": "string" } },
-                "seed": { "type": "integer" },
-                "config": { "type": "object" }
+                "game": {
+                  "type": "string"
+                },
+                "players": {
+                  "type": "array",
+                  "minItems": 2,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "seed": {
+                  "type": "integer",
+                  "description": "公开的种子。仅 replay 模式（调用方显式指定种子）与历史事件包含；secure 模式下种子由服务端保存，不写进事件。"
+                },
+                "config": {
+                  "type": "object"
+                }
               }
             }
           }
@@ -67,23 +134,54 @@
     {
       "title": "MatchStarted",
       "allOf": [
-        { "$ref": "#/$defs/base" },
+        {
+          "$ref": "#/$defs/base"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["seq", "matchId", "type", "at", "payload"],
+          "required": [
+            "seq",
+            "matchId",
+            "type",
+            "at",
+            "payload"
+          ],
           "properties": {
-            "seq": { "type": "integer", "minimum": 0 },
-            "matchId": { "type": "string" },
-            "at": { "type": "string", "format": "date-time" },
-            "visibility": { "type": ["string", "object"] },
-            "player": { "type": "string" },
-            "type": { "const": "match.started" },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchId": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "visibility": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "player": {
+              "type": "string"
+            },
+            "type": {
+              "const": "match.started"
+            },
             "payload": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["firstPlayer"],
-              "properties": { "firstPlayer": { "type": "string" } }
+              "required": [
+                "firstPlayer"
+              ],
+              "properties": {
+                "firstPlayer": {
+                  "type": "string"
+                }
+              }
             }
           }
         }
@@ -92,25 +190,61 @@
     {
       "title": "RoundStarted",
       "allOf": [
-        { "$ref": "#/$defs/base" },
+        {
+          "$ref": "#/$defs/base"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["seq", "matchId", "type", "at", "payload"],
+          "required": [
+            "seq",
+            "matchId",
+            "type",
+            "at",
+            "payload"
+          ],
           "properties": {
-            "seq": { "type": "integer", "minimum": 0 },
-            "matchId": { "type": "string" },
-            "at": { "type": "string", "format": "date-time" },
-            "visibility": { "type": ["string", "object"] },
-            "player": { "type": "string" },
-            "type": { "const": "round.started" },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchId": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "visibility": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "player": {
+              "type": "string"
+            },
+            "type": {
+              "const": "round.started"
+            },
             "payload": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["round", "activePlayers"],
+              "required": [
+                "round",
+                "activePlayers"
+              ],
               "properties": {
-                "round": { "type": "integer", "minimum": 1 },
-                "activePlayers": { "type": "array", "items": { "type": "string" } }
+                "round": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "activePlayers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
               }
             }
           }
@@ -120,23 +254,54 @@
     {
       "title": "TurnStarted",
       "allOf": [
-        { "$ref": "#/$defs/base" },
+        {
+          "$ref": "#/$defs/base"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["seq", "matchId", "type", "at", "payload"],
+          "required": [
+            "seq",
+            "matchId",
+            "type",
+            "at",
+            "payload"
+          ],
           "properties": {
-            "seq": { "type": "integer", "minimum": 0 },
-            "matchId": { "type": "string" },
-            "at": { "type": "string", "format": "date-time" },
-            "visibility": { "type": ["string", "object"] },
-            "player": { "type": "string" },
-            "type": { "const": "turn.started" },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchId": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "visibility": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "player": {
+              "type": "string"
+            },
+            "type": {
+              "const": "turn.started"
+            },
             "payload": {
               "type": "object",
               "additionalProperties": false,
               "required": [],
-              "properties": { "deadlineMs": { "type": "integer", "minimum": 1, "description": "回合时限（毫秒）。未配置时不写此字段——写 null 会让契约校验失败。" } }
+              "properties": {
+                "deadlineMs": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "回合时限（毫秒）。未配置时不写此字段——写 null 会让契约校验失败。"
+                }
+              }
             }
           }
         }
@@ -145,23 +310,56 @@
     {
       "title": "ThoughtDelta",
       "allOf": [
-        { "$ref": "#/$defs/base" },
+        {
+          "$ref": "#/$defs/base"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["seq", "matchId", "type", "at", "player", "payload"],
+          "required": [
+            "seq",
+            "matchId",
+            "type",
+            "at",
+            "player",
+            "payload"
+          ],
           "properties": {
-            "seq": { "type": "integer", "minimum": 0 },
-            "matchId": { "type": "string" },
-            "at": { "type": "string", "format": "date-time" },
-            "visibility": { "type": ["string", "object"] },
-            "player": { "type": "string" },
-            "type": { "const": "thought.delta" },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchId": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "visibility": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "player": {
+              "type": "string"
+            },
+            "type": {
+              "const": "thought.delta"
+            },
             "payload": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["text"],
-              "properties": { "text": { "type": "string", "maxLength": 4000 } }
+              "required": [
+                "text"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 4000
+                }
+              }
             }
           }
         }
@@ -170,32 +368,76 @@
     {
       "title": "ActionProposed",
       "allOf": [
-        { "$ref": "#/$defs/base" },
+        {
+          "$ref": "#/$defs/base"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["seq", "matchId", "type", "at", "player", "payload"],
+          "required": [
+            "seq",
+            "matchId",
+            "type",
+            "at",
+            "player",
+            "payload"
+          ],
           "properties": {
-            "seq": { "type": "integer", "minimum": 0 },
-            "matchId": { "type": "string" },
-            "at": { "type": "string", "format": "date-time" },
-            "visibility": { "type": ["string", "object"] },
-            "player": { "type": "string" },
-            "type": { "const": "action.proposed" },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchId": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "visibility": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "player": {
+              "type": "string"
+            },
+            "type": {
+              "const": "action.proposed"
+            },
             "payload": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["action", "raw"],
+              "required": [
+                "action",
+                "raw"
+              ],
               "properties": {
                 "action": {
                   "type": "object",
-                  "required": ["kind", "value"],
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
                   "properties": {
-                    "kind": { "type": "string", "enum": ["ask", "guess", "forfeit"] },
-                    "value": { "type": "string" }
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "ask",
+                        "guess",
+                        "forfeit"
+                      ]
+                    },
+                    "value": {
+                      "type": "string"
+                    }
                   }
                 },
-                "raw": { "type": "string", "maxLength": 4000 }
+                "raw": {
+                  "type": "string",
+                  "maxLength": 4000
+                }
               }
             }
           }
@@ -205,25 +447,59 @@
     {
       "title": "ActionRejected",
       "allOf": [
-        { "$ref": "#/$defs/base" },
+        {
+          "$ref": "#/$defs/base"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["seq", "matchId", "type", "at", "player", "payload"],
+          "required": [
+            "seq",
+            "matchId",
+            "type",
+            "at",
+            "player",
+            "payload"
+          ],
           "properties": {
-            "seq": { "type": "integer", "minimum": 0 },
-            "matchId": { "type": "string" },
-            "at": { "type": "string", "format": "date-time" },
-            "visibility": { "type": ["string", "object"] },
-            "player": { "type": "string" },
-            "type": { "const": "action.rejected" },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchId": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "visibility": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "player": {
+              "type": "string"
+            },
+            "type": {
+              "const": "action.rejected"
+            },
             "payload": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["reason", "retryable"],
+              "required": [
+                "reason",
+                "retryable"
+              ],
               "properties": {
-                "reason": { "type": "string", "maxLength": 500 },
-                "retryable": { "type": "boolean" }
+                "reason": {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                "retryable": {
+                  "type": "boolean"
+                }
               }
             }
           }
@@ -233,32 +509,78 @@
     {
       "title": "ActionApplied",
       "allOf": [
-        { "$ref": "#/$defs/base" },
+        {
+          "$ref": "#/$defs/base"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["seq", "matchId", "type", "at", "player", "payload"],
+          "required": [
+            "seq",
+            "matchId",
+            "type",
+            "at",
+            "player",
+            "payload"
+          ],
           "properties": {
-            "seq": { "type": "integer", "minimum": 0 },
-            "matchId": { "type": "string" },
-            "at": { "type": "string", "format": "date-time" },
-            "visibility": { "type": ["string", "object"] },
-            "player": { "type": "string" },
-            "type": { "const": "action.applied" },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchId": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "visibility": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "player": {
+              "type": "string"
+            },
+            "type": {
+              "const": "action.applied"
+            },
             "payload": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["action", "effects"],
+              "required": [
+                "action",
+                "effects"
+              ],
               "properties": {
                 "action": {
                   "type": "object",
-                  "required": ["kind", "value"],
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
                   "properties": {
-                    "kind": { "type": "string", "enum": ["ask", "guess", "forfeit"] },
-                    "value": { "type": "string" }
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "ask",
+                        "guess",
+                        "forfeit"
+                      ]
+                    },
+                    "value": {
+                      "type": "string"
+                    }
                   }
                 },
-                "effects": { "type": "array", "items": { "type": "object" } },
+                "effects": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
                 "elapsedMs": {
                   "type": "integer",
                   "minimum": 0,
@@ -277,25 +599,60 @@
     {
       "title": "StateChanged",
       "allOf": [
-        { "$ref": "#/$defs/base" },
+        {
+          "$ref": "#/$defs/base"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["seq", "matchId", "type", "at", "payload"],
+          "required": [
+            "seq",
+            "matchId",
+            "type",
+            "at",
+            "payload"
+          ],
           "properties": {
-            "seq": { "type": "integer", "minimum": 0 },
-            "matchId": { "type": "string" },
-            "at": { "type": "string", "format": "date-time" },
-            "visibility": { "type": ["string", "object"] },
-            "player": { "type": "string" },
-            "type": { "const": "state.changed" },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchId": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "visibility": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "player": {
+              "type": "string"
+            },
+            "type": {
+              "const": "state.changed"
+            },
             "payload": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["publicState", "deltas"],
+              "required": [
+                "publicState",
+                "deltas"
+              ],
               "properties": {
-                "publicState": { "type": "object" },
-                "deltas": { "type": "array", "items": { "type": "object" } }
+                "publicState": {
+                  "type": "object"
+                },
+                "deltas": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
               }
             }
           }
@@ -305,26 +662,71 @@
     {
       "title": "NarrationLine",
       "allOf": [
-        { "$ref": "#/$defs/base" },
+        {
+          "$ref": "#/$defs/base"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["seq", "matchId", "type", "at", "payload"],
+          "required": [
+            "seq",
+            "matchId",
+            "type",
+            "at",
+            "payload"
+          ],
           "properties": {
-            "seq": { "type": "integer", "minimum": 0 },
-            "matchId": { "type": "string" },
-            "at": { "type": "string", "format": "date-time" },
-            "visibility": { "type": ["string", "object"] },
-            "player": { "type": "string" },
-            "type": { "const": "narration.line" },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchId": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "visibility": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "player": {
+              "type": "string"
+            },
+            "type": {
+              "const": "narration.line"
+            },
             "payload": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["text", "refs"],
+              "required": [
+                "text",
+                "refs"
+              ],
               "properties": {
-                "text": { "type": "string", "maxLength": 240 },
-                "tone": { "type": "string", "enum": ["neutral", "tension", "reveal", "turn"] },
-                "refs": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+                "text": {
+                  "type": "string",
+                  "maxLength": 240
+                },
+                "tone": {
+                  "type": "string",
+                  "enum": [
+                    "neutral",
+                    "tension",
+                    "reveal",
+                    "turn"
+                  ]
+                },
+                "refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
                 "msg": {
                   "type": "string",
                   "maxLength": 80,
@@ -343,26 +745,65 @@
     {
       "title": "MatchEnded",
       "allOf": [
-        { "$ref": "#/$defs/base" },
+        {
+          "$ref": "#/$defs/base"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["seq", "matchId", "type", "at", "payload"],
+          "required": [
+            "seq",
+            "matchId",
+            "type",
+            "at",
+            "payload"
+          ],
           "properties": {
-            "seq": { "type": "integer", "minimum": 0 },
-            "matchId": { "type": "string" },
-            "at": { "type": "string", "format": "date-time" },
-            "visibility": { "type": ["string", "object"] },
-            "player": { "type": "string" },
-            "type": { "const": "match.ended" },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchId": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "visibility": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "player": {
+              "type": "string"
+            },
+            "type": {
+              "const": "match.ended"
+            },
             "payload": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["winner", "reason", "finalState"],
+              "required": [
+                "winner",
+                "reason",
+                "finalState"
+              ],
               "properties": {
-                "winner": { "type": ["string", "null"] },
-                "reason": { "type": "string", "maxLength": 200 },
-                "finalState": { "type": "object" }
+                "winner": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "finalState": {
+                  "type": "object"
+                }
               }
             }
           }
@@ -372,29 +813,84 @@
     {
       "title": "DirectorCue",
       "allOf": [
-        { "$ref": "#/$defs/base" },
+        {
+          "$ref": "#/$defs/base"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["seq", "matchId", "type", "at", "payload"],
+          "required": [
+            "seq",
+            "matchId",
+            "type",
+            "at",
+            "payload"
+          ],
           "properties": {
-            "seq": { "type": "integer", "minimum": 0 },
-            "matchId": { "type": "string" },
-            "at": { "type": "string", "format": "date-time" },
-            "visibility": { "type": ["string", "object"] },
-            "player": { "type": "string" },
-            "type": { "const": "director.cue" },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchId": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "visibility": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "player": {
+              "type": "string"
+            },
+            "type": {
+              "const": "director.cue"
+            },
             "payload": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["shot", "durationMs"],
+              "required": [
+                "shot",
+                "durationMs"
+              ],
               "properties": {
-                "shot": { "type": "string", "enum": ["wide", "close", "thought", "reveal", "slowmo"] },
-                "target": { "type": ["string", "null"] },
-                "durationMs": { "type": "integer", "minimum": 0 },
-                "trigger": { "type": "string", "maxLength": 200 },
-                "triggerKey": { "type": "string", "maxLength": 80, "description": "触发原因的模板键；读取方按语言重新展开。缺省表示纯文本。" },
-                "triggerParams": { "type": "object", "description": "模板参数，与 triggerKey 配套。" }
+                "shot": {
+                  "type": "string",
+                  "enum": [
+                    "wide",
+                    "close",
+                    "thought",
+                    "reveal",
+                    "slowmo"
+                  ]
+                },
+                "target": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "durationMs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "trigger": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "triggerKey": {
+                  "type": "string",
+                  "maxLength": 80,
+                  "description": "触发原因的模板键；读取方按语言重新展开。缺省表示纯文本。"
+                },
+                "triggerParams": {
+                  "type": "object",
+                  "description": "模板参数，与 triggerKey 配套。"
+                }
               }
             }
           }

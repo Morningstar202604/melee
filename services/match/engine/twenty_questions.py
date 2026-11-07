@@ -21,32 +21,56 @@ from typing import Any
 from .base import AppliedEffect, Move, MoveResult, PlayerId
 
 # 属性表：每个维度都是互斥枚举，问"属性=值"时可直接回答。
-CATALOG: list[dict[str, str]] = [
-    {"name": "灯塔", "category": "建筑", "place": "海边", "function": "导航", "material": "石", "scale": "大型"},
-    {"name": "航标", "category": "装置", "place": "海面", "function": "导航", "material": "金属", "scale": "小型"},
-    {"name": "路灯", "category": "装置", "place": "街道", "function": "照明", "material": "金属", "scale": "中型"},
-    {"name": "钟楼", "category": "建筑", "place": "城市", "function": "报时", "material": "石", "scale": "大型"},
-    {"name": "信号灯", "category": "装置", "place": "街道", "function": "导航", "material": "塑料", "scale": "小型"},
-    {"name": "水塔", "category": "建筑", "place": "城市", "function": "储水", "material": "混凝土", "scale": "大型"},
-    {"name": "风车", "category": "建筑", "place": "旷野", "function": "发电", "material": "木", "scale": "大型"},
-    {"name": "瞭望塔", "category": "建筑", "place": "山地", "function": "观察", "material": "木", "scale": "中型"},
-    {"name": "烟囱", "category": "建筑", "place": "城市", "function": "排烟", "material": "砖", "scale": "中型"},
-    {"name": "天线", "category": "装置", "place": "城市", "function": "通信", "material": "金属", "scale": "小型"},
-    {"name": "桥墩", "category": "建筑", "place": "河上", "function": "支撑", "material": "混凝土", "scale": "大型"},
-    {"name": "码头", "category": "建筑", "place": "海边", "function": "停泊", "material": "混凝土", "scale": "大型"},
-    {"name": "闸门", "category": "装置", "place": "河上", "function": "控水", "material": "金属", "scale": "中型"},
-    {"name": "卫星", "category": "装置", "place": "太空", "function": "通信", "material": "金属", "scale": "大型"},
-    {"name": "光缆", "category": "装置", "place": "海面", "function": "通信", "material": "塑料", "scale": "小型"},
-    {"name": "塔吊", "category": "装置", "place": "工地", "function": "起重", "material": "金属", "scale": "大型"},
+# 内容双语：同一批 16 个物品，两种语言各一套词。英文界面里问的是
+# "category=Building"，不能再出现「建筑」——那是"界面翻了、内容没翻"的
+# 半成品本地化（代号棋盘词已按同一原则修过）。
+# 两种语言的行必须一一对应：物品数、属性划分完全一致，公平性语义不随语言改变。
+_CATALOG_BILINGUAL: list[dict[str, dict[str, str]]] = [
+    {"name": {"en": "Lighthouse", "zh": "灯塔"}, "category": {"en": "Building", "zh": "建筑"}, "place": {"en": "Seaside", "zh": "海边"}, "function": {"en": "Navigation", "zh": "导航"}, "material": {"en": "Stone", "zh": "石"}, "scale": {"en": "Large", "zh": "大型"}},
+    {"name": {"en": "Beacon", "zh": "航标"}, "category": {"en": "Device", "zh": "装置"}, "place": {"en": "Open sea", "zh": "海面"}, "function": {"en": "Navigation", "zh": "导航"}, "material": {"en": "Metal", "zh": "金属"}, "scale": {"en": "Small", "zh": "小型"}},
+    {"name": {"en": "Streetlight", "zh": "路灯"}, "category": {"en": "Device", "zh": "装置"}, "place": {"en": "Street", "zh": "街道"}, "function": {"en": "Lighting", "zh": "照明"}, "material": {"en": "Metal", "zh": "金属"}, "scale": {"en": "Medium", "zh": "中型"}},
+    {"name": {"en": "Bell tower", "zh": "钟楼"}, "category": {"en": "Building", "zh": "建筑"}, "place": {"en": "City", "zh": "城市"}, "function": {"en": "Timekeeping", "zh": "报时"}, "material": {"en": "Stone", "zh": "石"}, "scale": {"en": "Large", "zh": "大型"}},
+    {"name": {"en": "Signal lamp", "zh": "信号灯"}, "category": {"en": "Device", "zh": "装置"}, "place": {"en": "Street", "zh": "街道"}, "function": {"en": "Navigation", "zh": "导航"}, "material": {"en": "Plastic", "zh": "塑料"}, "scale": {"en": "Small", "zh": "小型"}},
+    {"name": {"en": "Water tower", "zh": "水塔"}, "category": {"en": "Building", "zh": "建筑"}, "place": {"en": "City", "zh": "城市"}, "function": {"en": "Water storage", "zh": "储水"}, "material": {"en": "Concrete", "zh": "混凝土"}, "scale": {"en": "Large", "zh": "大型"}},
+    {"name": {"en": "Windmill", "zh": "风车"}, "category": {"en": "Building", "zh": "建筑"}, "place": {"en": "Field", "zh": "旷野"}, "function": {"en": "Power generation", "zh": "发电"}, "material": {"en": "Wood", "zh": "木"}, "scale": {"en": "Large", "zh": "大型"}},
+    {"name": {"en": "Watchtower", "zh": "瞭望塔"}, "category": {"en": "Building", "zh": "建筑"}, "place": {"en": "Mountain", "zh": "山地"}, "function": {"en": "Observation", "zh": "观察"}, "material": {"en": "Wood", "zh": "木"}, "scale": {"en": "Medium", "zh": "中型"}},
+    {"name": {"en": "Chimney", "zh": "烟囱"}, "category": {"en": "Building", "zh": "建筑"}, "place": {"en": "City", "zh": "城市"}, "function": {"en": "Smoke exhaust", "zh": "排烟"}, "material": {"en": "Brick", "zh": "砖"}, "scale": {"en": "Medium", "zh": "中型"}},
+    {"name": {"en": "Antenna", "zh": "天线"}, "category": {"en": "Device", "zh": "装置"}, "place": {"en": "City", "zh": "城市"}, "function": {"en": "Communication", "zh": "通信"}, "material": {"en": "Metal", "zh": "金属"}, "scale": {"en": "Small", "zh": "小型"}},
+    {"name": {"en": "Bridge pier", "zh": "桥墩"}, "category": {"en": "Building", "zh": "建筑"}, "place": {"en": "River", "zh": "河上"}, "function": {"en": "Support", "zh": "支撑"}, "material": {"en": "Concrete", "zh": "混凝土"}, "scale": {"en": "Large", "zh": "大型"}},
+    {"name": {"en": "Dock", "zh": "码头"}, "category": {"en": "Building", "zh": "建筑"}, "place": {"en": "Seaside", "zh": "海边"}, "function": {"en": "Mooring", "zh": "停泊"}, "material": {"en": "Concrete", "zh": "混凝土"}, "scale": {"en": "Large", "zh": "大型"}},
+    {"name": {"en": "Floodgate", "zh": "闸门"}, "category": {"en": "Device", "zh": "装置"}, "place": {"en": "River", "zh": "河上"}, "function": {"en": "Flow control", "zh": "控水"}, "material": {"en": "Metal", "zh": "金属"}, "scale": {"en": "Medium", "zh": "中型"}},
+    {"name": {"en": "Satellite", "zh": "卫星"}, "category": {"en": "Device", "zh": "装置"}, "place": {"en": "Space", "zh": "太空"}, "function": {"en": "Communication", "zh": "通信"}, "material": {"en": "Metal", "zh": "金属"}, "scale": {"en": "Large", "zh": "大型"}},
+    {"name": {"en": "Fiber cable", "zh": "光缆"}, "category": {"en": "Device", "zh": "装置"}, "place": {"en": "Open sea", "zh": "海面"}, "function": {"en": "Communication", "zh": "通信"}, "material": {"en": "Plastic", "zh": "塑料"}, "scale": {"en": "Small", "zh": "小型"}},
+    {"name": {"en": "Tower crane", "zh": "塔吊"}, "category": {"en": "Device", "zh": "装置"}, "place": {"en": "Worksite", "zh": "工地"}, "function": {"en": "Lifting", "zh": "起重"}, "material": {"en": "Metal", "zh": "金属"}, "scale": {"en": "Large", "zh": "大型"}},
 ]
 
-ASPECTS: dict[str, list[str]] = {
-    "category": sorted({row["category"] for row in CATALOG}),
-    "place": sorted({row["place"] for row in CATALOG}),
-    "function": sorted({row["function"] for row in CATALOG}),
-    "material": sorted({row["material"] for row in CATALOG}),
-    "scale": sorted({row["scale"] for row in CATALOG}),
-}
+_LANGS = ("en", "zh")
+
+
+def catalog_for(lang: str = "zh") -> list[dict[str, str]]:
+    """按语言取扁平词表。未知语言回退中文（与历史行为一致）。"""
+    code = lang if lang in _LANGS else ("en" if str(lang).lower().startswith("en") else "zh")
+    return [
+        {field: values.get(code, values["zh"]) for field, values in row.items()}
+        for row in _CATALOG_BILINGUAL
+    ]
+
+
+def aspects_for(lang: str = "zh") -> dict[str, list[str]]:
+    """按语言推导属性取值表（init 后按 state.lang 使用）。"""
+    rows = catalog_for(lang)
+    return {
+        "category": sorted({row["category"] for row in rows}),
+        "place": sorted({row["place"] for row in rows}),
+        "function": sorted({row["function"] for row in rows}),
+        "material": sorted({row["material"] for row in rows}),
+        "scale": sorted({row["scale"] for row in rows}),
+    }
+
+
+# 中文词表：历史事件、老测试与赛季脚本选手都基于它，保持原名可用。
+CATALOG: list[dict[str, str]] = catalog_for("zh")
+ASPECTS: dict[str, list[str]] = aspects_for("zh")
 
 OPTIONS: dict[str, Any] = {
     "maxQuestions": 21,
@@ -63,8 +87,14 @@ def _matches(row: dict[str, str], aspect: str, value: str) -> bool:
     return row.get(aspect) == value
 
 
+def _lang_of(state: dict[str, Any]) -> str:
+    """本局语言。老事件里没有 lang：那些对局本来就是中文词表，回退 zh。"""
+    lang = str(state.get("lang") or "zh")
+    return "en" if lang.lower().startswith("en") else "zh"
+
+
 def _candidates(state: dict[str, Any], asked: list[dict[str, str]] | None = None) -> list[str]:
-    rows = CATALOG[: state.get("catalogSize", len(CATALOG))]
+    rows = catalog_for(_lang_of(state))[: state.get("catalogSize", len(CATALOG))]
     history = state["history"] if asked is None else asked
     kept = []
     for row in rows:
@@ -88,7 +118,10 @@ class TwentyQuestions:
         if len(players) != 2:
             raise ValueError("twenty-questions 需要两名选手")
         rng = random.Random(seed)
-        catalog = CATALOG[: config.get("catalogSize", len(CATALOG))]
+        # 语言必须进 state：词表按语言选取，不记的话重放会用另一套词表
+        # 重建目标与属性，整场对不上（codenames 的 lang 泄漏是同类事故）。
+        lang = str(config.get("lang") or "zh")
+        catalog = catalog_for(lang)[: config.get("catalogSize", len(CATALOG))]
         target = rng.choice(catalog)
         # 公平性一：先手由 seed 决定，不由传入顺序决定。
         # 固定 A 先手会让先手方在整站统计里结构性占优。
@@ -98,6 +131,7 @@ class TwentyQuestions:
         return {
             "seed": seed,
             "players": list(players),
+            "lang": "en" if lang.lower().startswith("en") else "zh",
             "firstIndex": first_index,
             "target": target["name"],
             "history": [],
@@ -145,8 +179,10 @@ class TwentyQuestions:
             "yourRemaining": len(_candidates(state)),
             # 必须深拷贝：直接返回全局 ASPECTS 时，选手往列表里 append
             # 就能改掉整台服务器的规则表，而且跨对局持续（实测复现）。
-            "aspects": copy.deepcopy(ASPECTS),
-            "candidates": [row["name"] for row in CATALOG[: state.get("catalogSize", len(CATALOG))]],
+            "aspects": copy.deepcopy(aspects_for(_lang_of(state))),
+            "candidates": [
+                row["name"] for row in catalog_for(_lang_of(state))[: state.get("catalogSize", len(CATALOG))]
+            ],
         }
 
     def current_player(self, state: dict[str, Any]) -> PlayerId | None:
@@ -155,7 +191,11 @@ class TwentyQuestions:
         return state["players"][(state["firstIndex"] + state["turnIndex"]) % len(state["players"])]
 
     def legal_moves(self, state: dict[str, Any], player: PlayerId) -> list[str]:
-        moves = [f"ask:{aspect}={value}" for aspect, values in ASPECTS.items() for value in values]
+        moves = [
+            f"ask:{aspect}={value}"
+            for aspect, values in aspects_for(_lang_of(state)).items()
+            for value in values
+        ]
         moves.append("guess:<candidate-name>")
         return moves
 
@@ -179,14 +219,15 @@ class TwentyQuestions:
 
     def _apply_ask(self, next_state: dict[str, Any], player: PlayerId, move: Move) -> MoveResult:
         aspect, _, value = move.value.partition("=")
-        if aspect not in ASPECTS:
+        aspects = aspects_for(_lang_of(next_state))
+        if aspect not in aspects:
             return MoveResult(legal=False, reason=f"未知属性 {aspect}", retryable=True)
-        if value not in ASPECTS[aspect]:
+        if value not in aspects[aspect]:
             return MoveResult(legal=False, reason=f"属性 {aspect} 没有取值 {value}", retryable=True)
 
         effects: list[AppliedEffect] = []
         before = len(_candidates(next_state))
-        target_row = next(row for row in CATALOG if row["name"] == next_state["target"])
+        target_row = next(row for row in catalog_for(_lang_of(next_state)) if row["name"] == next_state["target"])
         answer = "yes" if _matches(target_row, aspect, value) else "no"
         next_state["history"].append(
             {"by": player, "kind": "ask", "aspect": aspect, "value": value, "answer": answer}
