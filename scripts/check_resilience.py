@@ -153,6 +153,20 @@ def main() -> int:
         check("long match available", False, "no match created")
 
     print()
+    print("== webhook delivery log ==")
+    # 真实缺陷：失败只写服务器日志，进程重启即消失，后台与 CLI 都看不见，
+    # 也没有任何补发手段。现在每次尝试都落库、可查、可手动重发。
+    status, data = http(api, "/webhooks/deliveries?limit=5")
+    check("delivery log is readable", status == 200 and isinstance(data, dict),
+          f"{status}")
+    if status == 200:
+        check("delivery log exposes a summary",
+              "summary" in data and "total" in data["summary"], str(data.get("summary"))[:60])
+    # 重发接口必须拒绝缺少 matchId 的请求（而不是 500）
+    status, payload = http(api, "/webhooks/redispatch", method="POST", body={})
+    check("redispatch validates its input", status == 422, str(status))
+
+    print()
     print("== migrations ==")
     # 迁移是进程内的库级属性，只有给了 db 路径才能从外面验
     if args.db:

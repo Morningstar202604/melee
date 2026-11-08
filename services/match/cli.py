@@ -21,7 +21,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-APP_VERSION = "1.9.1"
+APP_VERSION = "1.9.2"
 
 
 
@@ -351,6 +351,52 @@ def _cmd_seasons(args) -> int:
     return 0
 
 
+def _cmd_webhooks(args) -> int:
+    """Webhook 投递记录，或对某场比赛重发。"""
+    if args.redispatch:
+        if not args.match_id:
+            print("error: --redispatch 需要给出 matchId", file=sys.stderr)
+            return 1
+        status, body = _request(
+            args.api, "/webhooks/redispatch", method="POST",
+            body={"matchId": args.match_id}, token=args.token, timeout=120.0,
+        )
+        if status != 200:
+            return _fail(status, body)
+        if args.json:
+            _print_json(body)
+            return 0
+        for item in body.get("results", []):
+            print(("ok   " if item.get("delivered") else "fail ") + item.get("url", ""))
+        return 0
+
+    query = f"/webhooks/deliveries?limit={args.limit}"
+    if args.match_id:
+        query += f"&match_id={args.match_id}"
+    status, body = _request(args.api, query, token=args.token, lang=args.lang)
+    if status != 200:
+        return _fail(status, body)
+    if args.json:
+        _print_json(body)
+        return 0
+    summary = body.get("summary", {})
+    print(f"total={summary.get('total', 0)} failed={summary.get('failed', 0)}")
+    rows = [
+        {
+            "at": item.get("at", ""),
+            "matchId": item.get("matchId", ""),
+            "status": item.get("status", ""),
+            "http": item.get("httpCode") if item.get("httpCode") is not None else "-",
+            "attempts": item.get("attempts", ""),
+            "error": (item.get("error") or "")[:40],
+        }
+        for item in body.get("items", [])
+    ]
+    if rows:
+        _table(rows, ["at", "matchId", "status", "http", "attempts", "error"])
+    return 0
+
+
 def _cmd_season_run(args) -> int:
     status, body = _request(
         args.api,
@@ -472,6 +518,13 @@ def build_parser() -> argparse.ArgumentParser:
     _global_parser(open_cmd)
     open_cmd.add_argument("match_id")
     open_cmd.set_defaults(func=_cmd_match_open)
+
+    hooks = sub.add_parser("webhooks", help="inspect webhook deliveries, or re-send one")
+    _global_parser(hooks)
+    hooks.add_argument("match_id", nargs="?", default="", help="filter by match, or the match to re-send")
+    hooks.add_argument("--limit", type=int, default=20, help="how many records (1-500)")
+    hooks.add_argument("--redispatch", action="store_true", help="re-send the terminal webhook for this match")
+    hooks.set_defaults(func=_cmd_webhooks)
 
     seasons = sub.add_parser("seasons", help="list seasons")
     _global_parser(seasons)

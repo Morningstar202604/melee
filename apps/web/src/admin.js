@@ -185,8 +185,77 @@ el('btnTick').onclick = async () => {
   }
 }
 
+// ---- Webhook 投递记录 ----
+// 独立刷新：投递记录变化慢（每场比赛一次），不必跟主面板一起 5 秒轮询。
+async function refreshWebhooks() {
+  const body = el('webhookBody')
+  if (!body) return
+  let data = null
+  try {
+    data = await apiRequest('/webhooks/deliveries?limit=20')
+  } catch {
+    // 读不到（例如 token 模式下权限不足）就保持空态，不打断整页
+    el('webhookSummary').textContent = t('admin.webhooks.unavailable')
+    return
+  }
+  const summary = data.summary || {}
+  el('webhookSummary').textContent = t('admin.webhooks.summary', {
+    total: summary.total ?? 0,
+    failed: summary.failed ?? 0,
+  })
+  const items = data.items || []
+  if (!items.length) {
+    el('webhookEmpty').style.display = ''
+    body.replaceChildren()
+    return
+  }
+  el('webhookEmpty').style.display = 'none'
+  body.replaceChildren(
+    ...items.map((item) => {
+      const tr = document.createElement('tr')
+      const ok = item.status === 'ok'
+      const cells = [
+        [formatTime(item.at), ''],
+        [item.matchId || '—', 'mono'],
+        [t(ok ? 'admin.webhooks.ok' : 'admin.webhooks.failed'), ok ? 'tag-done' : 'tag-failed'],
+        [item.httpCode == null ? '—' : String(item.httpCode), ''],
+        [String(item.attempts ?? 1), ''],
+        [(item.error || '—').slice(0, 48), ''],
+      ]
+      for (const [text, cls] of cells) {
+        const td = document.createElement('td')
+        td.textContent = text
+        if (cls) td.className = cls
+        tr.appendChild(td)
+      }
+      const actions = document.createElement('td')
+      if (!ok) {
+        const retry = document.createElement('button')
+        retry.type = 'button'
+        retry.className = 'btn sm'
+        retry.textContent = t('admin.webhooks.retry')
+        retry.onclick = async () => {
+          retry.disabled = true
+          try {
+            await apiRequest('/webhooks/redispatch', { method: 'POST', body: { matchId: item.matchId } })
+          } catch (error) {
+            console.error('redispatch failed', error)
+          }
+          retry.disabled = false
+          await refreshWebhooks()
+        }
+        actions.appendChild(retry)
+      }
+      tr.appendChild(actions)
+      return tr
+    }),
+  )
+}
+
+el('btnWebhookRefresh').onclick = refreshWebhooks
+
 async function boot() {
-  await refresh()
+  await Promise.all([refresh(), refreshWebhooks()])
   timer = setInterval(() => {
     if (!document.hidden) refresh()
   }, 5000)

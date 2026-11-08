@@ -57,6 +57,11 @@ def hook_url(monkeypatch):
     _Receiver.fail_first = 0
     yield url
     server.shutdown()
+    # 等线程真正退出再返回：shutdown() 只是让 serve_forever 停止接受新请求，
+    # 已在处理的请求（含异步投递的迟到请求）还会往类属性里写一条。
+    # 不清掉的话下个测试会读到上一条，表现为随机失败（实测出现一次）。
+    thread.join(timeout=5)
+    _Receiver.received.clear()
 
 
 def _wait_ended(client, match_id, timeout_s: float = 60.0):
@@ -146,3 +151,104 @@ def test_webhook_async_dispatch_offloads_thread(hook_url, client):
     while _t.time() < deadline and not _Receiver.received:
         _t.sleep(0.2)
     assert _Receiver.received
+
+# ---- 投递日志（1.9.2）----
+
+def test_delivery_record_persists_and_is_queryable(hook_url, client):
+    """一次成功投递要落库，并能从 API 读回来。
+
+    旧实现只写服务器日志：进程重启就没了，后台与 CLI 都看不到，
+    "昨天那个 webhook 为什么失败"只能靠翻日志文件。
+    """
+    match_id = _create_match(client)
+    _wait_ended(client, match_id)
+    webhooks.dispatch(client.app.state.db_path, match_id, async_mode=False)
+
+    response = client.get(f"/webhooks/deliveries?match_id={match_id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["summary"]["total"] >= 1
+    assert data["items"], "投递记录为空"
+    item = data["items"][0]
+    assert item["matchId"] == match_id
+    assert item["status"] == "ok"
+    assert item["httpCode"] == 200
+    # 不存请求体全文：只存摘要，避免把比赛数据复制到第二个地方
+    assert len(item["payloadSha"]) == 16
+
+
+def test_failed_delivery_records_the_reason(hook_url, client, monkeypatch):
+    """失败要记录可诊断的原因，而不是只有一个 False。"""
+    _Receiver.fail_first = 99  # 一直返回 500
+    match_id = _create_match(client)
+    _wait_ended(client, match_id)
+    results = webhooks.dispatch(client.app.state.db_path, match_id, async_mode=False)
+    assert results[0]["delivered"] is False
+
+    data = client.get(f"/webhooks/deliveries?match_id={match_id}").json()
+    item = data["items"][0]
+    assert item["status"] == "http_error"
+    assert item["httpCode"] == 500
+    assert "http 500" in item["error"]
+    assert item["attempts"] == 3, "应记录真实尝试次数（1 次 + 2 次重试）"
+    assert data["summary"]["failed"] >= 1
+    assert data["summary"]["lastFailureAt"]
+    _Receiver.fail_first = 0
+
+
+def test_redispatch_resends_and_records(hook_url, client):
+    """手动重发：接收方修好后能补投，且同样留下记录。"""
+    match_id = _create_match(client)
+    _wait_ended(client, match_id)
+    before = len(_Receiver.received)
+
+    response = client.post("/webhooks/redispatch", json={"matchId": match_id})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"][0]["delivered"] is True
+    assert len(_Receiver.received) > before, "重发没有真的调用接收方"
+
+    data = client.get(f"/webhooks/deliveries?match_id={match_id}").json()
+    assert data["summary"]["total"] >= 2, "重发也要留下记录"
+
+
+def test_redispatch_without_targets_explains_why(client, monkeypatch):
+    """没有配置目标时要明确告知，而不是返回空结果让人猜。"""
+    monkeypatch.delenv("MELEE_WEBHOOK_URLS", raising=False)
+    reset_settings()
+    match_id = _create_match(client)
+    _wait_ended(client, match_id)
+    response = client.post("/webhooks/redispatch", json={"matchId": match_id})
+    assert response.status_code == 409
+    assert "MELEE_WEBHOOK_URLS" in response.json()["detail"]
+
+
+def test_redispatch_requires_a_match_id(client):
+    response = client.post("/webhooks/redispatch", json={})
+    assert response.status_code == 422
+    assert "matchId" in response.json()["detail"]
+
+
+def test_delivery_log_is_bounded(tmp_path):
+    """投递记录必须有上限：长期运行不能无限增长。"""
+    import sqlite3
+
+    from services.match import webhook_log
+
+    db = tmp_path / "log.db"
+    body = b'{"x":1}'
+    for index in range(webhook_log.MAX_ROWS + 40):
+        webhook_log.record(db, f"m_{index}", body, [
+            webhook_log.Delivery(url="https://example.test/hook", status="ok", http_code=200)
+        ])
+
+    conn = sqlite3.connect(db)
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM webhook_deliveries").fetchone()[0]
+    finally:
+        conn.close()
+    assert count == webhook_log.MAX_ROWS, count
+    # 保留的是最近的：最后一条必须在
+    rows = webhook_log.recent(db, limit=1)
+    assert rows[0]["matchId"] == f"m_{webhook_log.MAX_ROWS + 39}"
+

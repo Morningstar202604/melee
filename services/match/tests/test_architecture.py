@@ -50,6 +50,9 @@ EXPECTED_ROUTES = {
     ("POST", "/seasons/{season_id}/run"),
     ("GET", "/share/{match_id}"),
     ("GET", "/stats"),
+    # 1.9.2：webhook 投递日志与手动重发。读记录需要鉴权（含部署基础设施信息）。
+    ("GET", "/webhooks/deliveries"),
+    ("POST", "/webhooks/redispatch"),
 }
 
 
