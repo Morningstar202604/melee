@@ -79,6 +79,31 @@
     </div>
   </div>
 
+  <div class="card pad" style="margin-top:16px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <h2 style="margin:0" data-i18n="admin.webhooks.title">Webhook deliveries</h2>
+      <span class="muted" id="webhookSummary"></span>
+      <span style="margin-left:auto"></span>
+      <button class="btn sm" id="btnWebhookRefresh" type="button" data-i18n="admin.webhooks.refresh">Reload</button>
+    </div>
+    <p class="muted" style="margin:6px 0 10px" data-i18n="admin.webhooks.hint">
+      Every attempt is recorded: success, HTTP code, or network error. Retrying a failed match re-sends the same signed payload.
+    </p>
+    <table class="jobs" id="webhookTable">
+      <thead><tr>
+        <th data-i18n="admin.webhooks.time">Time</th>
+        <th data-i18n="admin.webhooks.match">Match</th>
+        <th data-i18n="admin.webhooks.status">Status</th>
+        <th data-i18n="admin.webhooks.code">HTTP</th>
+        <th data-i18n="admin.webhooks.attempts">Attempts</th>
+        <th data-i18n="admin.webhooks.error">Error</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="webhookBody"></tbody>
+    </table>
+    <div class="muted" id="webhookEmpty" style="display:none;padding:10px 0" data-i18n="admin.webhooks.empty">No deliveries yet. Configure MELEE_WEBHOOK_URLS and finish a match.</div>
+  </div>
+
   <div class="footer-slot"></div>
 </div>
 </main>

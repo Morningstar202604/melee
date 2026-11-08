@@ -22,6 +22,8 @@ import urllib.request
 
 from .outbound import OutboundAddressError
 from .settings import settings
+from .webhook_log import Delivery
+from .webhook_log import record as record_deliveries
 
 logger = logging.getLogger("melee.webhooks")
 
@@ -81,21 +83,32 @@ def _post(url: str, body: bytes, headers: dict, timeout: float) -> int:
         return response.status
 
 
-def _deliver(url: str, body: bytes, headers: dict, timeout: float, retries: int = 2) -> bool:
+def _deliver(
+    url: str, body: bytes, headers: dict, timeout: float, retries: int = 2
+) -> tuple[bool, Delivery]:
+    """投递并返回（是否成功, 结构化结果）。
+
+    返回结构而不是 bool：后台要展示"失败在哪一步"，
+    只有 True/False 时运维只能去翻日志，而日志会被轮转。
+    """
     last_error = ""
+    last_code: int | None = None
     for attempt in range(retries + 1):
         try:
             status = _post(url, body, headers, timeout)
             logger.info("webhook %s -> %s", url, status)
-            return True
+            return True, Delivery(url=url, status="ok", http_code=status, attempts=attempt + 1)
         except urllib.error.HTTPError as exc:
+            last_code = exc.code
             last_error = "http %s" % exc.code
         except Exception as exc:  # noqa: BLE001
-            last_error = str(exc)
+            last_error = f"{type(exc).__name__}: {exc}"
         if attempt < len(_RETRY_DELAYS):
             time.sleep(_RETRY_DELAYS[min(attempt, len(_RETRY_DELAYS) - 1)])
     logger.error("webhook %s failed after %d attempts: %s", url, retries + 1, last_error)
-    return False
+    status = "http_error" if last_code is not None else "network_error"
+    return False, Delivery(url=url, status=status, http_code=last_code,
+                           error=last_error, attempts=retries + 1)
 
 
 def dispatch(db_path, match_id: str, *, async_mode: bool = True) -> list:
@@ -125,11 +138,20 @@ def dispatch(db_path, match_id: str, *, async_mode: bool = True) -> list:
     results = []
     for url in urls:
         if async_mode:
-            threading.Thread(
-                target=_deliver, args=(url, body, headers, cfg.webhook_timeout), daemon=True
-            ).start()
+            def _run(target_url: str = url) -> None:
+                ok, delivery = _deliver(target_url, body, headers, cfg.webhook_timeout)
+                # 后台线程里也要落库：否则"发出去但失败"对运维完全不可见。
+                try:
+                    record_deliveries(db_path, match_id, body, [delivery])
+                except Exception as exc:  # noqa: BLE001 - 记录失败不能影响投递重试
+                    logger.warning("webhook 投递记录写入失败：%s", exc)
+                if not ok:
+                    logger.warning("webhook %s 最终失败（已记录到投递日志）", target_url)
+
+            threading.Thread(target=_run, daemon=True).start()
             results.append({"url": url, "dispatched": True})
         else:
-            ok = _deliver(url, body, headers, cfg.webhook_timeout)
-            results.append({"url": url, "delivered": ok})
+            ok, delivery = _deliver(url, body, headers, cfg.webhook_timeout)
+            record_deliveries(db_path, match_id, body, [delivery])
+            results.append({"url": url, "delivered": ok, "record": delivery.as_record()})
     return results

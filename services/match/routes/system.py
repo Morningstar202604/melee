@@ -67,6 +67,54 @@ async def ops_metrics(request: Request) -> PlainTextResponse:
     return PlainTextResponse(prometheus_text(snapshot(db_path_of(request))))
 
 
+@router.get("/webhooks/deliveries")
+async def webhook_deliveries(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=500),
+    match_id: str | None = Query(default=None, max_length=64),
+) -> dict[str, Any]:
+    """Webhook 投递记录：最近 N 条，可按比赛过滤。
+
+    读接口需要鉴权（token 模式）：投递记录里含目标 URL，
+    那属于部署基础设施信息，不该匿名可见。
+    """
+    from ..webhook_log import recent, summary
+
+    guard(request, "read")
+    db_path = db_path_of(request)
+    return {
+        "summary": summary(db_path),
+        "items": recent(db_path, limit=limit, match_id=match_id),
+    }
+
+
+@router.post("/webhooks/redispatch")
+async def webhook_redispatch(request: Request) -> dict[str, Any]:
+    """对指定比赛重发终局 webhook。
+
+    为什么需要：接收方修好之后，运维要让已经失败的那批补上，
+    而不是等下一场比赛。重发走与首次相同的签名与载荷（单一事实源：事件流）。
+    """
+    from ..webhooks import dispatch
+
+    guard(request, "write_match")
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 - 非 JSON 请求体是客户端错误
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON") from None
+    match_id = (body or {}).get("matchId")
+    if not isinstance(match_id, str) or not match_id.strip():
+        raise HTTPException(status_code=422, detail="matchId 必填")
+    # 同步投递：手动重发要能看到结果，不能"已派发"就返回。
+    results = dispatch(db_path_of(request), match_id, async_mode=False)
+    if not results:
+        raise HTTPException(
+            status_code=409,
+            detail="没有可投递的目标：请先配置 MELEE_WEBHOOK_URLS，且比赛必须已结束",
+        )
+    return {"matchId": match_id, "results": results}
+
+
 @router.get("/games")
 async def games(request: Request) -> dict[str, Any]:
     guard(request, "read")

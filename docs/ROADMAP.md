@@ -12,7 +12,6 @@ Versioning is [semantic](https://semver.org/): the current release line is **1.x
 | Distributed tracing | Only request-level metrics exist; slow requests across worker/queue cannot be located | An OpenTelemetry trace_id follows HTTP → queue → runner and a single match's full path is visible in Jaeger |
 | Mobile replay gestures | Only timeline dragging today | Pinch to zoom the board, swipe left/right to change match |
 | Game types to 16 | Content volume drives retention | At least 4 new deterministic games, each with commentary/cuts/recap, automatically covered by contract tests |
-| Webhook delivery log | Failed dispatches are only in server logs | Persisted delivery attempts with status, visible in the admin console, manual re-dispatch |
 | Signed installer | Installer exists but is unsigned; Windows SmartScreen still warns | SignPath or equivalent certificate on `melee-setup.exe`; download runs without a warning |
 
 ## Explicitly out of scope
@@ -25,6 +24,28 @@ These are decisions, not backlog. Re-adding them needs a new rationale.
 - Season points for multi-team formats — the standings model assumes two sides.
 
 ## Released
+
+### 1.9.2 — 2026-11-08
+
+| Item | Acceptance | Result |
+|---|---|---|
+| Webhook delivery log | Every attempt persisted with status, HTTP code, attempt count and a readable error | `webhook_log.py`; `GET /webhooks/deliveries`; 6 tests, log bounded to 500 rows |
+| Manual re-dispatch | A failed match can be re-sent after the receiver is fixed | `POST /webhooks/redispatch` (synchronous, returns per-target result); CLI `melee webhooks --redispatch` |
+| Admin visibility | Failed deliveries are visible without reading server logs | Admin table with status/HTTP/attempts/error and a per-row retry button; browser-verified |
+| Test isolation | Webhook tests are not order-dependent | Receiver thread joined and state cleared on teardown; 3 consecutive clean runs |
+
+### 1.9.1 — 2026-11-08
+
+| Item | Acceptance | Result |
+|---|---|---|
+| Readable 413 | Oversized bodies return a JSON error the client can read | Full declared body drained with a 2s budget; 3MB/8MB verified in ~75ms |
+| Atomic import | A failed import leaves nothing behind | Validate-all-then-one-transaction; rollback test |
+| Diagnosable import errors | Error names the offending element | `invalid export: event[1].seq should be 1, got 9` |
+| Reconnect backfill | No events lost across an SSE gap | Browser-verified 21 → 92 events, zero missing |
+| Incremental timeline | Long live matches do not degrade | 5.2x on 5000 events, exact points |
+| Paginated events | `limit` pushed down to SQL, capped | 10/566, 5000 ceiling |
+| Migration framework | `user_version` + ordered steps + refuse newer DB | 8 tests; old-DB upgrade verified |
+| Resilience gate | Real-usage scenarios are gate items | `check_resilience.py`, 15 checks, gate step 13 |
 
 ### 1.9.0 — 2026-11-07
 

@@ -271,3 +271,27 @@ def test_cli_rejects_non_http_base_url():
     with pytest.raises(SystemExit):
         cli_module._request("file:///etc/passwd", "/games")
 
+def test_cli_webhooks_list_and_redispatch(live_server, capsys):
+    """webhooks 命令：列表能读、重发能触发。
+
+    没有配置目标时，重发要给出可操作的原因（409 + 提示配置项），
+    而不是静默成功。
+    """
+    code, out = _run(["--api", live_server, "webhooks", "--json"], capsys)
+    assert code == 0
+    payload = json.loads(out)
+    assert "summary" in payload and "items" in payload
+
+    code, out = _run(["--api", live_server, "webhooks"], capsys)
+    assert code == 0
+    assert "total=" in out
+
+    # 无目标配置时重发应非零退出并说明原因
+    code, out = _run(["--api", live_server, "webhooks", "m_whatever", "--redispatch"], capsys)
+    assert code == 1
+
+
+def test_cli_webhooks_redispatch_requires_match_id(live_server, capsys):
+    code, out = _run(["--api", live_server, "webhooks", "--redispatch"], capsys)
+    assert code == 1
+
