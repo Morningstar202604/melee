@@ -10,7 +10,7 @@ async function fetchTicket() {
   }
 }
 
-export async function connectEvents(matchId, { onEvent, onOpen, onError, baseUrl = '' } = {}) {
+export async function connectEvents(matchId, { onEvent, onOpen, onError, baseUrl = '', after = null } = {}) {
   // EventSource 不能带请求头：token 模式下先换一张 60 秒票据，
   // 票据只出现在 URL 里、一次即废、很快过期，不会像 token 那样长期泄漏。
   //
@@ -20,7 +20,8 @@ export async function connectEvents(matchId, { onEvent, onOpen, onError, baseUrl
   let closed = false
   let source = null
   let attempt = 0
-  let cursor = null
+  // 首屏只拉一段窗口时，后续事件从窗口末尾继续，不必从 seq 0 重放一遍。
+  let cursor = after === null || after === undefined ? null : Number(after)
 
   const open = async () => {
     if (closed) return

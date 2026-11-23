@@ -16,12 +16,11 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from .messages import LANGS
+from .language import LANGS
+from .version import APP_VERSION
 
 router = APIRouter()
 
-
-APP_VERSION = "1.8.0"
 
 _CARD_SKILLS = [
     {

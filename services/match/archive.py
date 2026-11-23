@@ -17,6 +17,16 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .db import connect
+
+_MATCH_COLUMNS = """
+        m.match_id, m.game, m.seed, m.players, m.created_at, m.ended_at,
+        m.source, m.source_id, m.played_at,
+        (SELECT COUNT(*) FROM events e WHERE e.match_id = m.match_id) AS events,
+        (SELECT MIN(e.at) FROM events e WHERE e.match_id = m.match_id) AS first_at,
+        (SELECT MAX(e.at) FROM events e WHERE e.match_id = m.match_id) AS last_at
+    """
+
 SCHEMA = """
 CREATE INDEX IF NOT EXISTS idx_matches_created ON matches (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_created ON events (match_id, seq);
@@ -28,19 +38,19 @@ CREATE INDEX IF NOT EXISTS idx_events_type_seq ON events (type, seq DESC);
 
 
 def _connect(db_path: str | Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path), timeout=5.0)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect(db_path, timeout=5.0, rows=True)
 
 
 def _ensure(db_path: str | Path) -> None:
     from .db import ensure_schema
     from .eventlog import SCHEMA as EVENT_SCHEMA
+    from .migrations import migrate
 
     conn = _connect(db_path)
     try:
         ensure_schema(conn, db_path, EVENT_SCHEMA, "eventlog")
         ensure_schema(conn, db_path, SCHEMA, "archive")
+        migrate(conn)
     except sqlite3.OperationalError:
         pass
     finally:
@@ -107,6 +117,14 @@ def _row_to_item(row: sqlite3.Row, payload: dict[str, Any], lang: str = "en") ->
         "reason": payload.get("reason", ""),
         "events": row["events"],
         "createdAt": row["created_at"],
+        "playedAt": row["played_at"] or row["created_at"],
+        "source": row["source"] or "melee",
+        "sourceId": row["source_id"] or "",
+        "sourceLabel": (
+            ("External import" if lang == "en" else "外部导入")
+            if (row["source"] or "melee") != "melee"
+            else ("Site match" if lang == "en" else "站内赛事")
+        ),
         "endedAt": row["ended_at"],
         "firstAt": row["first_at"],
         "lastAt": row["last_at"],
@@ -120,6 +138,7 @@ def list_matches(
     offset: int = 0,
     game: str | None = None,
     status: str | None = None,
+    source: str | None = None,
     q: str | None = None,
     lang: str = "en",
 ) -> dict[str, Any]:
@@ -136,6 +155,13 @@ def list_matches(
             where.append("m.ended_at IS NOT NULL")
         elif status == "live":
             where.append("m.ended_at IS NULL")
+        if source == "melee":
+            where.append("m.source = 'melee'")
+        elif source == "import":
+            where.append("m.source != 'melee'")
+        elif source and source not in {"all", ""}:
+            where.append("m.source = ?")
+            params.append(source)
         if q:
             # players 是 JSON 文本，LIKE 足以覆盖"按选手名找一场"。
             where.append("(m.match_id LIKE ? OR m.players LIKE ?)")
@@ -148,12 +174,9 @@ def list_matches(
         ).fetchone()[0]
         rows = conn.execute(
             f"""
-            SELECT m.match_id, m.game, m.seed, m.players, m.created_at, m.ended_at,
-                   (SELECT COUNT(*) FROM events e WHERE e.match_id = m.match_id) AS events,
-                   (SELECT MIN(e.at) FROM events e WHERE e.match_id = m.match_id) AS first_at,
-                   (SELECT MAX(e.at) FROM events e WHERE e.match_id = m.match_id) AS last_at
+            SELECT {_MATCH_COLUMNS}
             FROM matches m{clause}
-            ORDER BY m.created_at DESC
+            ORDER BY COALESCE(m.played_at, m.created_at) DESC, m.match_id DESC
             LIMIT ? OFFSET ?
             """,  # nosec B608
             (*params, limit, offset),
@@ -179,13 +202,10 @@ def find_match(db_path: str | Path, match_id: str) -> dict[str, Any] | None:
     conn = _connect(db_path)
     try:
         row = conn.execute(
-            """
-            SELECT m.match_id, m.game, m.seed, m.players, m.created_at, m.ended_at,
-                   (SELECT COUNT(*) FROM events e WHERE e.match_id = m.match_id) AS events,
-                   (SELECT MIN(e.at) FROM events e WHERE e.match_id = m.match_id) AS first_at,
-                   (SELECT MAX(e.at) FROM events e WHERE e.match_id = m.match_id) AS last_at
+            f"""
+            SELECT {_MATCH_COLUMNS}
             FROM matches m WHERE m.match_id = ?
-            """,
+            """,  # nosec B608 - fragment is a module constant; match_id is bound
             (match_id,),
         ).fetchone()
         if row is None:
@@ -196,24 +216,45 @@ def find_match(db_path: str | Path, match_id: str) -> dict[str, Any] | None:
         conn.close()
 
 
-def overview(db_path: str | Path, lang: str = "en") -> dict[str, Any]:
-    """首页与统计页要的聚合值。全部来自 SQL 计数。"""
+def overview(db_path: str | Path, lang: str = "en", source: str = "all") -> dict[str, Any]:
+    """首页与统计页要的聚合值。全部来自 SQL 计数。
+
+    站内赛事与外部导入必须能分开看：默认 `all` 给出总量与来源构成，
+    但 `topWinners` 只统计 `source='melee'`，导入的 Kaggle 对局不能把
+    选手胜场刷进站内榜单。需要看纯导入数据时传 `source=import`。
+    """
     _ensure(db_path)
     conn = _connect(db_path)
     try:
-        total = conn.execute("SELECT COUNT(*) FROM matches").fetchone()[0]
-        ended = conn.execute("SELECT COUNT(*) FROM matches WHERE ended_at IS NOT NULL").fetchone()[0]
-        events = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+        scoped = "" if source in ("all", "", None) else (
+            " WHERE source = 'melee'" if source == "melee" else
+            " WHERE source != 'melee'" if source == "import" else
+            " WHERE source = ?"
+        )
+        params: tuple[Any, ...] = () if source in ("all", "", None, "melee", "import") else (source,)
+        total = conn.execute(f"SELECT COUNT(*) FROM matches{scoped}", params).fetchone()[0]  # nosec B608
+        ended = conn.execute(f"SELECT COUNT(*) FROM matches{scoped}{' AND' if scoped else ' WHERE'} ended_at IS NOT NULL", params).fetchone()[0]  # nosec B608
+        events = conn.execute(
+            f"SELECT COUNT(*) FROM events e JOIN matches m ON m.match_id = e.match_id{scoped}", params  # nosec B608
+        ).fetchone()[0]
         by_game = [
             {"game": row[0], "label": _label_of(row[0], lang), "matches": row[1]}
             for row in conn.execute(
-                "SELECT game, COUNT(*) FROM matches GROUP BY game ORDER BY COUNT(*) DESC"
+                f"SELECT game, COUNT(*) FROM matches{scoped} GROUP BY game ORDER BY COUNT(*) DESC",  # nosec B608
+                params,
             )
         ]
 
+        # 胜者榜只读站内赛事；source=all 时也不把导入的 100 场混进来。
         winners: dict[str, int] = {}
+        winner_source = "m.source = 'melee'" if source in ("all", "", None) else (
+            "m.source != 'melee'" if source == "import" else "m.source = ?"
+        )
+        winner_params: tuple[Any, ...] = () if source in ("all", "", None, "melee", "import") else (source,)
         for row in conn.execute(
-            "SELECT payload FROM events WHERE type = 'match.ended' ORDER BY seq DESC LIMIT 2000"
+            f"SELECT e.payload FROM events e JOIN matches m ON m.match_id = e.match_id "
+            f"WHERE e.type = 'match.ended' AND {winner_source} ORDER BY e.seq DESC LIMIT 2000",  # nosec B608
+            winner_params,
         ):
             try:
                 winner = json.loads(row[0]).get("winner")
@@ -224,13 +265,38 @@ def overview(db_path: str | Path, lang: str = "en") -> dict[str, Any]:
                 winners[winner] = winners.get(winner, 0) + 1
         top = sorted(winners.items(), key=lambda item: (-item[1], item[0]))[:8]
 
+        # activity 默认只统计站内赛事。外部 episode 没有可信的绝对时间：
+        # Kaggle 只给每手耗时，played_at 是用导入时刻倒推的，拿它画
+        # "近 14 天活动"等于把 100 场历史棋全堆到今天。需要看导入节奏时
+        # 显式传 source=import；source=all 也不把两者混在一起。
+        activity_where = "played_at IS NOT NULL AND source = 'melee'"
+        activity_params: tuple[Any, ...] = ()
+        if source == "import":
+            activity_where = "played_at IS NOT NULL AND source != 'melee'"
+        elif source not in ("all", "", None, "melee"):
+            activity_where = "played_at IS NOT NULL AND source = ?"
+            activity_params = (source,)
         recent_days = [
             {"day": row[0], "matches": row[1]}
             for row in conn.execute(
-                "SELECT substr(created_at, 1, 10) AS day, COUNT(*) FROM matches "
-                "GROUP BY day ORDER BY day DESC LIMIT 14"
+                f"SELECT substr(COALESCE(played_at, created_at), 1, 10) AS day, COUNT(*) FROM matches "
+                f"WHERE {activity_where} GROUP BY day ORDER BY day DESC LIMIT 14",  # nosec B608
+                activity_params,
             )
         ]
+        imported_days = [
+            {"day": row[0], "matches": row[1]}
+            for row in conn.execute(
+                "SELECT substr(COALESCE(played_at, created_at), 1, 10) AS day, COUNT(*) FROM matches "
+                "WHERE played_at IS NOT NULL AND source != 'melee' GROUP BY day ORDER BY day DESC LIMIT 14"
+            )
+        ]
+        sources = [
+            {"source": row[0] or "melee", "matches": row[1]}
+            for row in conn.execute("SELECT source, COUNT(*) FROM matches GROUP BY source ORDER BY COUNT(*) DESC")
+        ]
+        melee_total = conn.execute("SELECT COUNT(*) FROM matches WHERE source = 'melee'").fetchone()[0]
+        import_total = conn.execute("SELECT COUNT(*) FROM matches WHERE source != 'melee'").fetchone()[0]
         return {
             "matches": total,
             "finished": ended,
@@ -239,6 +305,13 @@ def overview(db_path: str | Path, lang: str = "en") -> dict[str, Any]:
             "byGame": by_game,
             "topWinners": [{"player": name, "wins": wins} for name, wins in top],
             "activity": list(reversed(recent_days)),
+            "importedActivity": list(reversed(imported_days)),
+            "activityScope": "melee" if source in ("all", "", None, "melee") else source,
+            "sources": sources,
+            "meleeMatches": melee_total,
+            "importedMatches": import_total,
+            "sourceScope": source or "all",
+            "topWinnersScope": "melee" if source in ("all", "", None) else source,
         }
     finally:
         conn.close()

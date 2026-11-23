@@ -1,0 +1,67 @@
+name: Bug report
+description: Something behaves differently than it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. A rough reproduction beats a polished one — we would rather see the failure than guess at it.
+        Security problems belong in the private advisory flow described in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `melee --version`, or the release tag
+      placeholder: "1.9.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it runs
+      options:
+        - Windows installer
+        - Portable zip
+        - From source (single process)
+        - Docker Compose
+        - Multiple workers / Redis
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Include the match id or a JSON export if one is involved. Remove tokens and keys.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the service with ...
+        2. Create a match with ...
+        3. Open the watch page ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Server traceback, browser console, or both. Delete credentials first.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmations
+      options:
+        - label: I removed API keys, tokens and personal data from this report
+          required: true
+        - label: I searched existing issues for the same problem
+          required: true

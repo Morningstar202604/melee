@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,11 @@ from ..auth import (
     authenticate,
     check_and_consume,
 )
+from ..db import open_db
+from ..engine import registry as game_registry
 from ..eventlog import has_match, read_match
+from ..language import LANGS, normalize_lang, parse_accept_language
+from ..messages import localize_payload
 from ..ratelimit import _DEFAULT, PROFILES
 from ..ratelimit import check as rate_check
 from ..season import Season, load
@@ -36,33 +41,56 @@ def auth_config() -> QuotaConfig:
     return QuotaConfig.from_env()
 
 
-# 支持的语言；与 services/match/messages.py 的 MESSAGES 表一致。
-SUPPORTED_LANGS = ("en", "zh")
-
-
 def request_lang(request: Request) -> str:
     """解析请求语言：?lang= 优先，其次 Accept-Language，最后英文。
 
     产品主语言是英文，所以默认值不是中文——这决定了分享页、OG 卡片
     在没有语言偏好时看到的是英文。
     """
-    query_lang = request.query_params.get("lang", "").strip().lower()
-    if query_lang in SUPPORTED_LANGS:
-        return query_lang
-    header = request.headers.get("accept-language", "")
-    for chunk in header.split(","):
-        tag = chunk.split(";")[0].strip().lower()
-        if not tag:
-            continue
-        primary = tag.split("-")[0]
-        if primary in SUPPORTED_LANGS:
-            return primary
-    return "en"
+    query = normalize_lang(request.query_params.get("lang"), default="")
+    if query in LANGS:
+        return query
+    return parse_accept_language(request.headers.get("accept-language", ""))
 
 
 def db_path_of(request: Request) -> Path:
     """当前应用的数据库路径。测试通过 patch api.DB_PATH 后重建 app 注入。"""
     return request.app.state.db_path
+
+
+def validate_players(
+    game: str,
+    players: list[str],
+    *,
+    supports: int | None = None,
+    supports_error: str | None = None,
+    enforce_range: bool = True,
+) -> list[str]:
+    """赛制可用、id 唯一、人数在引擎声明的区间内。
+
+    建场与排赛季过去各写一遍同样的三条判断；赛季只多一条「该赛制必须
+    能按两人开打」，用 supports 传入，不再复制整段。
+    """
+    available = game_registry.available()
+    if game not in available:
+        raise HTTPException(
+            status_code=400,
+            detail=f"暂不支持的赛制：{game}（可用：{', '.join(available)}）",
+        )
+    if len(set(players)) != len(players):
+        raise HTTPException(status_code=400, detail="选手 id 必须唯一")
+    low, high = game_registry.player_range(game)
+    if supports is not None and not (low <= supports <= high):
+        raise HTTPException(
+            status_code=400,
+            detail=supports_error or f"{game} 不支持 {supports} 人对局",
+        )
+    if enforce_range and not (low <= len(players) <= high):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{game} 需要 {low}–{high} 名选手，收到 {len(players)}",
+        )
+    return players
 
 
 def guard(request: Request, profile: str) -> tuple[Principal, int]:
@@ -86,6 +114,28 @@ def guard(request: Request, profile: str) -> tuple[Principal, int]:
     # FastAPI 的路由签名里没有 response 参数，逐端点加会漏。
     request.state.rate_limit = headers
     return principal, remaining
+
+
+def ticket_principal(
+    request: Request,
+    config: QuotaConfig,
+    ticket: str | None,
+    redeem: Callable[[str], Principal | None],
+) -> Principal | None:
+    """票据优先、Bearer 兜底：SSE 与媒体下载共用的入口鉴权。
+
+    ticket 模式关闭时直接放行（返回 None）；开着但没有有效票据，
+    再回落到 Authorization，失败就转成 HTTPException。
+    """
+    if config.mode == "off":
+        return None
+    principal = redeem(ticket) if ticket else None
+    if principal is not None:
+        return principal
+    try:
+        return authenticate(config, request.headers.get("authorization"))
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from None
 
 
 def rate_limit_headers(profile: str, remaining: int) -> dict[str, str]:
@@ -117,12 +167,16 @@ def visible(event: dict[str, Any], player: str | None) -> bool:
     return player in scope.get("players", [])
 
 
-def sse_frame(event: dict[str, Any]) -> ServerSentEvent:
-    """一条事件 → 一个 SSE 帧。
+def sse_frame(event: dict[str, Any], lang: str = "") -> ServerSentEvent:
+    """一条事件 → 一个 SSE 帧；lang 非空时按请求语言重渲染载荷。
 
-    帧格式交给 sse-starlette：它会处理心跳、断连检测与正确的转义，
-    手写 "id:/data:" 时这些都要自己维护，且容易在代理层被缓冲。
+    这件事必须在服务端做：前端拿到的是已定稿的 `text`/`trigger`，
+    再翻一遍等于把双语词表复制到浏览器。REST 回放与 SSE 现在走同一
+    `localize_payload()`，不会再出现「界面中文、解说英文」。
     """
+    payload = event.get("payload")
+    if lang and isinstance(payload, dict):
+        event = {**event, "payload": localize_payload(payload, lang)}
     return ServerSentEvent(id=str(event["seq"]), data=json.dumps(event, ensure_ascii=False))
 
 
@@ -221,15 +275,11 @@ def safe_season_id(season_id: str) -> str:
 
 
 def load_season_or_404(db_path: Path, season_id: str) -> Season:
-    import sqlite3
-
-    conn = sqlite3.connect(db_path)
-    try:
-        return load(conn, season_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="赛季不存在") from None
-    finally:
-        conn.close()
+    with open_db(db_path) as conn:
+        try:
+            return load(conn, season_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="赛季不存在") from None
 
 
 def remaining_fixtures(season: Season) -> int:

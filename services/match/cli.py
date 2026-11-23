@@ -20,9 +20,9 @@ import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
+from typing import Any
 
-APP_VERSION = "1.9.2"
-
+from .version import APP_VERSION
 
 
 def _request(
@@ -75,6 +75,16 @@ def _request(
 def _fail(status: int, body: object) -> int:
     print(f"error {status}: {body}", file=sys.stderr)
     return 1
+
+
+def _fetch(args, path: str, *, timeout: float = 30.0) -> tuple[int, Any]:
+    """只读 GET：统一 token/lang/timeout，非 200 直接把退出码和错误打印掉。"""
+    status, body = _request(
+        args.api, path, token=args.token, lang=args.lang, timeout=timeout
+    )
+    if status != 200:
+        return _fail(status, body), None
+    return 0, body
 
 
 def _print_json(value: object) -> None:
@@ -135,9 +145,9 @@ def _add_repo_root_to_path() -> None:
 
 
 def _cmd_games(args) -> int:
-    status, body = _request(args.api, "/games", token=args.token, lang=args.lang)
-    if status != 200:
-        return _fail(status, body)
+    code, body = _fetch(args, "/games")
+    if code:
+        return code
     if args.json:
         _print_json(body)
         return 0
@@ -155,9 +165,9 @@ def _cmd_games(args) -> int:
 
 
 def _cmd_stats(args) -> int:
-    status, body = _request(args.api, "/stats", token=args.token, lang=args.lang)
-    if status != 200:
-        return _fail(status, body)
+    code, body = _fetch(args, "/stats")
+    if code:
+        return code
     if args.json:
         _print_json(body)
         return 0
@@ -186,11 +196,9 @@ def _cmd_archive(args) -> int:
         params["status"] = args.status
     if args.q:
         params["q"] = args.q
-    status, body = _request(
-        args.api, "/archive?" + urlencode(params), token=args.token, lang=args.lang
-    )
-    if status != 200:
-        return _fail(status, body)
+    code, body = _fetch(args, "/archive?" + urlencode(params))
+    if code:
+        return code
     if args.json:
         _print_json(body)
         return 0
@@ -256,14 +264,9 @@ def _cmd_match_create(args) -> int:
 
 
 def _cmd_match_get(args) -> int:
-    status, body = _request(
-        args.api,
-        "/matches/" + args.match_id + "/recap?lang=" + args.lang,
-        token=args.token,
-        lang=args.lang,
-    )
-    if status != 200:
-        return _fail(status, body)
+    code, body = _fetch(args, "/matches/" + args.match_id + "/recap?lang=" + args.lang)
+    if code:
+        return code
     if args.json:
         _print_json(body)
         return 0
@@ -330,9 +333,9 @@ def _cmd_match_open(args) -> int:
 
 
 def _cmd_seasons(args) -> int:
-    status, body = _request(args.api, "/seasons", token=args.token, lang=args.lang)
-    if status != 200:
-        return _fail(status, body)
+    code, body = _fetch(args, "/seasons")
+    if code:
+        return code
     items = body.get("seasons", [])
     if args.json:
         _print_json(body)
@@ -373,9 +376,9 @@ def _cmd_webhooks(args) -> int:
     query = f"/webhooks/deliveries?limit={args.limit}"
     if args.match_id:
         query += f"&match_id={args.match_id}"
-    status, body = _request(args.api, query, token=args.token, lang=args.lang)
-    if status != 200:
-        return _fail(status, body)
+    code, body = _fetch(args, query)
+    if code:
+        return code
     if args.json:
         _print_json(body)
         return 0
@@ -514,6 +517,75 @@ def build_parser() -> argparse.ArgumentParser:
     imp.add_argument("--open", dest="open_browser", action="store_true")
     imp.set_defaults(func=_cmd_match_import)
 
+    ep = match_sub.add_parser(
+        "import-episode",
+        help="import a Kaggle/TextArena/melee episode as a replay-only broadcast",
+    )
+    _global_parser(ep)
+    ep.add_argument("file")
+    ep.add_argument(
+        "--format",
+        default="auto",
+        choices=("auto", "kaggle", "textarena", "episode"),
+        help="input format (default: auto-detect)",
+    )
+    ep.add_argument("--open", dest="open_browser", action="store_true")
+    ep.add_argument("--license", default="", help="dataset license shown on the watch page (e.g. CC BY 4.0)")
+    ep.add_argument("--source-url", dest="source_url", default="", help="original dataset/episode URL shown in provenance")
+    ep.add_argument("--source-label", dest="source_label", default="", help="human-readable source label")
+    ep.set_defaults(func=_cmd_match_import_episode)
+
+    live = match_sub.add_parser(
+        "import-live",
+        help="push one external episode snapshot into a live broadcast",
+    )
+    _global_parser(live)
+    live.add_argument("file", help="JSON snapshot containing steps up to now")
+    live.add_argument(
+        "--format",
+        default="auto",
+        choices=("auto", "kaggle", "textarena", "episode"),
+        help="input format (default: auto-detect)",
+    )
+    live.add_argument("--finished", action="store_true", help="mark this snapshot as the external final state")
+    live.add_argument("--license", default="", help="dataset license shown on the watch page")
+    live.add_argument("--source-url", dest="source_url", default="")
+    live.add_argument("--source-label", dest="source_label", default="")
+    live.set_defaults(func=_cmd_match_import_live)
+
+    batch = match_sub.add_parser(
+        "import-batch",
+        help="import a directory/glob of Kaggle/TextArena episodes and write a report",
+    )
+    _global_parser(batch)
+    batch.add_argument("path", help="file, directory, or path to scan")
+    batch.add_argument("--pattern", default="*.json", help="glob under a directory (default: *.json)")
+    batch.add_argument(
+        "--format",
+        default="auto",
+        choices=("auto", "kaggle", "textarena", "episode"),
+        help="input format (default: auto-detect)",
+    )
+    batch.add_argument("--limit", type=int, default=0, help="import at most N files (0 = all)")
+    batch.add_argument(
+        "--sample", default="hash", choices=("hash", "random", "first"),
+        help="how to pick files: hash (default, reproducible spread), random, or first",
+    )
+    batch.add_argument("--shuffle", type=int, default=None, metavar="SEED", help="shuffle files with a deterministic seed")
+    batch.add_argument(
+        "--via-api", dest="via_api", action="store_true",
+        help="POST each episode to the running API (auth/quota/rate limits are enforced)",
+    )
+    batch.add_argument("--api-delay", dest="api_delay", type=float, default=0.2,
+        help="seconds between API calls (default 0.2)")
+    batch.add_argument("--db", default=os.environ.get("MELEE_DB", "melee.db"), help="SQLite database for direct mode; ignored with --via-api")
+    batch.add_argument("--license", default="", help="dataset license recorded on every imported episode")
+    batch.add_argument("--source-url", dest="source_url", default="", help="original dataset URL recorded on every imported episode")
+    batch.add_argument("--source-label", dest="source_label", default="", help="human-readable source label")
+    batch.add_argument("--out", default="", help="write the full JSON report here")
+    batch.add_argument("--open-first", dest="open_first", action="store_true", help="open the first imported match")
+    batch.set_defaults(func=_cmd_match_import_batch)
+
     open_cmd = match_sub.add_parser("open", help="open the watch page in a browser")
     _global_parser(open_cmd)
     open_cmd.add_argument("match_id")
@@ -580,6 +652,187 @@ def _cmd_match_export(args) -> int:
     out.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
     print("exported:", out, "events:", len(body.get("events", [])))
     return 0
+
+
+def _cmd_match_import_episode(args) -> int:
+    from .episode import MAX_EPISODE_BYTES
+
+    file = Path(args.file)
+    if file.stat().st_size > MAX_EPISODE_BYTES:
+        print(f"error: episode file exceeds {MAX_EPISODE_BYTES} bytes", file=sys.stderr)
+        return 1
+    document = json.loads(file.read_text(encoding="utf-8"))
+    path = f"/matches/import-episode?format={args.format}"
+    status, body = _request(
+        args.api, path, method="POST",
+        body={"format": args.format, "episode": document, "metadata": _episode_metadata(args)},
+        token=args.token,
+    )
+    if status != 200:
+        return _fail(status, body)
+    if args.json:
+        _print_json(body)
+    else:
+        print(
+            "imported episode:",
+            body.get("matchId"),
+            "source:",
+            body.get("source"),
+            "winner:",
+            body.get("winner") or "—",
+            "events:",
+            body.get("events"),
+        )
+    if args.open_browser:
+        _open_watch(args.api, body.get("matchId", ""), args.lang)
+    return 0
+
+
+def _episode_metadata(args) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in {
+            "license": getattr(args, "license", ""),
+            "sourceUrl": getattr(args, "source_url", ""),
+            "sourceLabel": getattr(args, "source_label", ""),
+        }.items()
+        if value
+    }
+
+
+def _cmd_match_import_live(args) -> int:
+    from .episode import MAX_EPISODE_BYTES
+
+    file = Path(args.file)
+    if file.stat().st_size > MAX_EPISODE_BYTES:
+        print(f"error: episode file exceeds {MAX_EPISODE_BYTES} bytes", file=sys.stderr)
+        return 1
+    document = json.loads(file.read_text(encoding="utf-8"))
+    body = {
+        "format": args.format,
+        "episode": document,
+        "finished": bool(args.finished),
+        "metadata": _episode_metadata(args),
+    }
+    status, result = _request(
+        args.api, "/matches/import-episode/live", method="POST", body=body, token=args.token
+    )
+    if status != 200:
+        return _fail(status, result)
+    if args.json:
+        _print_json(result)
+    else:
+        print(
+            "live episode:",
+            result.get("matchId"),
+            "steps:",
+            result.get("steps"),
+            "appended:",
+            result.get("appended"),
+            "state:",
+            "finished" if result.get("finished") else "live",
+        )
+        print("watch:", args.api.rstrip("/") + "/watch.html?match=" + str(result.get("matchId")))
+    return 0
+
+
+def _cmd_match_import_batch(args) -> int:
+    from .batch import discover_episode_files, import_batch, write_report
+
+    try:
+        files = discover_episode_files(args.path, pattern=args.pattern)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    quota_exhausted = False
+
+    def via_api(document: dict[str, Any]) -> dict[str, Any]:
+        import time as _time
+
+        nonlocal quota_exhausted
+        body = {"format": args.format, "episode": document, "metadata": _episode_metadata(args)}
+        for attempt in range(4):
+            status, payload = _request(
+                args.api, "/matches/import-episode", method="POST", body=body,
+                token=args.token, lang=args.lang,
+            )
+            if status == 200 and isinstance(payload, dict):
+                if args.api_delay > 0:
+                    _time.sleep(args.api_delay)
+                return payload
+            detail = str(payload)
+            if status == 429 and "配额已用尽" in detail:
+                # 日配额不是瞬时限流，重试只会把整批拖成几十个失败项。
+                quota_exhausted = True
+                raise RuntimeError(f"HTTP {status}: {payload}")
+            if status == 429 and attempt < 3:
+                _time.sleep(1.5 * (attempt + 1))
+                continue
+            raise RuntimeError(f"HTTP {status}: {payload}")
+        raise RuntimeError("HTTP 429: request was still rate-limited after retries")
+
+    def on_item(item: dict[str, Any]) -> None:
+        if args.json:
+            return
+        if item.get("status") in ("imported", "duplicate"):
+            print(
+                f"[{item.get('matchId')}] {Path(item['file']).name} "
+                f"{item.get('game')} / {item.get('winner') or '—'}",
+                file=sys.stderr,
+            )
+        else:
+            print(f"[failed] {Path(item['file']).name}: {item.get('error')}", file=sys.stderr)
+
+    report = import_batch(
+        args.db,
+        files,
+        fmt=args.format,
+        limit=args.limit,
+        shuffle_seed=args.shuffle,
+        sample=args.sample,
+        on_item=on_item,
+        import_document=via_api if args.via_api else None,
+        metadata=_episode_metadata(args),
+        should_stop=(lambda: quota_exhausted) if args.via_api else None,
+    )
+    if args.via_api:
+        report["transport"] = "api"
+        report["api"] = args.api
+    if args.out:
+        out = write_report(report, args.out)
+        print("report:", out)
+    if args.json:
+        _print_json(report)
+    else:
+        print(
+            f"batch import: {report['imported']} imported / {report.get('duplicates', 0)} duplicate / "
+            f"{report['failed']} failed (selected {report['selected']} of {report['found']})"
+            + ("  [stopped: daily quota exhausted]" if quota_exhausted else "")
+        )
+        failures = [item for item in report["items"] if item.get("status") != "imported"]
+        if failures:
+            _table(
+                [
+                    {"file": Path(item["file"]).name, "error": item.get("error")}
+                    for item in failures[:12]
+                ],
+                ["file", "error"],
+            )
+        first = next(
+            (item for item in report["items"] if item.get("status") == "imported"),
+            None,
+        )
+        if first:
+            print(
+                "first:",
+                first.get("matchId"),
+                "watch:",
+                args.api.rstrip("/") + "/watch.html?match=" + str(first.get("matchId")),
+            )
+            if args.open_first:
+                _open_watch(args.api, first.get("matchId", ""), args.lang)
+    return 0 if report["failed"] == 0 else 2
 
 
 def _cmd_match_import(args) -> int:

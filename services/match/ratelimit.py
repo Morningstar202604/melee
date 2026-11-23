@@ -128,5 +128,11 @@ def client_ip(request: Any) -> str:
 
 
 def check(request: Any, profile: str) -> tuple[bool, int]:
+    from .settings import settings
+
+    # `off` 是给受信任的离线批量导入 / 单机演示用的显式开关；
+    # 它只关闭“每 IP 窗口限流”，不会关闭 token 鉴权与每日配额。
+    if settings().ratelimit == "off":
+        return True, 0
     decision = limiter().hit(f"{profile}:{client_ip(request)}", profile)
     return decision.allowed, decision.remaining

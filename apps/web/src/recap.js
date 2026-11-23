@@ -1,29 +1,19 @@
 // 战报页：一句话结论 + 可对账的数字 + 转折点 + 选手数据 + 高光视频。
 import { html } from '../vendor/lit-html.js'
 import { paint as litRender } from './paint.js'
-import { api, clipUrl, configure, el, gameMeta, propagateQuery, shareUrl, toast, winnerLabel } from './api.js'
-import { mountTopbar, mountFooter } from './nav.js'
-import { applyI18n, resolveLang, setLang, t } from './i18n.js'
+import { api, clipTicket, clipUrl, el, gameMeta, shareUrl, toast, winnerLabel } from './api.js'
+import { t } from './i18n.js'
+import { bootstrapPage, shareLink, showError } from './ui.js'
 
-setLang(resolveLang())
-configure()
-propagateQuery()
-mountTopbar({ active: 'recap' })
-mountFooter()
-document.title = t('recap.title')
-applyI18n()
+bootstrapPage({ active: 'recap', titleKey: 'recap.title' })
 
 const params = new URLSearchParams(location.search)
 const matchId = params.get('match') || ''
 
-function showError(message) {
-  const box = el('error')
-  if (!message) {
-    box.style.display = 'none'
-    return
-  }
-  box.textContent = message
-  box.style.display = ''
+function highlightLabel(kind) {
+  const key = `recap.kind.${kind}`
+  const label = t(key)
+  return label === key ? kind.replaceAll('_', ' ').toUpperCase() : label
 }
 
 async function load() {
@@ -93,7 +83,11 @@ async function load() {
         ? html`${data.highlights.map(
             (h) => html`<div class="hlc ${h.weight >= 80 ? 'hot' : ''}">
               <span class="w">${h.weight}</span>
-              <div class="k">${h.kind} · seq ${h.seq}</div>
+              <div class="k">${
+                h.move
+                  ? t('recap.boardLine', { label: highlightLabel(h.kind), move: h.move })
+                  : t('recap.highlightLine', { label: highlightLabel(h.kind), seq: h.seq })
+              }</div>
               <div class="t">${h.title}</div>
               <div class="d">${h.detail}</div>
             </div>`,
@@ -157,12 +151,7 @@ async function renderClips() {
   try {
     const template = el('template')?.value || 'broadcast'
     const result = await api.renderClips(matchId, { limit: 3, perEventMs: 900, template })
-    let ticket = ''
-    try {
-      ticket = (await api.mediaTicket(matchId)).ticket || ''
-    } catch {
-      ticket = ''
-    }
+    const ticket = await clipTicket(matchId)
     litRender(
       result.clips.length
         ? html`${result.clips.map(
@@ -197,7 +186,7 @@ async function loadClipPreview() {
     litRender(
       html`${manifest.clips.map(
         (clip) => html`<div class="clip-preview">
-          <div class="cp-k">${clip.kind}</div>
+          <div class="cp-k">${highlightLabel(clip.kind)}</div>
           <div class="cp-t">${clip.title}</div>
           <div class="cp-d">${clip.detail}</div>
           <div class="cp-m">seq ${clip.startSeq}–${clip.endSeq} · ${t('recap.clipMeta', {
@@ -219,18 +208,6 @@ async function loadClipPreview() {
 
 el('render').onclick = renderClips
 loadClipPreview()
-el('btnShare').onclick = async () => {
-  const url = shareUrl(matchId)
-  try {
-    if (navigator.share) {
-      await navigator.share({ title: t('common.shareTitle'), url })
-      return
-    }
-    await navigator.clipboard.writeText(url)
-    toast(t('common.copied'))
-  } catch {
-    toast(t('common.copyFailed', { url }), 'bad')
-  }
-}
+el('btnShare').onclick = () => shareLink(matchId)
 
 load()

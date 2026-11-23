@@ -2,24 +2,21 @@
 import { html } from '../vendor/lit-html.js'
 import { paint as litRender } from './paint.js'
 import {
-  api, configure, el, gameMeta, propagateQuery, relativeTime, formatDuration, winnerLabel, shareUrl, toast,
+  api, el, gameMeta, propagateQuery, relativeTime, formatDuration, winnerLabel, toast,
 } from './api.js'
-import { mountTopbar, mountFooter } from './nav.js'
 import { onFatal } from './fatal.js'
 import { trapFocus } from './a11y.js'
-import { applyI18n, getLang, resolveLang, setLang, t } from './i18n.js'
+import { getLang, t } from './i18n.js'
+import { bootstrapPage, shareLink } from './ui.js'
 
-setLang(resolveLang())
-configure()
-propagateQuery()
-mountTopbar({ active: 'home' })
-// 未捕获异常降级成一条可读提示：静默失败最伤信任。
-onFatal((message) => {
-  toast(t('common.error') + ' — ' + message, 'bad')
+bootstrapPage({
+  active: 'home',
+  titleKey: 'home.title',
+  // 未捕获异常降级成一条可读提示：静默失败最伤信任。
+  beforeFooter: () => onFatal((message) => {
+    toast(t('common.error') + ' — ' + message, 'bad')
+  }),
 })
-mountFooter()
-document.title = t('home.title')
-applyI18n()
 
 const state = {
   games: [],
@@ -100,6 +97,9 @@ function matchCard(item, maxEvents) {
       <span class="glyph">${meta.glyph}</span>
       <span class="game-label">${labelOf({ gameId: item.game })}</span>
       <span class="spacer" style="margin-left:auto"></span>
+      ${item.source && item.source !== 'melee'
+        ? html`<span class="tag info" title="${item.sourceLabel || item.source}">${t('home.library.imported')}</span>`
+        : null}
       ${item.status === 'live'
         ? html`<span class="badge-live"><span class="dot-live"></span>LIVE</span>`
         : html`<span class="tag">${t('home.library.ended')}</span>`}
@@ -110,7 +110,7 @@ function matchCard(item, maxEvents) {
     ${winner ? html`<div class="muted" style="font-size:12px">${item.players.join(' vs ')}</div>` : null}
     <div class="mid">
       <span class="mono">${t('home.live.events', { count: item.events })} · ${formatDuration(item.firstAt, item.lastAt) || '—'}</span>
-      <span>${relativeTime(item.createdAt)}</span>
+      <span>${relativeTime(item.playedAt || item.createdAt)}</span>
     </div>
     <div class="meter" aria-hidden="true" title="${t('home.library.meterTitle')}"><i style="width:${share}%"></i></div>
     <div class="footer">
@@ -154,24 +154,10 @@ function renderArchive() {
   const maxEvents = Math.max(1, ...state.archive.map((item) => item.events))
   litRender(html`${state.archive.map((item) => matchCard(item, maxEvents))}`, box)
   for (const button of box.querySelectorAll('[data-copy]')) {
-    button.onclick = () => share(button.dataset.copy)
+    button.onclick = () => shareLink(button.dataset.copy)
   }
   el('btnMore').style.display = state.archive.length < state.total ? '' : 'none'
   propagateQuery()
-}
-
-async function share(matchId) {
-  const url = shareUrl(matchId)
-  try {
-    if (navigator.share) {
-      await navigator.share({ title: t('common.shareTitle'), url })
-      return
-    }
-    await navigator.clipboard.writeText(url)
-    toast(t('common.copied'))
-  } catch {
-    toast(t('common.copyFailed', { url }), 'bad')
-  }
 }
 
 let archiveToken = 0
@@ -264,7 +250,11 @@ async function loadStats() {
             (row, index) => html`<div class="leader"><span class="rk">${index + 1}</span>
               <span class="nm">${winnerLabel(row.player)}</span><span class="w">${t(row.wins === 1 ? 'home.leaders.win' : 'home.leaders.wins', { count: row.wins })}</span></div>`,
           )}`
-        : html`<span class="muted">${t('home.leaders.empty')}</span>`,
+        : html`<span class="muted">${
+            data.importedMatches
+              ? t('home.leaders.importedOnly', { count: data.importedMatches })
+              : t('home.leaders.empty')
+          }</span>`,
       el('leaders'),
     )
   } catch {

@@ -14,13 +14,14 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .clock import utc_now_iso
+from .db import connect
+
 EXPORT_FORMAT = "melee.export/1"
 
 
 def _now() -> str:
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now_iso()
 
 
 def export_match(
@@ -98,6 +99,29 @@ def _fingerprint(document: dict[str, Any]) -> str:
     return hashlib.sha256(blob).hexdigest()[:16]
 
 
+def find_imported(db_path: str | Path, source: str, source_id: str) -> str | None:
+    """按 (source, source_id) 查已导入场次；给路由在扣配额前做幂等判断。"""
+    if not source_id:
+        return None
+    from .archive import SCHEMA as ARCHIVE_SCHEMA
+    from .db import ensure_schema
+    from .eventlog import SCHEMA as EVENT_SCHEMA
+    from .migrations import migrate
+
+    conn = connect(str(db_path), timeout=30.0)
+    try:
+        ensure_schema(conn, str(db_path), EVENT_SCHEMA, "eventlog")
+        ensure_schema(conn, str(db_path), ARCHIVE_SCHEMA, "archive")
+        migrate(conn)
+        row = conn.execute(
+            "SELECT match_id FROM matches WHERE source = ? AND source_id = ? LIMIT 1",
+            (source, source_id),
+        ).fetchone()
+        return str(row[0]) if row else None
+    finally:
+        conn.close()
+
+
 def import_match(db_path: str | Path, document: dict[str, Any], *, new_match_id: str | None = None) -> dict[str, Any]:
     """把导出文件写成只读回放场次。返回 {matchId, events}。
 
@@ -113,22 +137,48 @@ def import_match(db_path: str | Path, document: dict[str, Any], *, new_match_id:
         raise ValueError("invalid export: " + "; ".join(problems[:5]))
 
     match_id = new_match_id or _new_id()
-    if has_match(Path(db_path), match_id):
-        raise ValueError("match id already exists")
-
     # 先整体校验再写：旧实现边校验边 append，每条 append 都 commit，
     # 遇到第 500 条坏数据时前 499 条已经落库，留下永远无法重放的半场。
     events = document["events"]
-    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn = connect(str(db_path), timeout=30.0)
     try:
         _ensure_tables(conn, Path(db_path))
+        if has_match(Path(db_path), match_id):
+            raise ValueError("match id already exists")
         created = dict(events[0]["payload"])
         created["players"] = document.get("players", created.get("players", []))
+        config = dict(document.get("config") or {})
+        source = str(config.get("source") or document.get("source") or "external").strip() or "external"
+        source_id = str(config.get("episodeId") or document.get("episodeId") or "").strip()
+        played_at = document.get("createdAt") or _now()
+
+        # 幂等边界在 (source, source_id)：同一个 Kaggle episode 无论从 CLI、
+        # HTTP 还是批量入口重放多少次，都只能有一场。source_id 为空时
+        # 仍允许新建（通用导入没有稳定外部 ID，不能拿选手/时间猜）。
+        if source_id:
+            existing = conn.execute(
+                "SELECT match_id FROM matches WHERE source = ? AND source_id = ? LIMIT 1",
+                (source, source_id),
+            ).fetchone()
+            if existing is not None:
+                return {
+                    "matchId": existing[0],
+                    "events": int(conn.execute(
+                        "SELECT COUNT(*) FROM events WHERE match_id = ?", (existing[0],)
+                    ).fetchone()[0]),
+                    "fingerprint": _fingerprint(document),
+                    "deduplicated": True,
+                }
+
         conn.execute("BEGIN IMMEDIATE")
         try:
             conn.execute(
-                "INSERT INTO matches (match_id, game, seed, players, created_at) VALUES (?,?,?,?,?)",
-                (match_id, document["game"], int(document.get("seed") or 0), _json_players(created), _now()),
+                "INSERT INTO matches (match_id, game, seed, players, created_at, source, source_id, played_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    match_id, document["game"], int(document.get("seed") or 0),
+                    _json_players(created), _now(), source, source_id or None, played_at,
+                ),
             )
             for event in events:
                 conn.execute(
@@ -146,13 +196,37 @@ def import_match(db_path: str | Path, document: dict[str, Any], *, new_match_id:
             if document.get("endedAt"):
                 conn.execute("UPDATE matches SET ended_at = ? WHERE match_id = ?", (_now(), match_id))
             conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            # 两个批量进程同时导入同一个 episode 时，唯一索引是最终裁判。
+            # 输掉竞争的一方返回已存在的那场，不把错误抛给用户。
+            if source_id:
+                existing = conn.execute(
+                    "SELECT match_id FROM matches WHERE source = ? AND source_id = ? LIMIT 1",
+                    (source, source_id),
+                ).fetchone()
+                if existing is not None:
+                    return {
+                        "matchId": existing[0],
+                        "events": int(conn.execute(
+                            "SELECT COUNT(*) FROM events WHERE match_id = ?", (existing[0],)
+                        ).fetchone()[0]),
+                        "fingerprint": _fingerprint(document),
+                        "deduplicated": True,
+                    }
+            raise
         except Exception:
             conn.rollback()
             raise
     finally:
         conn.close()
 
-    return {"matchId": match_id, "events": len(events), "fingerprint": _fingerprint(document)}
+    return {
+        "matchId": match_id,
+        "events": len(events),
+        "fingerprint": _fingerprint(document),
+        "deduplicated": False,
+    }
 
 
 # 导入上限：一份导出文件是"一场比赛"，恶意或误操作的大文件不该把库撑爆。
@@ -235,7 +309,9 @@ def _ensure_tables(conn: sqlite3.Connection, db_path: Path) -> bool:
     from .archive import SCHEMA as ARCHIVE_SCHEMA
     from .db import ensure_schema
     from .eventlog import SCHEMA as EVENT_SCHEMA
+    from .migrations import migrate
 
     ensure_schema(conn, db_path, EVENT_SCHEMA, "eventlog")
     ensure_schema(conn, db_path, ARCHIVE_SCHEMA, "archive")
+    migrate(conn)
     return True

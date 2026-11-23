@@ -1,32 +1,16 @@
 // 赛季页：积分榜、赛程、宿敌、推进赛程、新建赛季。所有数据来自 /seasons 与 /seasons/{id}。
 import { html } from '../vendor/lit-html.js'
 import { paint as litRender } from './paint.js'
-import { api, configure, el, propagateQuery, toast, gameMeta, formatTime } from './api.js'
-import { mountTopbar, mountFooter } from './nav.js'
+import { api, el, toast, gameMeta, formatTime } from './api.js'
 import { trapFocus } from './a11y.js'
-import { applyI18n, getLang, resolveLang, setLang, t } from './i18n.js'
+import { getLang, t } from './i18n.js'
+import { bootstrapPage, showError } from './ui.js'
 
-setLang(resolveLang())
-configure()
-propagateQuery()
-mountTopbar({ active: 'season' })
-mountFooter()
-document.title = t('season.title')
-applyI18n()
+bootstrapPage({ active: 'season', titleKey: 'season.title' })
 
 const params = new URLSearchParams(location.search)
 let seasonId = params.get('season') || ''
 let timer = null
-
-function showError(message) {
-  const box = el('error')
-  if (!message) {
-    box.style.display = 'none'
-    return
-  }
-  box.textContent = message
-  box.style.display = ''
-}
 
 async function loadSeasonList() {
   try {

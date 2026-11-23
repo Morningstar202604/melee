@@ -13,6 +13,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from services.match import api as api_module
+from services.match import workqueue
 from services.match.eventlog import read_match
 from services.match.worker import ensure_inline_worker, stop_inline_worker
 
@@ -63,3 +64,25 @@ def create(client: TestClient, **overrides: Any) -> dict[str, Any]:
     response = client.post("/matches", json=body)
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def wait_job(job_id: str, timeout: float = 30.0) -> None:
+    """等队列任务被 worker 标记 done（赛季推进、剪辑渲染都走队列）。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        record = workqueue.get(api_module.DB_PATH, job_id)
+        if record is not None and record.status == "done":
+            return
+        time.sleep(0.05)
+    raise TimeoutError(f"{job_id} 在 {timeout}s 内没有完成")
+
+
+def wait_ended(client: TestClient, match_id: str, timeout: float = 60.0) -> None:
+    """等 HTTP 视角下的 match.ended；与 wait_finished 共用同一终态判据。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        events = client.get(f"/matches/{match_id}/events").json()["events"]
+        if any(event["type"] == "match.ended" for event in events):
+            return
+        time.sleep(0.1)
+    raise TimeoutError(f"{match_id} 在 {timeout}s 内没有结束")

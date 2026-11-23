@@ -13,6 +13,7 @@ from typing import Any
 
 from .engine.base import AppliedEffect
 from .messages import message
+from .teams import team_reference
 
 _NUMBER = re.compile(r"\d+")
 _CN_DIGITS = {
@@ -82,9 +83,6 @@ class RuleNarrator:
         return None
 
 
-_TEAM_LABEL = {"red": "红队", "blue": "蓝队", "neutral": "中立", "assassin": "刺客"}
-
-
 def _team_display(team: str | None) -> str:
     """解说里的队伍名：返回语言无关的键（如 team.red），由 messages 层翻译。
 
@@ -94,10 +92,7 @@ def _team_display(team: str | None) -> str:
     """
     if not isinstance(team, str) or not team:
         return ""
-    if team in _TEAM_LABEL:
-        return f"team.{team}"
-    # 动态队伍 team3 / side2：交给前端字典的 team.indexed 规则。
-    return team
+    return team_reference(team)
 
 
 def _message_for_effect(effect: AppliedEffect, player: str, public_state: dict[str, Any]) -> dict[str, Any] | None:

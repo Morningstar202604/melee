@@ -15,6 +15,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .language import LANG_FALLBACK, LANGS
+from .teams import team_reference_from_label
+
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
 # 每条消息：键 -> {语言: 模板}。模板里的 {name} 由 params 填充。
@@ -170,6 +173,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "No winner",
         "zh": "无人获胜",
     },
+    "hl.end.detail": {
+        "en": "{reason}",
+        "zh": "{reason}",
+    },
     "hl.board.decisive.title": {
         "en": "{player} plays the decisive {action}",
         "zh": "{player} 落下决胜一手 {action}",
@@ -177,6 +184,14 @@ MESSAGES: dict[str, dict[str, str]] = {
     "hl.board.decisive.detail": {
         "en": "The move that ends the match.",
         "zh": "决定胜负的一手。",
+    },
+    "hl.board.draw.title": {
+        "en": "{player} plays the last move {action}",
+        "zh": "{player} 落下收官一手 {action}",
+    },
+    "hl.board.draw.detail": {
+        "en": "The game ends in a draw.",
+        "zh": "对局以平局收场。",
     },
     "hl.board.mid.title": {
         "en": "{player} plays {action}",
@@ -247,6 +262,14 @@ MESSAGES: dict[str, dict[str, str]] = {
     "cue.big_sweep": {"en": "{narrowed} candidates eliminated — close-up", "zh": "一次排除 {narrowed} 个候选，切特写"},
     "cue.long_thinking": {"en": "long reasoning or question detected", "zh": "思考中出现较长的推理或疑问"},
     # 人工切镜：note 是用户输入，模板必须语言无关。
+    "cue.imported_start": {
+        "en": "imported episode — opening wide",
+        "zh": "外部对局导入，开场广角",
+    },
+    "cue.imported_move": {
+        "en": "imported move {step} — close-up",
+        "zh": "导入对局第 {step} 步，切特写",
+    },
     "cue.manual": {"en": "manual cut", "zh": "人工切镜"},
     "cue.manual_with_note": {"en": "manual cut: {note}", "zh": "人工：{note}"},
     # ---- 动作类型（战报"最慢一手"里用） ----
@@ -295,9 +318,6 @@ MESSAGES: dict[str, dict[str, str]] = {
     "game.wild-tic-tac-toe": {"en": "Wild Tic-tac-toe", "zh": "狂野井字棋"},
     "game.crusade": {"en": "Crusade", "zh": "十字军"},
 }
-
-LANG_FALLBACK = "en"
-LANGS = ("en", "zh")
 
 
 def format_message(key: str, params: dict[str, Any] | None = None, *, lang: str = LANG_FALLBACK) -> str:
@@ -379,6 +399,9 @@ def _localize_params(params: dict[str, Any], lang: str = LANG_FALLBACK) -> dict[
             if referenced is not None:
                 out[key] = referenced
                 continue
+            if key == "reason":
+                out[key] = localize_reason(value, lang)
+                continue
         out[key] = value
     return out
 
@@ -419,18 +442,8 @@ def _end_reason_patterns() -> list[tuple[Any, str]]:
 
 
 def _team_reference(label: str) -> str:
-    """把中文队伍显示名反查成语言无关引用键（`team.red`）。
-
-    引擎状态里队伍本身是 `red`/`blue`/`team3`，但写进 reason 的是显示名。
-    翻回来以后，译文才能用同一套词条（Red / 红队）。
-    """
-    reverse = {"红队": "team.red", "蓝队": "team.blue", "中立": "team.neutral", "刺客": "team.assassin"}
-    if label in reverse:
-        return reverse[label]
-    m = re.fullmatch(r"第 (\d+) 队", label)
-    if m:
-        return f"team.{m.group(1)}"
-    return label
+    """把中文队伍显示名反查成语言无关引用键（`team.red`）。"""
+    return team_reference_from_label(label)
 
 
 def localize_reason(reason: Any, lang: str) -> Any:

@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # Python runtime and dev dependencies all live in requirements*.txt at the root.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    groups:
+      python-runtime:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # The front-end is zero-build and has no runtime dependencies today.
+  # Keep npm scoped to its real manifest instead of the repository root.
+  - package-ecosystem: "npm"
+    directory: "/apps/web"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 2
+    groups:
+      web-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 2

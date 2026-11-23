@@ -14,58 +14,22 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
-import socket
 import subprocess
 import sys
 import tempfile
-import time
-import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-
-def free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-def wait_health(api: str, timeout: float = 60.0) -> None:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            with urllib.request.urlopen(f"{api}/health", timeout=2) as response:
-                if response.status == 200:
-                    return
-        except Exception:  # noqa: BLE001 - 启动期连不上是正常的
-            pass
-        time.sleep(0.5)
-    raise RuntimeError(f"{api}/health 在 {timeout:.0f}s 内没有就绪")
+from _harness import api_post, free_port, start_server, stop_process, wait_finished, wait_health  # noqa: E402
 
 
 def create_match(api: str) -> str:
     """造一场能跑完的比赛：页面没有对局数据时，巡检看不到任何文案。"""
     body = {"game": "tic-tac-toe", "seed": 7, "players": [{"id": "A"}, {"id": "B"}]}
-    request = urllib.request.Request(
-        f"{api}/matches",
-        data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        match_id = json.loads(response.read().decode("utf-8"))["matchId"]
-
-    deadline = time.time() + 120
-    while time.time() < deadline:
-        with urllib.request.urlopen(f"{api}/matches/{match_id}/events", timeout=20) as response:
-            events = json.loads(response.read().decode("utf-8"))["events"]
-        if any(event["type"] == "match.ended" for event in events):
-            return match_id
-        time.sleep(1)
-    raise RuntimeError(f"比赛 {match_id} 在 120s 内没有结束")
+    match_id = api_post(api, "/matches", body, attempts=1)["matchId"]
+    wait_finished(api, match_id)
+    return match_id
 
 
 def main() -> int:
@@ -85,18 +49,10 @@ def main() -> int:
             port = free_port()
             api = f"http://127.0.0.1:{port}"
             db_path = Path(tempfile.mkdtemp(prefix="melee-i18n-db-")) / "i18n.db"
-            env = {
-                **os.environ,
-                "MELEE_DB": str(db_path),
-                "MELEE_QUOTA_MATCHES": "200",
-                "MELEE_PORT": str(port),
-            }
-            process = subprocess.Popen(
-                [sys.executable, str(ROOT / "scripts" / "serve.py"), "--port", str(port)],
-                cwd=str(ROOT),
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+            process = start_server(
+                port,
+                str(db_path),
+                extra_env={"MELEE_QUOTA_MATCHES": "200"},
             )
             wait_health(api)
 
@@ -114,11 +70,7 @@ def main() -> int:
         return result.returncode
     finally:
         if process is not None:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
+            stop_process(process, timeout=10)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,16 @@ from .engine.base import Move
 from .engine.twenty_questions import catalog_for
 
 
+def _reject_internal(value: str) -> str:
+    """BYOK 与外部 HTTP 选手共用的出站校验：拒绝回环、私网与云元数据地址。"""
+    from .outbound import OutboundAddressError, check_base_url
+
+    try:
+        return check_base_url(value)
+    except OutboundAddressError as exc:
+        raise ValueError(str(exc)) from None
+
+
 class ModelSpec(BaseModel):
     """BYOK：Key 只随本次请求进来，只活在这次比赛的客户端里。
 
@@ -53,12 +63,7 @@ class ModelSpec(BaseModel):
     @field_validator("baseUrl")
     @classmethod
     def _reject_internal_endpoint(cls, value: str) -> str:
-        from .outbound import OutboundAddressError, check_base_url
-
-        try:
-            return check_base_url(value)
-        except OutboundAddressError as exc:
-            raise ValueError(str(exc)) from None
+        return _reject_internal(value)
 
     @field_validator("stop")
     @classmethod
@@ -91,12 +96,7 @@ class HTTPAgentSpec(BaseModel):
     @field_validator("endpoint")
     @classmethod
     def _reject_internal_endpoint(cls, value: str) -> str:
-        from .outbound import OutboundAddressError, check_base_url
-
-        try:
-            return check_base_url(value)
-        except OutboundAddressError as exc:
-            raise ValueError(str(exc)) from None
+        return _reject_internal(value)
 
 
 class PlayerSpec(BaseModel):

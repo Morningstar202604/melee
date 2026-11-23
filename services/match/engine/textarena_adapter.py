@@ -26,7 +26,13 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from .base import AppliedEffect, Move, MoveResult, PlayerId
+from .base import AppliedEffect, Move, MoveResult, PlayerId, ensure_turn, legal_result
+from .connect_four import columns_from_board
+from .observations import says_no_moves
+
+# 兼容旧测试/旧调用方的私有名；实现在新模块里。
+_columns_from_board = columns_from_board
+_says_no_moves = says_no_moves
 
 try:  # 可选依赖：没装 textarena 时本模块仍可导入，只是 is_available() 为 False
     import textarena as ta
@@ -224,45 +230,6 @@ def _parse_available(observations: list[str]) -> list[str]:
 def _dedupe(values: Any) -> list[str]:
     """保序去重。"""
     return list(dict.fromkeys(values))
-
-
-def _columns_from_board(
-    observations: list[str], columns: int = 7, board: list[list[str]] | None = None
-) -> list[str]:
-    """四子棋：最上面一行的空位就是可落子列。
-
-    优先用结构化棋盘（`gameState.board`），不要从观察文本里正则抠：
-    文本里既有棋盘又有历史落子行，`rows[0]` 不保证是**顶行**，
-    结果会给出"看起来合法、实际已满"的列——实测第 6 步就撞上。
-    """
-    if isinstance(board, list) and board and isinstance(board[0], list):
-        top = [str(cell or ".") for cell in board[0]]
-        if len(top) == columns:
-            return [f"[col {index}]" for index, cell in enumerate(top) if cell == "."]
-    rows: list[list[str]] = []
-    for text in observations:
-        for line in str(text).splitlines():
-            cells = re.findall(r"[.XO]", line)
-            if len(cells) == columns:
-                rows.append(cells)
-    if not rows:
-        return []
-    top = rows[0]
-    return [f"[col {i}]" for i, cell in enumerate(top) if cell == "."]
-
-
-_NO_MOVES = re.compile(
-    r"(no valid moves|no legal moves|may have to skip|had to skip|must skip)",
-    re.I,
-)
-
-
-def _says_no_moves(observations: list[str]) -> bool:
-    """观测是否明确说了"你没有可下的子、需要跳过"。
-
-    只认上游自己写的话，不做语义猜测——猜错会让选手白白弃权。
-    """
-    return any(_NO_MOVES.search(str(text)) for text in observations[-2:])
 
 
 _FACE = {1: "A", 11: "J", 12: "Q", 13: "K"}
@@ -532,7 +499,7 @@ class TextArenaGame:
         observations = self._cached_observations(state) if env is not None else []
         moves = _parse_available(observations)
         if not moves and self.game_id == "connect-four":
-            moves = _columns_from_board(observations, board=(state.get("gameState") or {}).get("board"))
+            moves = columns_from_board(observations, board=(state.get("gameState") or {}).get("board"))
         if not moves and self.game_id == "nim":
             moves = _nim_moves(state.get("gameState") or {})
         if not moves:
@@ -544,26 +511,22 @@ class TextArenaGame:
         if moves:
             return moves
         # 观测里明确写了"无子可下/必须跳过"时，给出唯一的合法选择。
-        if _says_no_moves(observations):
+        if says_no_moves(observations):
             return ["[pass]"]
         hint = SUPPORTED.get(self.game_id, {}).get("actionHint")
         return [hint] if hint else []
 
     def apply(self, state: dict[str, Any], player: PlayerId, move: Move) -> MoveResult:
-        if state["finished"]:
-            return MoveResult(legal=False, reason="对局已结束", retryable=False)
-
-        current = self.current_player(state)
-        if current != player:
-            return MoveResult(legal=False, reason=f"现在轮到 {current}", retryable=False)
+        guard = ensure_turn(state, player, self.current_player(state))
+        if guard is not None:
+            return guard
 
         if move.kind == "forfeit":
             next_state = self._forfeit_state(state, player)
-            return MoveResult(
-                legal=True,
-                next_state=next_state,
-                effects=[AppliedEffect(kind="forfeit", detail={"by": player})],
-                public_state=self.public_state(next_state),
+            return legal_result(
+                self.public_state,
+                next_state,
+                [AppliedEffect(kind="forfeit", detail={"by": player})],
             )
 
         action = normalize_action(move.value)
@@ -614,11 +577,10 @@ class TextArenaGame:
             "observations": [] if finished else _observations(env),
         }
 
-        return MoveResult(
-            legal=True,
-            next_state=next_state,
-            effects=[AppliedEffect(kind="action", detail={"action": action})],
-            public_state=self.public_state(next_state),
+        return legal_result(
+            self.public_state,
+            next_state,
+            [AppliedEffect(kind="action", detail={"action": action})],
         )
 
     @staticmethod

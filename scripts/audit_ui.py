@@ -17,11 +17,10 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-import urllib.request
-from typing import Any
 
+from _demo import names  # noqa: E402
+from _harness import api_post
 from playwright.sync_api import sync_playwright
 
 DESKTOP = {"width": 1440, "height": 900}
@@ -30,26 +29,18 @@ MOBILE = {"width": 390, "height": 844}
 
 def seed(api: str) -> dict[str, str]:
     """建一场已结束的井字棋 + 一场直播，返回 id。"""
-    def post(path: str, body: dict[str, Any]) -> dict[str, Any]:
-        request = urllib.request.Request(
-            f"{api}{path}",
-            data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return json.load(response)
-
-    quick = post("/matches", {"game": "tic-tac-toe", "seed": 11, "players": [{"id": "左撇子"}, {"id": "右撇子"}]})
-    live = post(
+    quick = api_post(api, "/matches", {"game": "tic-tac-toe", "seed": 11, "players": [{"id": n} for n in names("zh", "tic-tac-toe")]}, lang="zh")
+    live = api_post(
+        api,
         "/matches",
         {
             "game": "twenty-questions",
             "seed": 2027,
             # 3.5 秒一步：既要在审计早期就产出提问记录（否则观战页还是空的），
             # 又要撑到导播台切镜那一步（二十问 21 手上限 ≈ 70 秒）。
-            "players": [{"id": "灰隼", "delayMs": 3500}, {"id": "砚台", "delayMs": 3500}],
+            "players": [{"id": n, "delayMs": 3500} for n in names("zh", "twenty-questions")],
         },
+        lang="zh",
     )
     return {"ended": quick["matchId"], "live": live["matchId"]}
 

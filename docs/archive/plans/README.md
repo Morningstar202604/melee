@@ -2,7 +2,7 @@
 
 These are the working plans from melee's early build-out, kept verbatim as history.
 They are **not** current commitments — what shipped from each of them is recorded in
-[CHANGELOG](../../CHANGELOG.md), and the live roadmap is [ROADMAP](../ROADMAP.md).
+[CHANGELOG](../../../CHANGELOG.md), and the live roadmap is [ROADMAP](../../ROADMAP.md).
 
 | File | Date | Status |
 |---|---|---|

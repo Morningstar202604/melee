@@ -248,7 +248,9 @@ def test_state_is_200_for_registered_but_not_yet_started_match(client):
     /events 返回 200 空列表。两个端点对"已登记但未开写"的语义必须一致，
     否则观战页会闪一下"比赛不存在"。
     """
-    data = create(client)
+    # 关掉内联 worker，固定住“已登记、还没开写”的窗口；否则后台可能已经
+    # 写完第一条事件，测试会偶发失败而产品语义本身没变。
+    data = create(client, inlineWorker=False)
     match_id = data["matchId"]
     response = client.get(f"/matches/{match_id}/state")
     assert response.status_code == 200, response.text

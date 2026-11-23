@@ -13,30 +13,24 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from _harness import get_json  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 OUT = Path(__file__).resolve().parents[1] / "docs" / "screenshots"
 
 
-def fetch_json(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=10) as response:
-        return json.load(response)
-
-
 def pick_matches(api: str) -> dict[str, str]:
     """从服务里挑出各赛制的一场比赛：优先直播中，其次已结束。"""
-    matches = fetch_json(f"{api}/matches")["matches"]
+    matches = get_json(f"{api}/matches")["matches"]
     picked: dict[str, str] = {}
     for match_id in reversed(matches):
         try:
-            state = fetch_json(f"{api}/matches/{match_id}/state")
+            state = get_json(f"{api}/matches/{match_id}/state")
         except Exception:  # noqa: BLE001
             continue
         game = state.get("game")

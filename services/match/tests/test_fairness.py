@@ -625,7 +625,9 @@ def test_multi_team_winner_passes_fact_check():
     Runner(game, log, {p: CodenamesAgent(p) for p in players}).play(state)
     events = log.read()
     log.close()
-    recap = build_recap(events)
+    from services.match.messages import localize_recap
+
+    recap = localize_recap(build_recap(events), "zh")
     assert recap["winner"] == "team3"
     assert recap["problems"] == [], recap["problems"]
     assert "第 3 队" in recap["oneLine"], recap["oneLine"]

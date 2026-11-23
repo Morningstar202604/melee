@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 import os
 import socket
-import sqlite3
 import threading
 import time
 from dataclasses import dataclass
@@ -22,6 +21,7 @@ from typing import Any, Callable
 from . import workqueue
 from .agents.scripted import GreedyAgent
 from .clips import build_clips
+from .db import connect
 from .director import Director
 from .engine import registry as game_registry
 from .engine.twenty_questions import catalog_for
@@ -312,7 +312,7 @@ def _resume_state(db_path: str | Path, match_id: str) -> _Snapshot:
 
 def _record_season(db_path: str | Path, season_id: str, match_id: str, players: list[str]) -> None:
     winner, reason = _terminal_of(db_path, match_id)
-    conn = sqlite3.connect(str(db_path))
+    conn = connect(str(db_path))
     try:
         season = load(conn, season_id)
         # record 对同一 matchId 是覆盖语义，重试不会重复计分。

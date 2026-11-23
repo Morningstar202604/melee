@@ -4,7 +4,7 @@
 import { html } from '../vendor/lit-html.js'
 import { paint as litRender } from './paint.js'
 import {
-  api, apiBase, clipUrl, configure, el, gameMeta, propagateQuery, shareUrl, shotLabel, teamLabel, toast,
+  api, apiBase, clipTicket, clipUrl, configure, el, gameMeta, propagateQuery, shotLabel, teamLabel, toast,
 } from './api.js'
 import { connectEvents } from './sse.js'
 import { createView, reduce, replayView } from './view.js'
@@ -15,6 +15,7 @@ import { createPlayer } from './watch/player.js'
 import { appendToTimeline, buildTimeline, cursorAt, elapsedAt, formatClock, marksOf, ratioAt } from './watch/timeline.js'
 import { trapFocus } from './a11y.js'
 import { applyI18n, getLang, resolveLang, setLang, t } from './i18n.js'
+import { shareLink } from './ui.js'
 import { mountLangSwitch } from './nav.js'
 import { mountThemeSwitch } from './theme.js'
 import { installFatalHandlers } from './fatal.js'
@@ -23,6 +24,13 @@ installFatalHandlers()
 setLang(resolveLang())
 document.title = t('watch.title')
 applyI18n()
+syncTopbarHeight()
+window.addEventListener('resize', syncTopbarHeight)
+
+function syncTopbarHeight() {
+  const bar = document.getElementById('topbar')
+  if (bar) document.documentElement.style.setProperty('--topbar-h', `${bar.offsetHeight}px`)
+}
 // 观战页顶栏是静态 HTML（首帧就要有舞台），语言与主题按钮手动挂进去。
 if (el('themeSwitch')) mountThemeSwitch(el('themeSwitch'))
 if (el('langSwitch')) mountLangSwitch(el('langSwitch'))
@@ -32,6 +40,10 @@ configure()
 propagateQuery()
 const API = apiBase()
 const MATCH_KEY = 'melee.currentMatch'
+// 首屏只取最近的一段事件：一场长对局的全量日志可达数 MB，
+// 等全部下载完再画第一帧，观众看到的是长时间空舞台。
+// 320 条足够画出当前局面；剩余事件由 SSE 从窗口末尾续传。
+const INITIAL_EVENTS = 320
 
 let view = createView()
 let events = []
@@ -176,7 +188,7 @@ async function attach(matchId) {
 
   let snapshot
   try {
-    snapshot = await api.events(matchId, -1)
+    snapshot = await api.events(matchId, -1, INITIAL_EVENTS)
   } catch (error) {
     if (token === attachToken) {
       el('conn').textContent = t('watch.conn.failed')
@@ -226,6 +238,8 @@ async function attach(matchId) {
 
   closeStream = await connectEvents(matchId, {
     baseUrl: API,
+    // 首屏窗口之后的事件由 SSE 续传；重连时同样从当前末尾接上。
+    after: events.length ? events[events.length - 1].seq : -1,
     onEvent: (event) => {
       appendEvent(event)
       if (event.type === 'match.ended') {
@@ -310,14 +324,12 @@ function closeEndCard() {
   releaseEndFocus?.()
   releaseEndFocus = null
 }
-el('btnReplay').addEventListener('click', () => {
+function replayFromEndCard() {
   player.replayFromStart()
   el('endcard').classList.remove('on')
-})
-el('btnReplayEnd').addEventListener('click', () => {
-  player.replayFromStart()
-  el('endcard').classList.remove('on')
-})
+}
+el('btnReplay').addEventListener('click', replayFromEndCard)
+el('btnReplayEnd').addEventListener('click', replayFromEndCard)
 el('speed').addEventListener('change', (e) => player.setSpeed(e.target.value))
 el('btnRender').addEventListener('click', exportHighlights)
 el('btnRenderEnd').addEventListener('click', exportHighlights)
@@ -375,22 +387,9 @@ function toggleTheater(force) {
   requestAnimationFrame(fitStage)
 }
 
-async function shareMatch() {
-  if (!currentMatchId) return
-  const url = shareUrl(currentMatchId)
-  try {
-    if (navigator.share) {
-      await navigator.share({ title: t('common.shareTitle'), url })
-      return
-    }
-    await navigator.clipboard.writeText(url)
-    toast(t('common.copied'))
-  } catch {
-    toast(t('common.copyFailed', { url }), 'bad')
-  }
-}
-
-el('btnShare').addEventListener('click', shareMatch)
+el('btnShare').addEventListener('click', () => {
+  if (currentMatchId) shareLink(currentMatchId)
+})
 
 async function exportHighlights() {
   const matchId = currentMatchId
@@ -407,12 +406,7 @@ async function exportHighlights() {
       litRender(html`<div class="cp-empty">${t('watch.clip.none')}</div>`, body)
       return
     }
-    let ticket = ''
-    try {
-      ticket = (await api.mediaTicket(matchId)).ticket || ''
-    } catch {
-      ticket = ''
-    }
+    const ticket = await clipTicket(matchId)
     litRender(
       html`${result.clips.map(
         (clip) => html`<div class="clip">

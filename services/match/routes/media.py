@@ -8,14 +8,23 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
-from ..auth import AuthError, authenticate, issue_media_ticket, redeem_media_ticket
+from ..auth import issue_media_ticket, redeem_media_ticket
 from ..card import ensure_card
 from ..clips import build_clips, export_manifest
 from ..eventlog import has_match
 from ..render import find_ffmpeg, normalize_template
 from ..settings import settings
 from ..worker import enqueue_render
-from .common import auth_config, db_path_of, events_of, guard, quota, safe_match_id
+from .common import (
+    auth_config,
+    db_path_of,
+    events_of,
+    guard,
+    quota,
+    request_lang,
+    safe_match_id,
+    ticket_principal,
+)
 
 router = APIRouter()
 
@@ -53,7 +62,7 @@ async def match_card(match_id: str, request: Request, theme: str = Query(default
 async def clips(match_id: str, request: Request, limit: int = Query(default=3, ge=1, le=10)) -> dict[str, Any]:
     guard(request, "read")
     events = events_of(db_path_of(request), match_id)
-    return export_manifest(match_id, events, limit=limit)
+    return export_manifest(match_id, events, limit=limit, lang=request_lang(request))
 
 
 @router.post("/matches/{match_id}/clips/render")
@@ -71,7 +80,9 @@ async def render_clips_endpoint(
         raise HTTPException(status_code=503, detail="服务器上没有 ffmpeg，无法渲染视频")
 
     events = events_of(db_path, match_id)
-    clips_to_render = build_clips(events, limit=limit, per_event_ms=perEventMs)
+    clips_to_render = build_clips(
+        events, limit=limit, per_event_ms=perEventMs, lang=request_lang(request)
+    )
     if not clips_to_render:
         raise HTTPException(status_code=404, detail="这场比赛没有可剪的高光")
     # 确认真的有可剪内容后再扣渲染配额。
@@ -127,13 +138,7 @@ async def download_clip(
     # 视频靠 <video> 拉，带不了 Authorization；token 模式下走媒体票据。
     safe_match_id(match_id)
     config = auth_config()
-    if config.mode != "off":
-        principal = redeem_media_ticket(ticket, match_id) if ticket else None
-        if principal is None:
-            try:
-                authenticate(config, request.headers.get("authorization"))
-            except AuthError as exc:
-                raise HTTPException(status_code=exc.status, detail=str(exc)) from None
+    ticket_principal(request, config, ticket, lambda value: redeem_media_ticket(value, match_id))
     if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="非法文件名")
     path = db_path_of(request).parent / "clips" / match_id / filename

@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from ..engine.base import Move
+from ..engine.connect_four import columns_from_board
+from ..engine.observations import says_no_moves
 from .base import AgentOutput, ThoughtSink
 
 # 英文联想词：真实代号玩家给的是"另一个词"，不是目标词加后缀。
@@ -178,7 +180,7 @@ class BoardAgent:
             moves = nim_moves(observations)
         # 无子可下：上游会在 step 里自动跳过，选手这一手唯一正确的动作就是 pass。
         # 只认上游自己的措辞，不做语义猜测。
-        if not moves and _says_skip(observations):
+        if not moves and says_no_moves(observations):
             return AgentOutput(move=Move(kind="guess", value="[pass]"), raw="choose:[pass]")
         if not moves:
             return AgentOutput(move=Move(kind="ask", value=""), raw="[no-available-moves]")
@@ -209,19 +211,6 @@ _MOVE_PATTERN = __import__("re").compile(r"\[[^\[\]']+\]")
 _MOVE_HINT = __import__("re").compile(r"(?:Available Moves|Valid moves|Valid targets|Available|available actions are|available actions|Valid actions are|Valid actions):\s*(.+)")
 
 
-_SKIP_PHRASES = __import__("re").compile(
-    r"(no valid moves|no legal moves|may have to skip|had to skip|must skip)", __import__("re").I
-)
-
-
-def _says_skip(observations: list[str]) -> bool:
-    """观察里是否明确说了"你没有可下的子、需要跳过"。
-
-    只认上游自己写的那几句话，不做语义猜测——猜错会让选手白白弃权。
-    与 textarena_adapter._says_no_moves 同源，但选手层不能 import 适配器
-    （会形成反向依赖），所以各留一份小的。
-    """
-    return any(_SKIP_PHRASES.search(str(text)) for text in observations[-2:])
 
 
 def extract_moves(observations: list[str]) -> list[str]:
@@ -265,32 +254,6 @@ def nim_moves(observations: list[str]) -> list[str]:
     latest = str(observations[-1]) if observations else ""
     piles = [(int(idx), int(count)) for idx, count in re.findall(r"pile\s+(\d+):\s*(\d+)", latest)]
     return [f"[{idx} 1]" for idx, count in piles if count > 0]
-
-
-def columns_from_board(observations: list[str], columns: int = 7) -> list[str]:
-    """四子棋专用：从棋盘**最上面一行**推出还能下的列。
-
-    实测棋盘长这样（空格分隔）：
-        0 1 2 3 4 5 6
-        -------------
-        . . . . . . .
-        ...
-        . X . . O . .
-    第一行是列号，之后是 6 行棋盘；最上面那行棋盘的空位就是可落子列。
-    """
-    import re
-
-    rows: list[list[str]] = []
-    for text in observations:
-        for line in str(text).splitlines():
-            cells = re.findall(r"[.XO]", line)
-            if len(cells) == columns:
-                rows.append(cells)
-    if not rows:
-        return []
-    # rows[0] 是棋盘顶行（列号那行的数字不会被 [.XO] 匹配到）
-    top = rows[0]
-    return [f"[col {i}]" for i, cell in enumerate(top) if cell == "."]
 
 
 def _stable_index(seed: str, moves: list[str]) -> int:

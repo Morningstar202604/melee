@@ -13,13 +13,10 @@
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 import subprocess
 import sys
 import tempfile
-import time
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -29,49 +26,27 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def launch_browser(playwright):
-    """Use bundled Chromium, falling back to the installed Edge on Windows."""
-    try:
-        return playwright.chromium.launch()
-    except Exception:
-        if sys.platform != "win32":
-            raise
-        return playwright.chromium.launch(channel="msedge")
+import _demo  # noqa: E402
+from _harness import api_get as get  # noqa: E402
+from _harness import api_post as post  # noqa: E402
+from _harness import launch_browser, wait_finished  # noqa: E402
+
 OUT = ROOT / "docs" / "video"
 
 
-def get(api: str, path: str) -> dict:
-    with urllib.request.urlopen(f"{api}{path}", timeout=15) as response:
-        return json.load(response)
-
-
-def post(api: str, path: str, body: dict) -> dict:
-    request = urllib.request.Request(
-        f"{api}{path}",
-        data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.load(response)
-
-
-def wait_finished(api: str, match_id: str, timeout: float = 120.0) -> None:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if any(e["type"] == "match.ended" for e in get(api, f"/matches/{match_id}/events")["events"]):
-            return
-        time.sleep(0.5)
-
-
-def pick_codenames(api: str) -> str:
+def pick_codenames(api: str, lang: str = "zh") -> str:
     for item in get(api, "/archive?limit=100")["items"]:
         if item["game"] == "codenames" and item["status"] == "ended":
             return item["matchId"]
     created = post(
         api,
         "/matches",
-        {"game": "codenames", "seed": 2026, "players": [{"id": p, "delayMs": 60} for p in ("A", "B", "C", "D")]},
+        {
+            "game": "codenames",
+            "seed": 2026,
+            "players": [{"id": p, "delayMs": 60} for p in _demo.names(lang, "codenames")],
+        },
+        lang=lang,
     )
     wait_finished(api, created["matchId"])
     return created["matchId"]
@@ -81,14 +56,21 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--api", default="http://127.0.0.1:8123")
     parser.add_argument("--season", default="demo-2026")
+    parser.add_argument("--lang", choices=["zh", "en"], default="zh", help="界面语言与选手名")
     parser.add_argument("--out", default=str(OUT / "walkthrough.mp4"))
     args = parser.parse_args()
+    names = {
+        "duo": tuple(_demo.names(args.lang, "twenty-questions")),
+        "director": tuple(_demo.directors(args.lang)),
+    }
+    note = "demo: close-up" if args.lang == "en" else "演示：切特写"
 
     OUT.mkdir(parents=True, exist_ok=True)
     out_path = Path(args.out)
-    codenames_id = pick_codenames(args.api)
+    codenames_id = pick_codenames(args.api, args.lang)
 
-    # 录一条节奏舒服的直播：每步 900ms，旁白/镜头都能看清。
+    # 录一条节奏舒服的直播：每步 2.4s，旁白、镜头和拖时间轴都能看清；
+    # 太快会在录到一半时终局，片子里就只剩结束卡了。
     live = post(
         args.api,
         "/matches",
@@ -96,8 +78,9 @@ def main() -> int:
             "game": "twenty-questions",
             "seed": 2027,
             "maxQuestions": 21,
-            "players": [{"id": "灰隼", "delayMs": 900}, {"id": "砚台", "delayMs": 900}],
+            "players": [{"id": names["duo"][0], "delayMs": 2400}, {"id": names["duo"][1], "delayMs": 2400}],
         },
+        lang=args.lang,
     )
     live_id = live["matchId"]
 
@@ -118,7 +101,7 @@ def main() -> int:
             page.goto(f"{args.api}/", wait_until="networkidle")
             hold(3800)
 
-            page.goto(f"{args.api}/watch.html?match={live_id}", wait_until="networkidle")
+            page.goto(f"{args.api}/watch.html?match={live_id}&lang={args.lang}", wait_until="networkidle")
             hold(6500)
             page.evaluate(
                 """() => { const s = document.getElementById('scrub');
@@ -134,7 +117,7 @@ def main() -> int:
             hold(2600)
 
             if codenames_id:
-                page.goto(f"{args.api}/watch.html?match={codenames_id}", wait_until="networkidle")
+                page.goto(f"{args.api}/watch.html?match={codenames_id}&lang={args.lang}", wait_until="networkidle")
                 hold(2600)
                 page.evaluate("document.getElementById('endcard')?.classList.remove('on')")
                 page.evaluate(
@@ -144,10 +127,10 @@ def main() -> int:
                 )
                 hold(3800)
 
-            page.goto(f"{args.api}/recap.html?match={codenames_id}", wait_until="networkidle")
+            page.goto(f"{args.api}/recap.html?match={codenames_id}&lang={args.lang}", wait_until="networkidle")
             hold(5000)
 
-            page.goto(f"{args.api}/season.html?season={args.season}", wait_until="networkidle")
+            page.goto(f"{args.api}/season.html?season={args.season}&lang={args.lang}", wait_until="networkidle")
             hold(4600)
 
             director_live = post(
@@ -157,13 +140,18 @@ def main() -> int:
                     "game": "twenty-questions",
                     "seed": 411,
                     "maxQuestions": 21,
-                    "players": [{"id": "观测者", "delayMs": 9000}, {"id": "审核员", "delayMs": 9000}],
+                    "players": [
+                        {"id": names["director"][0], "delayMs": 3000},
+                        {"id": names["director"][1], "delayMs": 3000},
+                    ],
                 },
             )
-            page.goto(f"{args.api}/director.html?match={director_live['matchId']}", wait_until="networkidle")
-            hold(2600)
+            page.goto(
+                f"{args.api}/director.html?match={director_live['matchId']}&lang={args.lang}", wait_until="networkidle"
+            )
+            hold(3600)
             page.click(".shot[data-shot='close']")
-            page.fill("#note", "演示：切特写")
+            page.fill("#note", note)
             hold(600)
             page.click("#push")
             hold(2600)

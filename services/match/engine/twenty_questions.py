@@ -18,7 +18,8 @@ import random
 from dataclasses import dataclass
 from typing import Any
 
-from .base import AppliedEffect, Move, MoveResult, PlayerId
+from ..language import normalize_lang
+from .base import AppliedEffect, Move, MoveResult, PlayerId, ensure_turn, legal_result
 
 # 属性表：每个维度都是互斥枚举，问"属性=值"时可直接回答。
 # 内容双语：同一批 16 个物品，两种语言各一套词。英文界面里问的是
@@ -44,12 +45,9 @@ _CATALOG_BILINGUAL: list[dict[str, dict[str, str]]] = [
     {"name": {"en": "Tower crane", "zh": "塔吊"}, "category": {"en": "Device", "zh": "装置"}, "place": {"en": "Worksite", "zh": "工地"}, "function": {"en": "Lifting", "zh": "起重"}, "material": {"en": "Metal", "zh": "金属"}, "scale": {"en": "Large", "zh": "大型"}},
 ]
 
-_LANGS = ("en", "zh")
-
-
 def catalog_for(lang: str = "zh") -> list[dict[str, str]]:
     """按语言取扁平词表。未知语言回退中文（与历史行为一致）。"""
-    code = lang if lang in _LANGS else ("en" if str(lang).lower().startswith("en") else "zh")
+    code = normalize_lang(lang, default="zh")
     return [
         {field: values.get(code, values["zh"]) for field, values in row.items()}
         for row in _CATALOG_BILINGUAL
@@ -89,8 +87,7 @@ def _matches(row: dict[str, str], aspect: str, value: str) -> bool:
 
 def _lang_of(state: dict[str, Any]) -> str:
     """本局语言。老事件里没有 lang：那些对局本来就是中文词表，回退 zh。"""
-    lang = str(state.get("lang") or "zh")
-    return "en" if lang.lower().startswith("en") else "zh"
+    return normalize_lang(state.get("lang"), default="zh")
 
 
 def _candidates(state: dict[str, Any], asked: list[dict[str, str]] | None = None) -> list[str]:
@@ -200,12 +197,9 @@ class TwentyQuestions:
         return moves
 
     def apply(self, state: dict[str, Any], player: PlayerId, move: Move) -> MoveResult:
-        if state["finished"]:
-            return MoveResult(legal=False, reason="对局已结束", retryable=False)
-
-        current = self.current_player(state)
-        if current != player:
-            return MoveResult(legal=False, reason=f"现在轮到 {current}", retryable=False)
+        guard = ensure_turn(state, player, self.current_player(state))
+        if guard is not None:
+            return guard
 
         next_state = copy.deepcopy(state)
         handler = {
@@ -251,12 +245,7 @@ class TwentyQuestions:
             next_state["endReason"] = "问满上限，无人猜中"
             effects.append(AppliedEffect(kind="end", detail={"reason": next_state["endReason"]}))
 
-        return MoveResult(
-            legal=True,
-            next_state=next_state,
-            effects=effects,
-            public_state=self.public_state(next_state),
-        )
+        return legal_result(self.public_state, next_state, effects)
 
     def _apply_guess(self, next_state: dict[str, Any], player: PlayerId, move: Move) -> MoveResult:
         guess = move.value.strip()
@@ -271,12 +260,7 @@ class TwentyQuestions:
             AppliedEffect(kind="guess", detail={"value": guess, "correct": correct}),
             AppliedEffect(kind="end", detail={"reason": next_state["endReason"]}),
         ]
-        return MoveResult(
-            legal=True,
-            next_state=next_state,
-            effects=effects,
-            public_state=self.public_state(next_state),
-        )
+        return legal_result(self.public_state, next_state, effects)
 
     def _apply_forfeit(self, next_state: dict[str, Any], player: PlayerId, move: Move) -> MoveResult:
         next_state["finished"] = True
@@ -286,9 +270,4 @@ class TwentyQuestions:
             AppliedEffect(kind="forfeit", detail={"by": player}),
             AppliedEffect(kind="end", detail={"reason": "弃权"}),
         ]
-        return MoveResult(
-            legal=True,
-            next_state=next_state,
-            effects=effects,
-            public_state=self.public_state(next_state),
-        )
+        return legal_result(self.public_state, next_state, effects)

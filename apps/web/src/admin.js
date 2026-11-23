@@ -1,16 +1,10 @@
 // 管理后台：运维健康、队列、配额、赛季调度的单页视图。
 // 与其他页面同一套取数/导航/i18n 底座；零构建，直接 ES module。
-import { configure, el, formatTime, propagateQuery, request as apiRequest } from './api.js'
-import { mountTopbar, mountFooter } from './nav.js'
-import { applyI18n, resolveLang, setLang, t } from './i18n.js'
+import { el, formatTime, request as apiRequest } from './api.js'
+import { t } from './i18n.js'
+import { bootstrapPage } from './ui.js'
 
-setLang(resolveLang())
-configure()
-propagateQuery()
-mountTopbar({ active: 'admin' })
-mountFooter()
-document.title = t('admin.title')
-applyI18n()
+bootstrapPage({ active: 'admin', titleKey: 'admin.title' })
 
 let timer = null
 

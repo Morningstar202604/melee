@@ -1,5 +1,7 @@
 # Roadmap
 
+**English** · [简体中文](zh-CN/ROADMAP.md)
+
 Every item here has a **checkable acceptance criterion**. If you cannot test it, it does not belong on this page. Finished work moves to [CHANGELOG](../CHANGELOG.md).
 
 Versioning is [semantic](https://semver.org/): the current release line is **1.x**. A minor bump adds capability without breaking the event contract; a major bump would change the event schema or the API in a way existing clients cannot follow.
@@ -8,7 +10,6 @@ Versioning is [semantic](https://semver.org/): the current release line is **1.x
 
 | Item | Why | Acceptance |
 |---|---|---|
-| Event-stream pagination and compression | Long matches reach thousands of events; replay pulls all of them | `after` cursor + server-side gzip; a 5000-event match renders its first screen in under 1s |
 | Distributed tracing | Only request-level metrics exist; slow requests across worker/queue cannot be located | An OpenTelemetry trace_id follows HTTP → queue → runner and a single match's full path is visible in Jaeger |
 | Mobile replay gestures | Only timeline dragging today | Pinch to zoom the board, swipe left/right to change match |
 | Game types to 16 | Content volume drives retention | At least 4 new deterministic games, each with commentary/cuts/recap, automatically covered by contract tests |
@@ -24,6 +25,14 @@ These are decisions, not backlog. Re-adding them needs a new rationale.
 - Season points for multi-team formats — the standings model assumes two sides.
 
 ## Released
+
+### 1.9.3 — 2026-11-22
+
+| Item | Acceptance | Result |
+|---|---|---|
+| Event-stream compression | JSON and HTML over 1 KB are gzipped; SSE stays uncompressed | `GZipMiddleware`; `test_compression.py` asserts gzip on events, none on the stream |
+| Fast first paint | Long matches do not wait for the whole log | The watch page loads a 320-event window, then streams from its last `seq`; replay for the rest is server-side |
+| Language-consistent media | Screenshots and video do not mix Chinese player names into an English UI | Demo seeding and the walkthrough recorder accept `--lang en/zh` |
 
 ### 1.9.2 — 2026-11-08
 

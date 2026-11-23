@@ -109,6 +109,15 @@ export function clipUrl(matchId, file, ticket = '') {
   return `${baseUrl}/matches/${encodeURIComponent(matchId)}/clips/${encodeURIComponent(file)}${query}`
 }
 
+/** 剪辑播放要 ticket；拿不到就退回无票 URL，不让整个面板报错。 */
+export async function clipTicket(matchId) {
+  try {
+    return (await api.mediaTicket(matchId)).ticket || ''
+  } catch {
+    return ''
+  }
+}
+
 /** 分享落地页在 API 站；分端口部署时 location.origin 是静态站，会 404。 */
 export function shareUrl(matchId) {
   const origin = baseUrl ? new URL(baseUrl, location.href).origin : location.origin
@@ -181,6 +190,10 @@ const GAME_TONES = {
   'simple-tak': 10,
   'wild-tic-tac-toe': 11,
   crusade: 12,
+  chess: 13,
+  go: 14,
+  poker: 15,
+  werewolf: 16,
 }
 
 const GAME_GLYPHS = {
@@ -196,6 +209,10 @@ const GAME_GLYPHS = {
   'simple-tak': '▦',
   'wild-tic-tac-toe': '⊗',
   crusade: '♞',
+  chess: '♚',
+  go: '●',
+  poker: '♠',
+  werewolf: '☾',
 }
 
 export function gameMeta(gameId, fallbackLabel = '') {

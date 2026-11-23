@@ -14,8 +14,9 @@ from sse_starlette.sse import EventSourceResponse
 
 from ..archive import list_matches as archive_matches
 from ..archive import overview as archive_overview
-from ..auth import AuthError, authenticate, issue_ticket, redeem_ticket, usage
+from ..auth import issue_ticket, redeem_ticket, usage
 from ..broadcast import global_broadcaster, presence_scope
+from ..db import open_db
 from ..engine import registry as game_registry
 from ..eventlog import EventLog, has_match, read_match, replay
 from ..fairness import public_payload, resolve_seed
@@ -51,6 +52,8 @@ from .common import (
     quota,
     request_lang,
     sse_frame,
+    ticket_principal,
+    validate_players,
     visible,
 )
 
@@ -91,13 +94,11 @@ class CreateMatch(BaseModel):
 def _season_game(db_path: Path, season_id: str) -> str:
     import sqlite3
 
-    conn = sqlite3.connect(db_path)
-    try:
-        row = conn.execute("SELECT game FROM seasons WHERE season_id = ?", (season_id,)).fetchone()
-    except sqlite3.OperationalError:
-        row = None
-    finally:
-        conn.close()
+    with open_db(db_path) as conn:
+        try:
+            row = conn.execute("SELECT game FROM seasons WHERE season_id = ?", (season_id,)).fetchone()
+        except sqlite3.OperationalError:
+            row = None
     if row is None:
         raise HTTPException(status_code=404, detail="赛季不存在，先创建赛季")
     return row[0] or "twenty-questions"
@@ -105,20 +106,7 @@ def _season_game(db_path: Path, season_id: str) -> str:
 
 def _validate_players(body: CreateMatch) -> list[str]:
     """校验赛制、人数与 id 唯一性，返回选手 id 列表。"""
-    if body.game not in game_registry.available():
-        raise HTTPException(
-            status_code=400,
-            detail=f"暂不支持的赛制：{body.game}（可用：{', '.join(game_registry.available())}）",
-        )
-    players = [p.id for p in body.players]
-    if len(set(players)) != len(players):
-        raise HTTPException(status_code=400, detail="选手 id 必须唯一")
-    low, high = game_registry.player_range(body.game)
-    if not (low <= len(players) <= high):
-        raise HTTPException(
-            status_code=400,
-            detail=f"{body.game} 需要 {low}–{high} 名选手，收到 {len(players)}",
-        )
+    players = validate_players(body.game, [p.id for p in body.players])
     _validate_roster(body, len(players))
     return players
 
@@ -386,6 +374,104 @@ async def import_match(request: Request) -> dict[str, Any]:
     return result
 
 
+@router.post("/matches/import-episode")
+async def import_external_episode(
+    request: Request,
+    fmt: str = Query(default="auto", alias="format", description="auto|kaggle|textarena|episode"),
+) -> dict[str, Any]:
+    """把外部 arena 的对局导入成只读回放场次。
+
+    接受三种输入：通用 melee.episode/1、Kaggle Game Arena episode、
+    TextArena turns 快照。导入不重跑引擎；外部事实直接投影成事件流，
+    随后直播/回放/战报/高光全部复用现有链路。
+
+    也兼容 ``{"format": "...", "episode": {...}}`` 的包装体，方便客户端
+    把格式和内容一起提交，不必拼 query。
+    """
+    db_path = db_path_of(request)
+    principal, _remaining = guard(request, "write_match")
+    # 先看体量再看内容：8MB 是单场 episode 的上限，超了直接 413，
+    # 不让一个几千万字符的 JSON 先进内存再被解析。
+    from ..episode import MAX_EPISODE_BYTES, import_episode
+
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_EPISODE_BYTES + 16_384:
+        raise HTTPException(status_code=413, detail=f"episode body exceeds {MAX_EPISODE_BYTES} bytes")
+    body = await request.json()
+    metadata: dict[str, Any] = {}
+    if isinstance(body, dict) and isinstance(body.get("episode"), dict):
+        fmt = str(body.get("format") or fmt)
+        raw_meta = body.get("metadata")
+        if isinstance(raw_meta, dict):
+            metadata = raw_meta
+        body = body["episode"]
+    elif isinstance(body, dict) and isinstance(body.get("metadata"), dict):
+        metadata = body["metadata"]
+
+    from ..episode import parse_episode
+    from ..portable import find_imported
+
+    try:
+        episode = parse_episode(body, fmt)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    # 重导入同一 episode 不扣 matches 配额：幂等返回已有场次，
+    # 否则批量重跑会把配额耗光，却一场新比赛都没建。
+    if not (episode.episode_id and find_imported(db_path, episode.source, episode.episode_id)):
+        quota(db_path, principal, "matches")
+    try:
+        return import_episode(db_path, body, fmt=fmt, metadata=metadata, episode=episode)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+
+@router.post("/matches/import-episode/live")
+async def import_live_episode(
+    request: Request,
+    fmt: str = Query(default="auto", alias="format", description="auto|kaggle|textarena|episode"),
+) -> dict[str, Any]:
+    """推进一场实时外部对局。
+
+    同一个稳定 ``episodeId`` 的第一帧建场，后续帧按增量追加；外部 arena
+    只要在自己的事件回调里把"到目前为止的 steps"发过来，就能在 melee
+    里看到正在发生的直播，而不是等赛后文件导入。
+    """
+    db_path = db_path_of(request)
+    principal, _remaining = guard(request, "write_match")
+    from ..episode import MAX_EPISODE_BYTES, parse_episode
+    from ..live_episode import find_live_match, ingest_live_episode
+
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_EPISODE_BYTES + 16_384:
+        raise HTTPException(status_code=413, detail=f"episode body exceeds {MAX_EPISODE_BYTES} bytes")
+    body = await request.json()
+    metadata: dict[str, Any] = {}
+    if isinstance(body, dict) and isinstance(body.get("episode"), dict):
+        fmt = str(body.get("format") or fmt)
+        if isinstance(body.get("metadata"), dict):
+            metadata = body["metadata"]
+        finished = bool(body.get("finished"))
+        body = body["episode"]
+    elif isinstance(body, dict):
+        finished = bool(body.get("finished"))
+    else:
+        finished = False
+    try:
+        episode = parse_episode(body, fmt)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    if not episode.episode_id:
+        raise HTTPException(status_code=422, detail="live import requires episodeId (stable external episode key)")
+    if find_live_match(db_path, episode.source, episode.episode_id) is None:
+        quota(db_path, principal, "matches")
+    try:
+        return ingest_live_episode(
+            db_path, body, fmt=fmt, finished=finished, metadata=metadata, episode=episode
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
 @router.get("/matches/{match_id}/state")
 async def match_state(match_id: str, request: Request) -> dict[str, Any]:
     """跨副本可读的状态快照：一律从日志重放，不读进程内缓存。
@@ -394,12 +480,16 @@ async def match_state(match_id: str, request: Request) -> dict[str, Any]:
     这时要返回 200 + pending，而不是 404——同一时刻 /events 已经是 200 空列表，
     两个端点对"已登记但未开写"的语义必须一致，否则观战页会闪一下"比赛不存在"。
     """
+    from ..episode import is_imported, summarize_imported
     from ..rehydrate import RehydrateError, rehydrate, summarize
 
     db_path = db_path_of(request)
     guard(request, "read")
     if not has_match(db_path, match_id):
         raise HTTPException(status_code=404, detail="比赛不存在")
+    events = read_match(db_path, match_id)
+    if is_imported(events):
+        return summarize_imported(match_id, events)
     try:
         return {**summarize(rehydrate(db_path, match_id)), "source": "log"}
     except RehydrateError:
@@ -433,6 +523,7 @@ async def archive(
     offset: int = Query(default=0, ge=0, le=100_000),
     game: str | None = Query(default=None, max_length=40),
     status: str | None = Query(default=None, pattern="^(live|ended)$"),
+    source: str | None = Query(default=None, pattern="^(all|melee|import|kaggle-game-arena|textarena|external)$"),
     q: str | None = Query(default=None, max_length=64),
 ) -> dict[str, Any]:
     """赛事库：带赛制/选手/胜负/事件数的比赛列表。
@@ -441,16 +532,23 @@ async def archive(
     """
     guard(request, "read")
     return archive_matches(
-        db_path_of(request), limit=limit, offset=offset, game=game, status=status, q=q,
+        db_path_of(request), limit=limit, offset=offset, game=game, status=status, source=source, q=q,
         lang=request_lang(request),
     )
 
 
 @router.get("/stats")
-async def stats(request: Request) -> dict[str, Any]:
-    """全站统计：比赛数、事件数、赛制分布、胜者榜、近两周活动。"""
+async def stats(
+    request: Request,
+    source: str = Query(default="all", pattern="^(all|melee|import)$"),
+) -> dict[str, Any]:
+    """全站统计：比赛数、事件数、赛制分布、胜者榜、近两周活动。
+
+    `source=melee` 只看站内赛事，`import` 只看外部导入；默认 all 给总量，
+    但胜者榜仍只统计站内，避免导入数据改写排行榜。
+    """
     guard(request, "read")
-    data = archive_overview(db_path_of(request), lang=request_lang(request))
+    data = archive_overview(db_path_of(request), lang=request_lang(request), source=source)
     try:
         data["viewers"] = global_broadcaster().total_viewers()
         data["viewerScope"] = presence_scope()
@@ -498,18 +596,13 @@ async def stream(
 ) -> EventSourceResponse:
     db_path = db_path_of(request)
     config = auth_config()
-    if config.mode != "off":
-        principal = redeem_ticket(ticket) if ticket else None
-        if principal is None:
-            try:
-                authenticate(config, request.headers.get("authorization"))
-            except AuthError as exc:
-                raise HTTPException(status_code=exc.status, detail=str(exc)) from None
+    ticket_principal(request, config, ticket, redeem_ticket)
     if not rate_check(request, "stream")[0]:
         raise HTTPException(status_code=429, detail="请求过于频繁")
     # 允许只有日志的比赛（队列跑的、别的副本跑的）也能观战；
     # events_of 负责区分"不存在"（404）与"已登记但还没开写"（空列表）。
     events_of(db_path, match_id)
+    lang = request_lang(request)
 
     try:
         raw_cursor = last_event_id if last_event_id is not None else lastEventId
@@ -525,7 +618,7 @@ async def stream(
             backlog = events_of(db_path, match_id, after=cursor)
             for event in backlog:
                 seen.add(event["seq"])
-                yield sse_frame(event)
+                yield sse_frame(event, lang)
             if backlog:
                 # 游标必须跟着 backlog 前移：否则每次 15 秒回查都会重读同一批。
                 cursor = backlog[-1]["seq"]
@@ -542,7 +635,7 @@ async def stream(
                             seen.add(item["seq"])
                             if not visible(item, None):
                                 continue
-                            yield sse_frame(item)
+                            yield sse_frame(item, lang)
                         cursor = recent[-1]["seq"]
                         if recent[-1]["type"] == "match.ended":
                             return
@@ -557,7 +650,7 @@ async def stream(
                 # 日志里仍保留全部事件，重放与战报按身份过滤。
                 if not visible(event, None):
                     continue
-                yield sse_frame(event)
+                yield sse_frame(event, lang)
                 if event["type"] == "match.ended":
                     return
         finally:

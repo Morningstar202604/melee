@@ -5,22 +5,8 @@ import sqlite3
 from services.match import api as api_module
 from services.match.eventlog import read_match
 
-from .support import create, make_client, wait_finished
+from .support import create, make_client, wait_finished, wait_job
 
-
-def wait_job(job_id: str, timeout: float = 30.0) -> None:
-    """等任务被 worker 标记完成。"""
-    import time
-
-    from services.match import workqueue
-
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        record = workqueue.get(api_module.DB_PATH, job_id)
-        if record is not None and record.status == "done":
-            return
-        time.sleep(0.05)
-    raise TimeoutError(f"{job_id} 未在 {timeout}s 内完成")
 
 def test_create_season_builds_round_robin(client):
     response = client.post(

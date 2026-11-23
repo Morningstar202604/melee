@@ -24,9 +24,9 @@ export function buildTimeline(events) {
   return timelineFromMs(list, list.map((event) => toMillis(event && event.at)))
 }
 
-function timelineFromMs(list, rawMs) {
-  if (!list.length) {
-    return { points: [], durationMs: 0, startMs: 0, endMs: 0, degraded: false, _rawMs: [] }
+function makeTimeline(rawMs, seqs) {
+  if (!rawMs.length) {
+    return { points: [], durationMs: 0, startMs: 0, endMs: 0, degraded: false, _rawMs: [], _seqs: [], _count: 0 }
   }
   const usable = rawMs.filter((value) => value !== null)
   const startMs = usable.length ? Math.min(...usable) : 0
@@ -37,10 +37,10 @@ function timelineFromMs(list, rawMs) {
     durationMs: Math.max(0, endMs - startMs),
     startMs,
     endMs,
-    degraded: usable.length !== list.length,
+    degraded: usable.length !== rawMs.length,
     _rawMs: rawMs,
-    _seqs: list.map((event) => event.seq),
-    _count: list.length,
+    _seqs: seqs,
+    _count: rawMs.length,
   }
   Object.defineProperty(timeline, 'points', {
     enumerable: true,
@@ -49,6 +49,10 @@ function timelineFromMs(list, rawMs) {
     },
   })
   return timeline
+}
+
+function timelineFromMs(list, rawMs) {
+  return makeTimeline(rawMs, list.map((event) => event.seq))
 }
 
 /** 把懒时间轴解析成 points。纯展示路径，只该在渲染/拖动时调用一次。 */
@@ -93,26 +97,7 @@ export function appendToTimeline(timeline, events, nextEvents) {
   const appended = list.slice(existing)
   const rawMs = timeline._rawMs.concat(appended.map((event) => toMillis(event && event.at)))
   const seqs = (timeline._seqs || []).concat(appended.map((event) => event.seq))
-  const usable = rawMs.filter((value) => value !== null)
-  const startMs = usable.length ? Math.min(...usable) : 0
-  const endMs = usable.length ? Math.max(...usable) : 0
-  const grown = {
-    _points: null,
-    durationMs: Math.max(0, endMs - startMs),
-    startMs,
-    endMs,
-    degraded: usable.length !== rawMs.length,
-    _rawMs: rawMs,
-    _seqs: seqs,
-    _count: rawMs.length,
-  }
-  Object.defineProperty(grown, 'points', {
-    enumerable: true,
-    get() {
-      return materializePoints(grown)
-    },
-  })
-  return grown
+  return makeTimeline(rawMs, seqs)
 }
 
 /** 拖动位置（0..1）→ 最近的游标（显示到第 N 条事件，1-based 语义与旧版一致）。 */

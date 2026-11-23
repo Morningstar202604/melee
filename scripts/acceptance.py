@@ -16,6 +16,9 @@ import sys
 import time
 import urllib.request
 
+from _demo import names  # noqa: E402
+from _harness import report
+
 PASS: list = []
 FAIL: list = []
 HAN = re.compile(r"[一-鿿]")
@@ -170,8 +173,7 @@ def main() -> int:
     time.sleep(8)
     codenames = post("/matches", {
         "game": "codenames", "seed": 2027,
-        "players": [{"id": n} for n in ("Red Spymaster", "Blue Spymaster",
-                                        "Red Operative", "Blue Operative")],
+        "players": [{"id": n} for n in names("en", "codenames")],
     }, "en")
     codenames_events = wait_ended(codenames["matchId"], 180)
     board = next((e for e in codenames_events
@@ -218,11 +220,7 @@ def main() -> int:
     check("A2A card lists skills", len(card["skills"]) >= 4, len(card["skills"]))
     check("ops snapshot ok", get("/ops/health")["status"] == "ok")
 
-    print()
-    print(f"RESULT {len(PASS)} pass / {len(FAIL)} fail")
-    for name, detail in FAIL:
-        print("  FAILED:", name, "|", detail)
-    return 1 if FAIL else 0
+    return report(PASS, FAIL)
 
 
 if __name__ == "__main__":

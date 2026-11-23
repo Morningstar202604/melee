@@ -1,28 +1,49 @@
-# melee
+<div align="center">
+  <img src="docs/assets/social-card.png" alt="melee — Every move, worth rewatching" width="100%"/>
+  <h1>melee</h1>
+  <p><b>Run AI matches. Broadcast them like a sport.</b><br/>
+  One append-only event stream drives the live board, replay, camera cuts, recaps and highlights.</p>
 
-**English** · [简体中文](README.zh-CN.md)
+  [English](README.md) · [简体中文](README.zh-CN.md)
 
-A self-hosted broadcast studio for AI matches: run a match, then watch it live, replay it, direct it, and read the recap — all from one event stream.
+  <br/>
+  <a href="https://github.com/badhope/melee/actions/workflows/ci.yml"><img src="https://github.com/badhope/melee/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-0f766e" alt="License"/></a>
+  <a href="https://github.com/badhope/melee/releases/latest"><img src="https://img.shields.io/github/v/release/badhope/melee" alt="Release"/></a>
+  <a href="docs/API.md"><img src="https://img.shields.io/badge/API-HTTP%20%2B%20SSE-1d4ed8" alt="API"/></a>
+</div>
 
-![Home](docs/screenshots/en/01-home.png)
+![The studio, running a real match](docs/video/preview.gif)
 
-## Install
+## What it is
 
-**Windows** — grab [the latest release](https://github.com/badhope/melee/releases/latest):
+melee is a self-hosted arena for AI competition. You bring the players — scripted bots, your own models, or any HTTP agent — and melee referees the match, records every move, and turns that log into something worth watching: a live board, instant replay, directed camera cuts, a fact-checked recap, and highlight clips. It can also import a match played elsewhere — Kaggle Game Arena, TextArena — and broadcast it through the same pipeline.
 
-| File | For |
-|---|---|
-| `melee-setup-<version>-win64.exe` | per-user installer: Start-menu shortcuts, clean uninstaller |
-| `melee-portable-win64.zip` | portable: unzip anywhere, double-click `start.bat` |
+The platform never decides the game. The engine does, and the event log is the only source of truth — so the picture on screen, the story in the recap and the exported match all agree.
 
-Both start the service on [http://127.0.0.1:8099](http://127.0.0.1:8099). No admin rights, no registry keys beyond the uninstaller entry, and your data never leaves the machine — the studio talks only to the model endpoints you configure.
+## Try it
+
+**Windows** — [latest release](https://github.com/badhope/melee/releases/latest): an installer with Start-menu shortcuts, or a portable zip you can unzip anywhere.
 
 **From source**
 
 ```bash
 python -m pip install -r requirements.txt
 python scripts/serve.py
+# open http://127.0.0.1:8099
 ```
+
+No account, no cloud, no telemetry. The service talks only to the model endpoints you configure.
+
+## What you get
+
+- **A match worth watching** — live and replay share one reducer, so scrubbing back never changes the story.
+- **Director as a participant** — automatic and manual cuts are events too; replay keeps the exact camera sequence.
+- **Recaps that don't invent numbers** — every figure is counted from the log, and the server reports its own mismatches.
+- **Bring your own intelligence** — built-in bots for quick demos, OpenAI-compatible / Anthropic / Gemini endpoints by key, or any framework over HTTP.
+- **Bilingual by contract** — narration, recaps and cue labels re-render from language-neutral events; no second recording required.
+- **Portable matches** — a match exports as one self-contained file and replays on another machine.
+- **Bring your own episode** — import finished Kaggle Game Arena or TextArena trajectories, or push live snapshots while an external arena is still playing. Chess or Go gets the same watch page, director cuts, recap and provenance/board semantics even when melee has no native rules for it.
 
 ## The interface
 
@@ -34,9 +55,14 @@ python scripts/serve.py
 | Director | Admin |
 |---|---|
 | ![Director](docs/screenshots/en/10-director.png) | ![Admin](docs/screenshots/en/13-admin.png) |
-| Auto & manual cuts — a cut is an event too | Health, queue, quota, season scheduler |
+| Automatic and manual cuts | Health, queue, quota, season scheduler |
 
-[Full gallery](docs/screenshots/README.md) · [Walkthrough video](docs/video/walkthrough.mp4) · Light theme by default; dark is one click away.
+| Imported live | Imported chess |
+|---|---|
+| ![Imported live](docs/screenshots/en/14-imported-chess-live.png) | ![Imported chess](docs/screenshots/en/15-imported-chess.png) |
+| An external arena snapshot becomes a live broadcast | Provenance, board coordinates and the last move |
+
+[Full gallery](docs/screenshots/README.md) · [Walkthrough video](docs/video/walkthrough.mp4) · Light theme by default, dark is one click away.
 
 ## Commands
 
@@ -44,23 +70,20 @@ python scripts/serve.py
 melee serve                                    # run the studio
 melee match create --game othello --player A --player B --open
 melee match export <id> --out m.json           # single-file export, replays elsewhere
-melee mcp                                      # MCP server (Claude / Cursor)
+melee match import-episode game.json           # import Kaggle/TextArena episode as replay
+melee match import-batch ./chess-text-gameplay --format kaggle --limit 100 --sample hash
+melee match import-live snapshot.json --finished   # push one live external frame
+melee mcp                                      # MCP server for Claude / Cursor
 ```
 
-API and agent integration: [docs/API.md](docs/API.md) · [docs/AGENT-HARNESS.md](docs/AGENT-HARNESS.md)
-
-## Good to know
-
-- 12 game types, each with commentary, camera cuts, a recap and highlights.
-- By default the seed is generated server-side and never published: a match can be watched but not reverse-engineered from its seed. Pass your own `seed` and the match becomes reproducible.
-- Every colour lives in one token file (`apps/web/src/theme.css`); the light studio theme is default, dark is a toggle, and a CI gate enforces WCAG-AA contrast in both.
+API, agent integration and deployment: [API](docs/API.md) · [Agent harness](docs/AGENT-HARNESS.md) · [Episode import](docs/EPISODES.md) · [Deploy](docs/DEPLOY.md)
 
 ## Development
 
 ```bash
-bash scripts/verify_all.sh    # 13 gates: tests, coverage, lint, security, browser audit, contrast, acceptance
+bash scripts/verify_all.sh    # tests, coverage, lint, security, browser audit, contrast, acceptance
 ```
 
-Docs: [Architecture](docs/ARCHITECTURE.md) · [Deploy](docs/DEPLOY.md) · [Fairness](docs/FAIRNESS.md) · [Research](docs/RESEARCH-2026-11-07.md) · [Roadmap](docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
+Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Quality gates: [docs/QUALITY.md](docs/QUALITY.md) · Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md) · Changelog: [CHANGELOG.md](CHANGELOG.md)
 
-MIT License.
+MIT licensed. Contributions and issues are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).

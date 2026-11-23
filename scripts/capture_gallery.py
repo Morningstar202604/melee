@@ -16,11 +16,7 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -28,69 +24,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+
+from _demo import directors, names  # noqa: E402
+from _harness import api_get as get  # noqa: E402
+from _harness import api_post as post  # noqa: E402
+from _harness import launch_browser, wait_finished  # noqa: E402
+
 OUT = ROOT / "docs" / "screenshots"
 
 # 截图里的选手名跟随语言：英文版出现中文名会显得像没做完的本地化。
 PLAYERS = {
-    "en": {
-        "codenames": ["Red Spymaster", "Blue Spymaster", "Red Operative", "Blue Operative"],
-        "duo": ["Grey Falcon", "Inkstone"],
-        "director": ["Observer", "Auditor"],
-    },
-    "zh": {
-        "codenames": ["红队队长", "蓝队队长", "红队队员", "蓝队队员"],
-        "duo": ["灰隼", "砚台"],
-        "director": ["观测者", "审核员"],
-    },
+    lang: {
+        "codenames": names(lang, "codenames"),
+        "duo": names(lang, "twenty-questions"),
+        "director": directors(lang),
+    }
+    for lang in ("en", "zh")
 }
 
-
-def launch_browser(playwright):
-    """Use bundled Chromium, falling back to the installed Edge on Windows."""
-    try:
-        return playwright.chromium.launch()
-    except Exception:
-        if sys.platform != "win32":
-            raise
-        return playwright.chromium.launch(channel="msedge")
-
-
-def get(api: str, path: str, lang: str = "") -> dict:
-    headers = {"Accept-Language": lang} if lang else {}
-    request = urllib.request.Request(f"{api}{path}", headers=headers)
-    with urllib.request.urlopen(request, timeout=15) as response:
-        return json.load(response)
-
-
-def post(api: str, path: str, body: dict, attempts: int = 12) -> dict:
-    """建场限流 10/minute：连建多场必撞 429，按 Retry-After 退避重试。"""
-    for attempt in range(attempts):
-        request = urllib.request.Request(
-            f"{api}{path}",
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                return json.load(response)
-        except urllib.error.HTTPError as exc:
-            if exc.code != 429 or attempt == attempts - 1:
-                raise
-            wait = min(int(exc.headers.get("Retry-After") or 60), 65)
-            print(f"    (rate limited, waiting {wait}s)")
-            time.sleep(wait)
-    raise RuntimeError("unreachable")
-
-
-def wait_match(api: str, match_id: str, timeout: float = 120.0) -> None:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        events = get(api, f"/matches/{match_id}/events")["events"]
-        if any(event["type"] == "match.ended" for event in events):
-            return
-        time.sleep(0.5)
-    raise TimeoutError(match_id)
 
 
 def pick(api: str, limit: int = 100, names: set[str] | None = None) -> dict[str, str]:
@@ -132,9 +83,10 @@ def ensure_month_of_data(api: str, lang: str = "en") -> None:
             api,
             "/matches",
             {"game": game, "seed": 2026, "players": [{"id": p, "delayMs": 80} for p in players]},
+            lang=lang,
         )
         try:
-            wait_match(api, result["matchId"])
+            wait_finished(api, result["matchId"])
         except TimeoutError:
             continue
 
@@ -173,6 +125,7 @@ def capture(lang: str, api: str, season: str, skip_live: bool) -> list[str]:
                     "maxQuestions": 21,
                     "players": [{"id": n, "delayMs": 5200} for n in names["duo"]],
                 },
+                lang=lang,
             )
             live_id = live["matchId"]
 
@@ -256,6 +209,7 @@ def capture(lang: str, api: str, season: str, skip_live: bool) -> list[str]:
                 "maxQuestions": 21,
                 "players": [{"id": n, "delayMs": 9000} for n in names["director"]],
             },
+            lang=lang,
         )
         page.goto(url(f"director.html?match={director_live['matchId']}"), wait_until="networkidle")
         page.wait_for_timeout(3500)

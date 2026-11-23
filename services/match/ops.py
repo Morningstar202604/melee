@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .db import connect
+
 # 阈值不是拍脑袋：默认 worker 4 线程、单场几十秒，积压 20 条意味着
 # 至少 2-3 分钟没人消费；失败率 10% 说明上游模型或渲染器有问题。
 BACKLOG_WARN = 20
@@ -35,9 +37,7 @@ class Checks:
 
 
 def _connect(db_path: str | Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path), timeout=2)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect(db_path, timeout=2, rows=True)
 
 
 def snapshot(db_path: str | Path, *, now: float | None = None) -> dict[str, Any]:
