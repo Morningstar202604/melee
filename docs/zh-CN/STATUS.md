@@ -13,6 +13,8 @@
 - BYOK OpenAI-compatible/Anthropic/Gemini、采样参数、流式思考、选手自记忆、token 预算、`{env:VAR}` 和真实回合墙钟。
 - HTTPAgent 外部接入；平台发送裁剪观察与合法动作，不发送隐藏信息。
 - 外部对局导入：Kaggle/TextArena 赛后回放、实时快照推送、`(source, episodeId)` 幂等、出处/许可证展示，以及导入与站内统计隔离。
+- 标准国际象棋 PGN 导出与观战页下载按钮；`kagglehub` 数据集解析；首页在只有导入对局时仍能画出真实统计，直播预览取真实数据。
+- 紧凑 `/scene` 快照、无外壳 `/embed/{id}` 页，以及给 OBS 的透明 `/overlay.html` 浏览器源；跨站嵌入由 `MELEE_EMBED_ORIGINS` 白名单控制。
 - SSRF 门禁、Fernet 队列封存、Bearer 鉴权、配额、限流、安全响应头和审计脚本。
 
 ## 外部依赖边界

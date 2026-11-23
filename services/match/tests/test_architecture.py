@@ -20,6 +20,8 @@ EXPECTED_ROUTES = {
     ("POST", "/matches/import-episode"),
     ("POST", "/matches/import-episode/live"),
     ("POST", "/auth/ticket"),
+    ("GET", "/embed/{match_id}"),
+    ("GET", "/matches/{match_id}/scene"),
     ("GET", "/director/matches"),
     ("GET", "/director/{match_id}"),
     ("POST", "/director/{match_id}/cue"),

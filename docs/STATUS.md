@@ -11,8 +11,10 @@ What the project can do today, what depends on the environment, and what it deli
 - Automatic directing, manual cuts, rule-based or optional LLM narration, recap fact-checking, highlight lists, share cards and OG pages.
 - Archive, statistics, live viewer count, round-robin seasons and time-based starts.
 - External episode import: finished Kaggle/TextArena replay, live snapshot push, idempotent `(source, episodeId)` keys, provenance/license display and import-vs-site statistics.
+- Standard chess PGN export and a watch-page download button; `kagglehub` dataset resolution; a home dashboard that renders imported-only libraries and a live-data hero preview.
 - BYOK OpenAI-compatible / Anthropic / Gemini endpoints, sampling parameters, streaming thoughts, per-player memory, token budgets, `{env:VAR}` references and real turn wall clocks.
 - HTTPAgent access: the platform sends trimmed observations and legal moves, never hidden information.
+- Compact `/scene` snapshot, chrome-free `/embed/{id}` page and a transparent `/overlay.html` browser source for OBS; cross-site framing is allow-listed by `MELEE_EMBED_ORIGINS`.
 - SSRF guard, Fernet-sealed queue payloads, Bearer auth, quotas, rate limits, security headers and audit scripts.
 
 ## Depends on the environment

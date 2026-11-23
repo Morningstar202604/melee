@@ -69,8 +69,9 @@ seed 旋转，同一组里既有对手的观察，也有行动方的 `action`。
 
 只有 `info.actionHistory`、没有可读 `steps` 时也能导入。导入器会用前后两张
 `stateHistory` FEN 逐个尝试合法着法，把 open_spiel 的数值 ID 还原成 SAN
-（例如 `2426` → `e4`），并记下起止格给棋盘高亮。`python-chess` 是可选依赖：
-没装时保留数值 ID，不会让整场导入失败；本机不需要 `pyspiel`。
+（例如 `2426` → `e4`），并记下起止格给棋盘高亮。开发环境里用 `python-chess`
+辅助反推 SAN 与合法性；它不进运行时镜像（GPL），线上没有它时仍能从 FEN 画棋盘。
+本机不需要 `pyspiel`。
 
 `observationString` 里的 FEN 会转成 8×8 棋盘；国际象棋的 `stateHistory`
 本身就是 FEN，导入后每一手都能看到局面变化。
@@ -142,7 +143,19 @@ python3 -m services.match.cli match import-episode \
 
 ## 批量导入
 
-真实数据集动辄几千场，单文件入口不适合做验收。批量命令接受目录或文件：
+真实数据集动辄几千场，单文件入口不适合做验收。批量命令接受目录或文件；
+不想先手工下载时，用 `--dataset owner/slug` 让 `kagglehub` 解析缓存：
+
+```bash
+python3 -m services.match.cli match import-batch \
+  --dataset kaggle/chess-text-gameplay \
+  --format kaggle --limit 100 --sample hash \
+  --license 'CC BY 4.0' \
+  --via-api --api http://127.0.0.1:8899 --token "$MELEE_TOKEN"
+```
+
+`--dataset` 自动补 `sourceUrl=https://www.kaggle.com/datasets/<owner>/<slug>` 和
+`sourceLabel=Kaggle · <owner>/<slug>`；许可证仍从 `--license` 显式传入，不替数据集猜。
 
 ```bash
 python3 -m services.match.cli match import-batch \
@@ -158,6 +171,8 @@ python3 -m services.match.cli match import-batch \
   --out kaggle-batch-report.json
 ```
 
+- `--dataset owner/slug` 与本地路径二选一；它调用 `kagglehub.dataset_download`，
+  已缓存时不会重复下载，并把数据集 URL/标签写进出处；
 - `--limit` 限制场次；`--sample hash` 是默认值，按
   `sha256(seed:path)` 打散后取样，避免总取文件名最前面的同一批模型；
   `--sample random` / `--sample first` 分别对应纯随机与旧行为；
@@ -173,6 +188,20 @@ python3 -m services.match.cli match import-batch \
 
 单场 API 也支持 `Content-Length` 预检（>8MB 直接 413）、`metadata` 包装体，
 以及重导入幂等：同一 `(source, episodeId)` 不扣第二次配额。
+
+## 导出成标准棋谱
+
+国际象棋场次可以直接导出 PGN，交给 Lichess、Stockfish、ChessBase 等工具：
+
+```bash
+python3 -m services.match.cli match export <match-id> --format pgn --out game.pgn
+```
+
+`GET /matches/{id}/export?format=pgn` 返回 `application/x-chess-pgn`；默认 JSON 导出不变。
+PGN 头部记录 `Event`、`Site`、`GameId`、`License` 和 `Annotator`，每一步的内心戏写成
+PGN comment；`Result` 来自 `match.ended`，直播棋局写 `*`。日期保留 `????.??.??`，
+因为 Kaggle 数据没有可信的绝对比赛日期。导出只接受 SAN；测试套件再用 `python-chess`
+把 PGN 读回来，确认着法数与终局局面。
 
 ## 实时外部对局
 

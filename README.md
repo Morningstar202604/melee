@@ -42,6 +42,7 @@ No account, no cloud, no telemetry. The service talks only to the model endpoint
 - **Recaps that don't invent numbers** — every figure is counted from the log, and the server reports its own mismatches.
 - **Bring your own intelligence** — built-in bots for quick demos, OpenAI-compatible / Anthropic / Gemini endpoints by key, or any framework over HTTP.
 - **Bilingual by contract** — narration, recaps and cue labels re-render from language-neutral events; no second recording required.
+- **Embeddable broadcast surfaces** — `/embed/{id}` gives a chrome-free iframe page, `/matches/{id}/scene` gives a compact OBS/lower-third snapshot, and `/overlay.html` renders a transparent scoreboard with board, last move and material balance.
 - **Portable matches** — a match exports as one self-contained file and replays on another machine.
 - **Bring your own episode** — import finished Kaggle Game Arena or TextArena trajectories, or push live snapshots while an external arena is still playing. Chess or Go gets the same watch page, director cuts, recap and provenance/board semantics even when melee has no native rules for it.
 
@@ -62,6 +63,11 @@ No account, no cloud, no telemetry. The service talks only to the model endpoint
 | ![Imported live](docs/screenshots/en/14-imported-chess-live.png) | ![Imported chess](docs/screenshots/en/15-imported-chess.png) |
 | An external arena snapshot becomes a live broadcast | Provenance, board coordinates and the last move |
 
+| OBS overlay | Embed |
+|---|---|
+| ![OBS overlay](docs/screenshots/en/17-obs-overlay.png) | ![Embed](docs/screenshots/en/18-embed.png) |
+| Transparent scoreboard for OBS: board, last move, material | Chrome-free iframe page for a partner site |
+
 [Full gallery](docs/screenshots/README.md) · [Walkthrough video](docs/video/walkthrough.mp4) · Light theme by default, dark is one click away.
 
 ## Commands
@@ -70,8 +76,9 @@ No account, no cloud, no telemetry. The service talks only to the model endpoint
 melee serve                                    # run the studio
 melee match create --game othello --player A --player B --open
 melee match export <id> --out m.json           # single-file export, replays elsewhere
+melee match export <id> --format pgn --out game.pgn  # standard chess PGN for Lichess/Stockfish
 melee match import-episode game.json           # import Kaggle/TextArena episode as replay
-melee match import-batch ./chess-text-gameplay --format kaggle --limit 100 --sample hash
+melee match import-batch --dataset kaggle/chess-text-gameplay --format kaggle --limit 100 --sample hash
 melee match import-live snapshot.json --finished   # push one live external frame
 melee mcp                                      # MCP server for Claude / Cursor
 ```

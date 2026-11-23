@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
@@ -337,11 +337,13 @@ async def export_match(
     match_id: str,
     request: Request,
     reveal: bool = Query(default=False, description="赛后揭秘：比赛结束后才可读私有事件"),
-) -> dict[str, Any]:
-    """单文件可移植导出（Lichess PGN 的类比物）：事件流自包含快照。
+    format: str = Query(default="json", pattern="^(json|pgn)$", description="json 是可移植事件流；pgn 用标准棋谱生态格式"),
+) -> Any:
+    """导出比赛：默认是自包含 JSON，`format=pgn` 给国际象棋标准 PGN。
 
     可见性与 /events 同一套契约：默认只导出 public 事件；
     `reveal=1` 揭秘私有事件（必须赛后），防止导出绕过 visibility 裁剪。
+    PGN 只是同一批公开事件的标准序列化，不另开一条事实通道。
     """
     guard(request, "read")
     from ..portable import export_match
@@ -352,6 +354,18 @@ async def export_match(
         raise HTTPException(status_code=403, detail=str(exc)) from None
     if document is None:
         raise HTTPException(status_code=404, detail="比赛不存在")
+    if format == "pgn":
+        from ..chess_export import pgn_from_export
+
+        try:
+            text = pgn_from_export(document)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        return PlainTextResponse(
+            text,
+            media_type="application/x-chess-pgn",
+            headers={"Content-Disposition": f'inline; filename="{match_id}.pgn"'},
+        )
     return document
 
 
@@ -470,6 +484,89 @@ async def import_live_episode(
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.get("/matches/{match_id}/scene")
+async def match_scene(match_id: str, request: Request) -> dict[str, Any]:
+    """给 OBS、嵌入页和第三方控制台用的紧凑场景快照。
+
+    它不复制 reducer 的全部字段，只给"屏幕上必须出现"的那几项：
+    棋盘、最后一手、选手、解说、状态。复杂页面仍走 /view 与 /events。
+    """
+    guard(request, "read")
+    events = events_of(db_path_of(request), match_id)
+    return _scene_from_events(match_id, events, request_lang(request))
+
+
+def _material(board: Any) -> dict[str, int] | None:
+    """棋盘子力差：给 OBS/第三方记分牌用的最小信息，不跑引擎。"""
+    if not isinstance(board, list):
+        return None
+    values = {"p": 1, "n": 3, "b": 3, "r": 5, "q": 9, "k": 0}
+    white = black = 0
+    for row in board:
+        if not isinstance(row, list):
+            continue
+        for cell in row:
+            piece = str(cell or "")
+            value = values.get(piece.lower(), 0)
+            if piece and piece == piece.upper():
+                white += value
+            elif piece:
+                black += value
+    return {"white": white, "black": black, "diff": white - black}
+
+
+def _scene_from_events(match_id: str, events: list[dict[str, Any]], lang: str = "") -> dict[str, Any]:
+    created = next((event for event in events if event.get("type") == "match.created"), None)
+    payload = (created or {}).get("payload") or {}
+    public_state: dict[str, Any] = {}
+    ended: dict[str, Any] = {}
+    last_action: dict[str, Any] | None = None
+    last_narration: dict[str, Any] | None = None
+    for event in events:
+        kind = event.get("type")
+        item = event.get("payload") or {}
+        if kind == "state.changed":
+            public_state = item.get("publicState") or {}
+        elif kind == "match.ended":
+            ended = item
+        elif kind == "action.applied":
+            action = item.get("action") or {}
+            last_action = {
+                "player": event.get("player"),
+                "kind": action.get("kind"),
+                "value": action.get("value"),
+                "seq": event.get("seq"),
+            }
+        elif kind == "narration.line":
+            last_narration = {"text": item.get("text"), "tone": item.get("tone"), "seq": event.get("seq")}
+            if lang in MESSAGE_LANGS:
+                last_narration["text"] = localize_payload(item, lang).get("text")
+    game_state = public_state.get("gameState") if isinstance(public_state.get("gameState"), dict) else {}
+    status = "ended" if ended else ("live" if created else "waiting")
+    config = payload.get("config") or {}
+    return {
+        "matchId": match_id,
+        "game": payload.get("game") or "unknown",
+        "status": status,
+        "finished": bool(ended),
+        "winner": ended.get("winner") or public_state.get("winner"),
+        "players": list(payload.get("players") or []),
+        "turnIndex": public_state.get("turnIndex"),
+        "moveNumber": public_state.get("turnIndex"),
+        "currentPlayer": None if ended else public_state.get("currentPlayer"),
+        "board": game_state.get("board"),
+        "material": _material(game_state.get("board")),
+        "lastMove": game_state.get("lastMove"),
+        "gameState": game_state or None,
+        "lastAction": last_action,
+        "narration": last_narration,
+        "source": "import" if config.get("imported") else "log",
+        "events": len(events),
+        "lastSeq": events[-1]["seq"] if events else -1,
+        "updatedAt": events[-1].get("at") if events else None,
+    }
 
 
 @router.get("/matches/{match_id}/state")

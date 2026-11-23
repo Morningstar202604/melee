@@ -148,12 +148,24 @@ def _apply_security_headers(app: FastAPI) -> None:
         # 前端是零构建的原生 ES module，没有内联脚本；CSP 只放行同源资源与内联样式。
         # connect-src 跟随 CORS 配置：分端口部署时前端要能直连 API。
         connect = " ".join(["'self'", *[origin for origin in origins if origin != "*"]])
+        embed_origins = settings().embed_origin_list
+        embed_page = request.url.path.startswith("/embed/") or request.url.path == "/watch.html"
+        frame_ancestors = "'self'" + (" " + " ".join(embed_origins) if embed_origins else "")
+        frame_value = frame_ancestors if embed_page else "'none'"
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; media-src 'self'; "
-            f"connect-src {connect}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+            f"connect-src {connect}; frame-ancestors {frame_value}; "
+            "base-uri 'self'; form-action 'self'",
         )
+        if embed_page:
+            if embed_origins:
+                # 现代浏览器看 CSP；XFO 对跨域白名单只会误伤，去掉。
+                response.headers["X-Frame-Options"] = ""
+                del response.headers["X-Frame-Options"]
+            else:
+                response.headers["X-Frame-Options"] = "SAMEORIGIN"
         if auth_config().mode != "off":
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response

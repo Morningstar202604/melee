@@ -505,10 +505,12 @@ def build_parser() -> argparse.ArgumentParser:
     events.add_argument("--type", default="", help="comma-separated type filter")
     events.set_defaults(func=_cmd_match_events)
 
-    export = match_sub.add_parser("export", help="export a match to a portable single file")
+    export = match_sub.add_parser("export", help="export a match as portable JSON or chess PGN")
     _global_parser(export)
     export.add_argument("match_id")
+    export.add_argument("--format", default="json", choices=("json", "pgn"), help="json is the portable event stream; pgn is standard chess notation")
     export.add_argument("--out", default="")
+    export.add_argument("--reveal", action="store_true", help="include private events after the match has ended")
     export.set_defaults(func=_cmd_match_export)
 
     imp = match_sub.add_parser("import", help="import a portable file as a replay-only match")
@@ -558,7 +560,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="import a directory/glob of Kaggle/TextArena episodes and write a report",
     )
     _global_parser(batch)
-    batch.add_argument("path", help="file, directory, or path to scan")
+    batch.add_argument("path", nargs="?", default="", help="file, directory, or path to scan")
+    batch.add_argument(
+        "--dataset",
+        default="",
+        metavar="OWNER/SLUG",
+        help="resolve a Kaggle dataset through kagglehub instead of passing a local path",
+    )
     batch.add_argument("--pattern", default="*.json", help="glob under a directory (default: *.json)")
     batch.add_argument(
         "--format",
@@ -643,11 +651,17 @@ def main(argv: list | None = None) -> int:
 
 
 def _cmd_match_export(args) -> int:
+    query = "?format=" + args.format + ("&reveal=1" if args.reveal else "")
     status, body = _request(
-        args.api, "/matches/" + args.match_id + "/export", token=args.token
+        args.api, "/matches/" + args.match_id + "/export" + query, token=args.token
     )
     if status != 200:
         return _fail(status, body)
+    if args.format == "pgn":
+        out = Path(args.out) if args.out else Path(args.match_id + ".pgn")
+        out.write_bytes(body if isinstance(body, bytes) else str(body).encode("utf-8"))
+        print("exported:", out, "format: pgn")
+        return 0
     out = Path(args.out) if args.out else Path(args.match_id + ".melee.json")
     out.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
     print("exported:", out, "events:", len(body.get("events", [])))
@@ -739,8 +753,35 @@ def _cmd_match_import_live(args) -> int:
 def _cmd_match_import_batch(args) -> int:
     from .batch import discover_episode_files, import_batch, write_report
 
+    if args.dataset and args.path:
+        print("error: pass a local path or --dataset, not both", file=sys.stderr)
+        return 1
+    source_path = args.path
+    if args.dataset:
+        try:
+            import kagglehub
+        except ImportError:
+            print(
+                "error: --dataset needs kagglehub; install it with `pip install kagglehub`",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            source_path = kagglehub.dataset_download(args.dataset)
+        except Exception as exc:  # noqa: BLE001 - Kaggle 的认证/网络错误要原样告诉用户
+            print(f"error: cannot download {args.dataset}: {exc}", file=sys.stderr)
+            return 1
+        print("dataset:", source_path, file=sys.stderr)
+        if not args.source_url:
+            args.source_url = "https://www.kaggle.com/datasets/" + args.dataset
+        if not args.source_label:
+            args.source_label = "Kaggle · " + args.dataset
+    if not source_path:
+        print("error: provide a path or --dataset OWNER/SLUG", file=sys.stderr)
+        return 1
+
     try:
-        files = discover_episode_files(args.path, pattern=args.pattern)
+        files = discover_episode_files(source_path, pattern=args.pattern)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

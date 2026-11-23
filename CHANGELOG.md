@@ -4,6 +4,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 The full history, including the early 0.x builds, lives in the [Chinese archive](docs/zh-CN/CHANGELOG.md). This file keeps the releases a reader is most likely to care about.
 
+## [1.9.10] — 2026-11-24
+
+### Added
+
+- **Standard PGN export.** `GET /matches/{id}/export?format=pgn` and `melee match export --format pgn` write a standard PGN for Lichess/Stockfish/ChessBase, with provenance, result, and per-move thought comments. The runtime stays GPL-free; the test suite reads the output back with `python-chess`.
+- **Dataset resolver.** `melee match import-batch --dataset kaggle/chess-text-gameplay` uses `kagglehub` to resolve/download the dataset and fills `sourceUrl`/`sourceLabel` automatically.
+- **Import-aware home.** A library that contains only imported games now fetches `?source=import` and renders the imported activity chart and leaderboard, instead of an empty "no results" state.
+- **Broadcast surfaces.** `GET /matches/{id}/scene` exposes a compact, replica-independent snapshot for OBS and third-party lower-thirds; `/embed/{id}` wraps the watch page without product chrome; `/overlay.html` is a transparent browser source with board, last move and material balance. Cross-site framing is opt-in through `MELEE_EMBED_ORIGINS`.
+
+### Changed
+
+- **Hero preview is live data.** The homepage poster no longer hard-codes fictional players; it is filled from the first live match and links to its watch page.
+- **Licence ledger cleaned.** `NOTICE` is split into runtime and dev-only tables; `python-chess` is a test-only GPL dependency, `kagglehub` is recorded as Apache-2.0.
+
 ## [1.9.9] — 2026-11-23
 
 ### Added

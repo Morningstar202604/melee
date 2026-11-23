@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import html
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -63,6 +64,51 @@ img{{width:100%;border-radius:12px;border:1px solid var(--line);margin-top:20px}
 </div>
 </body>
 </html>"""
+
+
+_EMBED_PAGE = """<!DOCTYPE html>
+<html lang="{lang}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title} · melee embed</title>
+<style>
+html,body{{margin:0;height:100%;background:#07090D;overflow:hidden}}
+iframe{{display:block;width:100%;height:100%;border:0;background:#07090D}}
+</style>
+</head>
+<body>
+<iframe src="{watch}" title="{title}" allow="fullscreen; autoplay" loading="eager"></iframe>
+</body>
+</html>"""
+
+
+@router.get("/embed/{match_id}", include_in_schema=False)
+async def embed_page(match_id: str, request: Request) -> HTMLResponse:
+    """可直接 iframe 的对局页；只包一层无 chrome 的观战页。
+
+    鉴权仍由内层 /watch.html 与 API 完成。token 模式把短时/只读 token
+    放在查询参数里，不写进页面正文，也不进 localStorage。
+    """
+    if not settings().public_share:
+        guard(request, "read")
+    safe_match_id(match_id)
+    events = events_of(db_path_of(request), match_id)
+    created = next((event for event in events if event.get("type") == "match.created"), None)
+    game = ((created or {}).get("payload") or {}).get("game") or "match"
+    lang = request_lang(request)
+    token = request.query_params.get("token", "")
+    origin = str(request.base_url).rstrip("/")
+    watch = f"{origin}/watch.html?match={quote(match_id)}&embed=1"
+    if token:
+        watch += f"&token={quote(token)}"
+    return HTMLResponse(
+        _EMBED_PAGE.format(
+            lang="en" if lang == "en" else "zh-CN",
+            title=html.escape(f"melee · {game}"),
+            watch=html.escape(watch),
+        )
+    )
 
 
 @router.get("/share/{match_id}", include_in_schema=False)

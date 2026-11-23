@@ -241,6 +241,16 @@ def capture(lang: str, api: str, season: str, skip_live: bool) -> list[str]:
         page.wait_for_timeout(1500)
         shot(page, "13-admin.png")
 
+        # 17-18 转播面：OBS 叠加层与无外壳嵌入页。没有直播场时跳过，
+        # 不拿结束场冒充"正在直播"。
+        if live_id:
+            page.goto(url(f"overlay.html?match={live_id}&preview=1"), wait_until="networkidle")
+            page.wait_for_timeout(900)
+            shot(page, "17-obs-overlay.png", full=False)
+            page.goto(url(f"embed/{live_id}"), wait_until="networkidle")
+            page.wait_for_timeout(1800)
+            shot(page, "18-embed.png", full=False)
+
         browser.close()
 
     return errors

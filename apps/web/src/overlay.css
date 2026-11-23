@@ -1,0 +1,44 @@
+/* OBS 叠加层：默认透明，?preview=1 给普通浏览器一个深色底。
+   所有面板都带半透明底，保证压在亮画面上也能读。 */
+html,body{margin:0;height:100%;overflow:hidden;background:transparent}
+body.preview{background:radial-gradient(1200px 600px at 20% 20%,#132033,#07090D 60%)}
+body{font-family:"Segoe UI","PingFang SC",system-ui,sans-serif;color:#E8EAF2}
+#overlay{position:fixed;inset:0;pointer-events:none}
+.ob-panel{background:rgba(7,9,13,.82);border:1px solid rgba(34,211,238,.28);border-radius:14px;
+  box-shadow:0 18px 50px -24px rgba(0,0,0,.9);backdrop-filter:blur(12px)}
+.ob-top{position:absolute;left:24px;top:24px;min-width:310px;max-width:420px;padding:14px 16px}
+.ob-headline{display:flex;align-items:center;gap:9px;font-size:13px;letter-spacing:.12em}
+.ob-headline b{font-size:12px;color:#22D3EE}
+.ob-game{margin-left:auto;color:#9AA3B5;font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ob-dot{width:8px;height:8px;border-radius:50%;background:#22D3EE;box-shadow:0 0 14px #22D3EE}
+.ob-dot.ended{background:#F5B84B;box-shadow:0 0 14px #F5B84B}
+.ob-dot.waiting{background:#9AA3B5;box-shadow:none}
+.ob-players{margin-top:10px;display:flex;flex-direction:column;gap:4px}
+.ob-player{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.03);font-size:15px}
+.ob-player.active{background:rgba(34,211,238,.13);box-shadow:inset 0 0 0 1px rgba(34,211,238,.3)}
+.ob-seat{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);color:#9AA3B5;font-size:10px}
+.ob-name{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ob-win{margin-left:auto;font-size:9px;letter-spacing:.1em;color:#F5B84B}
+.ob-boardWrap{position:absolute;right:24px;top:24px;padding:10px}
+.ob-board{display:grid;grid-template-columns:repeat(var(--cols),1fr);gap:1px}
+.ob-row{display:contents}
+.ob-cell{width:38px;height:38px;display:grid;place-items:center;font-size:26px;line-height:1;color:#111}
+.ob-cell.light{background:#E9E2CF}
+.ob-cell.dark{background:#8A9A92}
+.ob-cell.last{box-shadow:inset 0 0 0 3px #22D3EE;background:#B8E6E0}
+.ob-boardFoot{display:flex;justify-content:space-between;gap:14px;margin-top:7px;color:#9AA3B5;font-size:10px;letter-spacing:.08em}
+.ob-bottom{position:absolute;left:24px;right:24px;bottom:24px;padding:12px 16px 13px}
+.ob-kicker{font-size:9.5px;letter-spacing:.16em;color:#22D3EE;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ob-last{display:flex;align-items:baseline;gap:12px;margin-top:5px;font-size:11px;color:#9AA3B5}
+.ob-last b{font-size:15px;color:#E8EAF2;font-variant-numeric:tabular-nums}
+.ob-events{margin-left:auto}
+.ob-narr{margin-top:4px;font-size:13.5px;line-height:1.45;color:#D7DBE6;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.ob-empty{padding:24px;color:#9AA3B5;font-size:13px}
+.ob-muted{color:#9AA3B5;font-size:12px;display:block;margin-top:4px}
+@media (max-width:760px){
+  .ob-top{left:12px;top:12px;min-width:0;max-width:58vw;padding:10px 12px}
+  .ob-boardWrap{right:12px;top:12px;padding:6px}
+  .ob-cell{width:24px;height:24px;font-size:17px}
+  .ob-bottom{left:12px;right:12px;bottom:12px;padding:9px 12px}
+  .ob-narr{-webkit-line-clamp:1}
+}

@@ -36,6 +36,42 @@ A replica-independent snapshot, replayed from the log:
 
 Between match creation and the worker's first event it returns 200 with `"pending": true`. Only an unknown id is 404.
 
+### `GET /matches/{matchId}/scene`
+
+A compact, replica-independent snapshot for OBS, lower-thirds and third-party
+control surfaces. It contains only what has to appear on screen: players, status,
+board, last move, material balance, last action and the latest commentary line.
+Native and imported matches use the same shape; imported chess keeps its board and
+`lastMove`. It does not replace `/view` or `/events` for full replay consumers.
+
+```json
+{"matchId":"m_ab12","game":"chess","status":"live","players":["A","B"],
+ "turnIndex":34,"board":[["♜","·"],["·","♚"]],"material":{"white":9,"black":12,"diff":-3},
+ "lastMove":{"from":"d1","to":"d8"},"lastAction":{"player":"A","kind":"move","value":"Rd8#"},
+ "narration":{"text":"..."},"source":"import","events":206}
+```
+
+### `GET /embed/{matchId}`
+
+A chrome-free iframe wrapper around `watch.html?embed=1`. Same-origin embedding
+works by default; to embed on another site set `MELEE_EMBED_ORIGINS` to a
+comma-separated origin allow-list. The page itself is public only when
+`MELEE_PUBLIC_SHARE` is on; the inner watch page still authenticates. In token
+mode pass a read token as `?token=...`; it is forwarded to the iframe and never
+written to localStorage. OBS can use `/overlay.html?match=<id>&preview=1` as a
+transparent browser source; add `token=` there too when auth is on.
+
+### `GET /matches/{matchId}/export?format=json|pgn`
+
+Default is the self-contained `melee.export/1` JSON. `format=pgn` serializes a chess
+match into standard PGN (`Content-Type: application/x-chess-pgn`), with source, game id,
+license, players, result and per-move comments. It reads the same public events as JSON
+export, so `reveal=1` keeps the same "only after the match ended" rule. Live chess exports
+are valid with `Result "*"`. Non-chess matches return 422. The PGN date is `????.??.??`:
+imported Kaggle games do not have a trustworthy absolute date, and the API does not invent one.
+The test suite reads the output back with `python-chess`, but that library is not a runtime
+dependency (GPL).
+
 ### `POST /matches/import-episode`
 
 Import a finished match from another arena as a replay-only broadcast. The body may be
@@ -161,7 +197,12 @@ Only trimmed observations are forwarded — no `target`, no `secretColors`, no o
 
 `GET /archive` — `limit` 1–100 (default 24), `offset`, `game`, `status` (`live`/`ended`), `q` (player or match id).
 
-`GET /stats` — matches, finished, live, events, per-game counts, top winners, fourteen-day activity, viewers. Team labels (`red`/`blue`) are not players and never enter the winner board.
+`GET /stats` — matches, finished, live, events, per-game counts, top winners, fourteen-day
+activity, viewers. Team labels (`red`/`blue`) are not players and never enter the winner board.
+Add `?source=melee|import` to scope the leaderboard and activity to one side; the response
+also carries `meleeMatches`, `importedMatches`, `importedActivity`, `activityScope` and
+`sourceScope`, so a library that only contains imported games can still render an honest
+dashboard.
 
 ## Creating matches
 

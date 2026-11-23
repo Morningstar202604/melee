@@ -16,6 +16,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import _harness
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # (选择器, 人话名, 最小字号判定是否算"大字")
@@ -89,15 +91,23 @@ def main() -> int:
         return 2
 
     failures: list[str] = []
+    # 赛季库为空时首页没有赛事卡，`.mcard .game-label` / `.mcard .mid`
+    # 两个选择器测不到，门禁会悄悄少测——先建一场，让卡片真实存在。
+    try:
+        _harness.api_post(
+            args.api,
+            "/matches",
+            {"game": "tic-tac-toe", "seed": 7, "players": [{"id": "Contrast A"}, {"id": "Contrast B"}]},
+        )
+    except Exception as exc:  # noqa: BLE001 - 建场失败时门禁仍可测其余元素
+        print(f"WARN 对比度巡检未能建场：{exc}", file=sys.stderr)
+
     with sync_playwright() as p:
         try:
-            browser = p.chromium.launch()
-        except Exception:
-            try:
-                browser = p.chromium.launch(channel="msedge")
-            except Exception as exc:
-                print(f"SKIP 没有可用的 Chromium/Edge 内核：{exc}", file=sys.stderr)
-                return 2
+            browser = _harness.launch_browser(p)
+        except Exception as exc:
+            print(f"SKIP 没有可用的 Chromium/Chrome/Edge 内核：{exc}", file=sys.stderr)
+            return 2
         page = browser.new_page(viewport={"width": 1500, "height": 950})
         measured = 0
         for theme in ("light", "dark"):
@@ -122,7 +132,7 @@ def main() -> int:
                     failures.append(f"{theme}/{label}={result['ratio']} < {required}")
         browser.close()
 
-    if measured < len(CHECKS):
+    if measured < len(CHECKS) * 2:
         print(f"FAIL 期望测到 {len(CHECKS) * 2} 个组合，实际 {measured} 个：页面结构变了要同步更新选择器", file=sys.stderr)
         return 1
     if failures:

@@ -42,6 +42,7 @@ python scripts/serve.py
 - **战报不编数字** — 每个数字都从日志里数出来，对不上时服务端会自己报出来。
 - **带自己的智能** — 内置机器人适合演示，也支持 OpenAI 兼容 / Anthropic / Gemini 端点，或任意框架走 HTTP 参赛。
 - **双语是契约** — 解说、战报、切镜标签都由语言中立的事件重新渲染，不用录第二遍。
+- **可嵌入的转播面** — `/embed/{id}` 提供无外壳 iframe 页，`/matches/{id}/scene` 给小屏/OBS 一份紧凑快照，`/overlay.html` 直接渲染透明记分牌，带棋盘、最后一手与子力差。
 - **对局可携带** — 一场比赛导出成单个自包含文件，换台机器照样重放。
 - **把别处的对局接进来** — Kaggle Game Arena、TextArena 的 trajectory 可以直接导入，也可以在外部 arena 还在下的时候推送实时快照；国际象棋、围棋这种 melee 没有原生规则的棋，也能用同一套观战、导播、战报，并显示出处与棋盘坐标。
 
@@ -62,6 +63,11 @@ python scripts/serve.py
 | ![外部导入直播](docs/screenshots/zh/14-imported-chess-live.png) | ![外部导入棋局](docs/screenshots/zh/15-imported-chess.png) |
 | 外部 arena 的快照直接变成直播 | 出处、棋盘坐标与最后一手 |
 
+| OBS 叠加层 | 嵌入页 |
+|---|---|
+| ![OBS 叠加层](docs/screenshots/zh/17-obs-overlay.png) | ![嵌入页](docs/screenshots/zh/18-embed.png) |
+| 透明记分牌：棋盘、最后一手、子力差 | 无外壳 iframe 页，给合作方站点 |
+
 [完整画廊](docs/screenshots/README.md) · [演示视频](docs/video/walkthrough.zh.mp4) · 默认亮色主题，深色一键切换。
 
 ## 命令
@@ -70,8 +76,9 @@ python scripts/serve.py
 melee serve                                    # 启动转播台
 melee match create --game othello --player A --player B --open
 melee match export <id> --out m.json           # 单文件导出，可在另一台机器重放
+melee match export <id> --format pgn --out game.pgn  # 标准棋谱，可直接丢给 Lichess/Stockfish
 melee match import-episode game.json           # 导入 Kaggle/TextArena 对局，只读回放
-melee match import-batch ./chess-text-gameplay --format kaggle --limit 100 --sample hash
+melee match import-batch --dataset kaggle/chess-text-gameplay --format kaggle --limit 100 --sample hash
 melee match import-live snapshot.json --finished   # 推送一帧实时外部对局
 melee mcp                                      # MCP server（Claude / Cursor）
 ```

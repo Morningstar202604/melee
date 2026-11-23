@@ -34,6 +34,8 @@ MELEE_CORS_ORIGINS=https://melee.example.com \
 python scripts/serve.py --host 127.0.0.1 --port 8099
 ```
 
+To embed `/embed/{id}` on another site, add `MELEE_EMBED_ORIGINS=https://partner.example.com` (comma-separated). Without it only same-origin framing is allowed; `X-Frame-Options` stays `SAMEORIGIN`.
+
 `scripts/serve.py` exits if hops are declared without allowed proxy IPs — a half-configured proxy is worse than none.
 
 Caddy:

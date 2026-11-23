@@ -39,6 +39,35 @@ SSE 长连接。支持 `Last-Event-ID` 请求头（浏览器原生）与 `lastEv
 建场后 worker 尚未写下第一条事件的窗口里返回 200 + `"pending": true`；
 只有 `matches` 表里根本没有这个 id 才 404。
 
+### `GET /matches/{matchId}/scene`
+
+给 OBS、下三分之一字幕条和第三方控制台用的紧凑场景快照。只返回屏幕上必须出现的
+字段：选手、状态、棋盘、最后一手、子力差、最后动作和最后一条解说；站内场次与
+导入场次同构，导入的国际象棋仍保留棋盘与 `lastMove`。完整回放仍走 `/view` 与 `/events`。
+
+```json
+{"matchId":"m_ab12","game":"chess","status":"live","players":["A","B"],
+ "turnIndex":34,"board":[["♜","·"],["·","♚"]],"material":{"white":9,"black":12,"diff":-3},
+ "lastMove":{"from":"d1","to":"d8"},"lastAction":{"player":"A","kind":"move","value":"Rd8#"},
+ "narration":{"text":"..."},"source":"import","events":206}
+```
+
+### `GET /embed/{matchId}`
+
+无产品外壳的 iframe 包装页，内层是 `watch.html?embed=1`。默认只允许同源嵌入；
+要嵌到别的站点，把 `MELEE_EMBED_ORIGINS` 设成逗号分隔的 origin 白名单。
+`MELEE_PUBLIC_SHARE` 打开时页面公开，但内层观战页与 API 仍照常鉴权。token 模式
+用 `?token=...` 传只读 token，页面会转给 iframe，不写 localStorage。
+OBS 可直接用 `/overlay.html?match=<id>&preview=1` 做透明浏览器源；开鉴权时同样加 `token=`。
+
+### `GET /matches/{matchId}/export?format=json|pgn`
+
+默认导出 `melee.export/1` 自包含 JSON。国际象棋加 `format=pgn` 时输出标准 PGN
+（`Content-Type: application/x-chess-pgn`），带上出处、GameId、许可证、棋手、结果和
+逐手内心戏注释。它读的是同一批公开事件，`reveal=1` 仍只在赛后允许。进行中的棋局也能
+导出，`Result` 写 `*`；非国际象棋返回 422。日期写 `????.??.??`：Kaggle 导入没有可信
+绝对日期，接口不编造。测试里用 `python-chess` 把 PGN 读回来，但它不是运行时依赖（GPL）。
+
 ### `POST /matches/import-episode`
 
 把别处打完的对局导入成只读回放。请求体可以是原始 episode，也可以是
@@ -276,6 +305,9 @@ Kaggle Game Arena、TextArena `turns` 快照和中性 `melee.episode/1` 都会�
 ```
 
 团队赛的 `red` / `blue` 不计入 `topWinners`（它们不是选手）。
+加 `?source=melee|import` 可把胜者榜与活动图表限定到站内或导入一侧；响应里同时带
+`meleeMatches`、`importedMatches`、`importedActivity`、`activityScope`、`sourceScope`，
+所以一个只有导入对局的库也能渲染一张诚实的首页，而不是空表。
 
 ## 建场
 

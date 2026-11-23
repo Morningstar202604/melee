@@ -201,6 +201,16 @@ def main() -> int:
           f"{state.get('winner')} vs {recap.get('winner')}")
 
     print()
+    print("== broadcast surfaces ==")
+    scene = get("/matches/" + ended_id + "/scene")
+    check("scene snapshot has players and status",
+          bool(scene.get("players")) and scene.get("status") == "ended", scene.get("status"))
+    embed_html = urllib.request.urlopen(base + "/embed/" + ended_id, timeout=30).read().decode()
+    check("embed page wraps watch without chrome", "<iframe" in embed_html and "embed=1" in embed_html)
+    overlay_html = urllib.request.urlopen(base + "/overlay.html", timeout=30).read().decode()
+    check("overlay page is a usable browser source", 'src="./src/overlay.js"' in overlay_html)
+
+    print()
     print("== visual theme ==")
     # 亮色是默认；深色可切。两者都必须真的生效，不是只改了个属性。
     html = urllib.request.urlopen(base + "/index.html", timeout=30).read().decode()

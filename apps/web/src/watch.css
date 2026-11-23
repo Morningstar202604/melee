@@ -273,3 +273,10 @@ body.theater #stage{padding:24px 40px}
   .endinner .w{font-size:26px}
   .secret .v{font-size:18px}
 }
+
+/* 嵌入页：去掉顶栏和选手侧栏，把舞台尽量留给内容。
+   只在 ?embed=1 时启用；普通观战页不受影响。 */
+body.embed #topbar{display:none}
+body.embed #frame{inset:0}
+body.embed .side{display:none}
+body.embed .main{grid-template-columns:1fr}

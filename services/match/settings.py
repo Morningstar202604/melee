@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # token 模式下若一并要求鉴权，OG 预览永远 401。公开的只有战报摘要
     # （赛制、胜者、一句话、事件数），不含选手 Key 与私有事件。
     public_share: bool = True
+    # 允许把 /embed/ 页面嵌到哪些站点；留空只允许同源。
+    # 逗号分隔的 origin，例如 https://example.com,https://blog.example.com。
+    embed_origins: str = ""
     quota_matches: int = 20
     quota_renders: int = 10
     ticket_secret: str = ""
@@ -106,6 +109,10 @@ class Settings(BaseSettings):
             fallback_index += 1
             out[f"token-{fallback_index}"] = item
         return out
+
+    @property
+    def embed_origin_list(self) -> list[str]:
+        return [item.strip().rstrip("/") for item in self.embed_origins.split(",") if item.strip()]
 
     @property
     def season_ids(self) -> list[str]:

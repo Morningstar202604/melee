@@ -20,7 +20,7 @@ import argparse
 import sys
 
 from _demo import names  # noqa: E402
-from _harness import api_post
+from _harness import api_post, launch_browser
 from playwright.sync_api import sync_playwright
 
 DESKTOP = {"width": 1440, "height": 900}
@@ -132,13 +132,18 @@ def _channel_for(browser_name: str) -> str | None:
 def run(browser_name: str, api: str, ids: dict[str, str], headed: bool) -> Audit:
     audit = Audit()
     with sync_playwright() as pw:
-        try:
-            browser = getattr(pw, browser_name).launch(headless=not headed)
-        except Exception:
-            channel = _channel_for(browser_name)
-            if not channel:
-                raise
-            browser = getattr(pw, browser_name).launch(headless=not headed, channel=channel)
+        if browser_name == "chromium":
+            # 与截图/对比度门禁共用同一套回退：Playwright 自带内核缺失时
+            # 用系统 Chromium，而不是让整道审计变成 SKIP。
+            browser = launch_browser(pw)
+        else:
+            try:
+                browser = getattr(pw, browser_name).launch(headless=not headed)
+            except Exception:
+                channel = _channel_for(browser_name)
+                if not channel:
+                    raise
+                browser = getattr(pw, browser_name).launch(headless=not headed, channel=channel)
         context = browser.new_context(viewport=DESKTOP, locale="zh-CN")
         page = context.new_page()
 

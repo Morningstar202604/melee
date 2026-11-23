@@ -4,7 +4,7 @@
 import { html } from '../vendor/lit-html.js'
 import { paint as litRender } from './paint.js'
 import {
-  api, apiBase, clipTicket, clipUrl, configure, el, gameMeta, propagateQuery, shotLabel, teamLabel, toast,
+  api, apiBase, clipTicket, clipUrl, configure, downloadExport, el, gameMeta, propagateQuery, shotLabel, teamLabel, toast,
 } from './api.js'
 import { connectEvents } from './sse.js'
 import { createView, reduce, replayView } from './view.js'
@@ -36,6 +36,8 @@ if (el('themeSwitch')) mountThemeSwitch(el('themeSwitch'))
 if (el('langSwitch')) mountLangSwitch(el('langSwitch'))
 
 const params = new URLSearchParams(location.search)
+// 嵌入模式只去掉产品外壳，不改变舞台与事件流。
+if (params.get('embed') === '1') document.body.classList.add('embed')
 configure()
 propagateQuery()
 const API = apiBase()
@@ -224,6 +226,7 @@ async function attach(matchId) {
   resetTimelineCache()
   view = replayView(events)
   player.attach(events.length)
+  el('btnPgn').style.display = view.gameKind === 'chess' ? '' : 'none'
   // 切台必须回到直播态：上一场的"暂停/回放"状态带过来会让新场永远停在回放。
   el('btnPause').textContent = t('watch.pause')
   render()
@@ -389,6 +392,33 @@ function toggleTheater(force) {
 
 el('btnShare').addEventListener('click', () => {
   if (currentMatchId) shareLink(currentMatchId)
+})
+
+el('btnEmbed').addEventListener('click', async () => {
+  if (!currentMatchId) return
+  const query = token() ? `?token=${encodeURIComponent(token())}` : ''
+  const url = `${location.origin}/embed/${encodeURIComponent(currentMatchId)}${query}`
+  try {
+    await navigator.clipboard.writeText(url)
+    toast(t('watch.embedDone'))
+  } catch {
+    toast(t('common.copyFailed', { url }), 'bad')
+  }
+})
+
+el('btnPgn').addEventListener('click', async () => {
+  if (!currentMatchId) return
+  try {
+    const blob = await downloadExport(currentMatchId, 'pgn')
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `${currentMatchId}.pgn`
+    link.click()
+    URL.revokeObjectURL(link.href)
+    toast(t('watch.pgnDone'))
+  } catch (error) {
+    toast(t('watch.pgnFailed', { error: String(error.message || error) }), 'bad')
+  }
 })
 
 async function exportHighlights() {

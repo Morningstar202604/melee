@@ -67,7 +67,10 @@ def check_requirements_complete() -> list[str]:
                 imports.update(alias.name.split(".")[0] for alias in node.names)
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 imports.add(node.module.split(".")[0])
-    third_party = {name for name in imports if name not in stdlib and name not in local}
+    # 可选增强：代码有显式 ImportError 回退，缺失不影响启动。
+    # chess 仅用于开发/测试；运行时保持 GPL-free，因此不能写进 requirements.txt。
+    optional = {"chess"}
+    third_party = {name for name in imports if name not in stdlib and name not in local and name not in optional}
 
     # import 名 → 发行名（dist name 不总是等于 import 名）
     alias = {

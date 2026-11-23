@@ -39,6 +39,8 @@ MELEE_CORS_ORIGINS=https://melee.example.com \
 python scripts/serve.py --host 127.0.0.1 --port 8099
 ```
 
+要把 `/embed/{id}` 嵌到别的站点，加 `MELEE_EMBED_ORIGINS=https://partner.example.com`（逗号分隔）。不加时只允许同源嵌入，`X-Frame-Options` 保持 `SAMEORIGIN`。
+
 `scripts/serve.py` 会校验：`MELEE_TRUSTED_PROXY_HOPS>0` 但没给 `MELEE_FORWARDED_ALLOW_IPS` 时直接退出（避免"以为开了鉴权其实没开"）。
 
 Caddy 示例：

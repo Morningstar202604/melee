@@ -13,3 +13,5 @@ fakeredis==2.32.0
 datamodel-code-generator==0.86.0
 # test_harness 走官方 MCP SDK 的工具面
 mcp==1.30.0
+# 只用于测试：把导出的 PGN 读回来。GPL-3.0，不进运行时镜像
+python-chess==1.11.2

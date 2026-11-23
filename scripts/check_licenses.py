@@ -64,6 +64,8 @@ def normalize(license_text: str) -> str:
         return "BSD-3-Clause"
     if upper in {"APACHE 2", "APACHE-2.0", "APACHE SOFTWARE LICENSE"}:
         return "Apache-2.0"
+    if upper.startswith("APACHE LICENSE") or upper.startswith("APACHE SOFTWARE LICENSE"):
+        return "Apache-2.0"
     return text
 
 
@@ -88,14 +90,14 @@ def license_of(pkg: str) -> str:
     return "UNKNOWN"
 
 
-def notice_versions() -> dict[str, tuple[str, str]]:
-    """从 NOTICE 读出 `包 | 版本 | 许可证` 三列。"""
-    rows: dict[str, tuple[str, str]] = {}
+def notice_versions() -> dict[str, tuple[str, str, str]]:
+    """从 NOTICE 读出 `包 | 版本 | 许可证 | 用途` 四列。"""
+    rows: dict[str, tuple[str, str, str]] = {}
     for line in NOTICE.read_text(encoding="utf-8").splitlines():
         cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
         if len(cells) < 3 or cells[0] in {"包", "---"}:
             continue
-        rows[cells[0].lower()] = (cells[1], cells[2])
+        rows[cells[0].lower()] = (cells[1], cells[2], cells[3] if len(cells) > 3 else "")
     return rows
 
 
@@ -113,7 +115,7 @@ def check() -> list[str]:
         if key not in rows:
             problems.append(f"{pkg}: NOTICE 台账缺这一行")
             continue
-        recorded_version, recorded_license = rows[key]
+        recorded_version, recorded_license, _purpose = rows[key]
         if recorded_version != version(pkg):
             problems.append(f"{pkg}: NOTICE 版本 {recorded_version} ≠ 实际 {version(pkg)}")
         if recorded_license != lic:

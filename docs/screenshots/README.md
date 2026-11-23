@@ -22,6 +22,8 @@ Each language ships its own set under `en/` and `zh/`, so the English README nev
 | [en/14-imported-chess-live.png](en/14-imported-chess-live.png) | External arena snapshot pushed into a live broadcast |
 | [en/15-imported-chess.png](en/15-imported-chess.png) | Real Kaggle chess replay with provenance, coordinates and last move |
 | [en/16-imported-recap.png](en/16-imported-recap.png) | Recap for an imported match; move numbers come from chess moves, not event seq |
+| [en/17-obs-overlay.png](en/17-obs-overlay.png) | Transparent OBS overlay: players, board, last move, material balance and commentary |
+| [en/18-embed.png](en/18-embed.png) | Chrome-free `/embed/{id}` page used in an iframe |
 
 The Chinese set mirrors this one under `zh/`.
 

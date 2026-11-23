@@ -4,6 +4,20 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循语义化版本。
 
+## [1.9.10] — 2026-11-24
+
+### 新增
+
+- **数据集解析**：`melee match import-batch --dataset kaggle/chess-text-gameplay` 用 `kagglehub` 解析/下载数据集，并自动补 `sourceUrl`/`sourceLabel`。
+- **首页感知导入**：库里只有导入对局时，首页会补取 `?source=import`，把导入侧的活动图表与胜者榜画出来，而不是一张“暂无结果”的空表。
+
+- **转播面扩展**：`GET /matches/{id}/scene` 给 OBS 与第三方字幕条一份紧凑、跨副本一致的场景快照；`/embed/{id}` 提供无产品外壳的 iframe 页；`/overlay.html` 直接做透明浏览器源，带棋盘、最后一手与子力差。跨站嵌入通过 `MELEE_EMBED_ORIGINS` 白名单显式开启。
+
+### 调整
+
+- **直播预览取真实数据**：首页海报不再写死虚构选手，从第一场真实直播取数并链接到观战页。
+- **许可证台账清理**：`NOTICE` 拆成运行时与开发依赖两张表；`python-chess` 只用于测试且为 GPL，`kagglehub` 记为 Apache-2.0。
+
 ## [1.9.9] — 2026-11-23
 
 ### 新增
@@ -13,6 +27,7 @@
 - **批量走正式 API**：`--via-api` 逐场走鉴权、配额与限流；日配额耗尽立即停止，不再对 100 个文件做无意义重试。默认 `--sample hash` 按稳定哈希打散取样，不再总取文件名最前面的同一批模型。
 - **出处与棋盘语义**：导入记录 `license`、`sourceUrl`、`sourceLabel`、`played_at` 并在观战页展示；国际象棋棋盘有 a–h/1–8 坐标与最后一手起止高亮。`actionHistory` 只有数值 ID 时，用前后 FEN 反推 SAN（`python-chess` 可选，不依赖 `pyspiel`）。
 - **资源上限**：单场 10,000 手、60,000 事件、8MB 输入、2,000 字思考片段；批量拒绝超大文件并在报告里记录 `bytes`。
+- **标准棋谱出口**：`GET /matches/{id}/export?format=pgn` 和 `melee match export --format pgn` 生成标准 PGN，可直接交给 Lichess/Stockfish/ChessBase，头部带出处、结果，逐手内心戏写成注释；运行时保持无 GPL，测试里用 `python-chess` 读回校验。
 
 1.9.9 演示用正式鉴权 API 导入 100 场真实 `kaggle/chess-text-gameplay`：100 场成功、0 重复、0 失败，8,265 手、42,466 事件，覆盖 40 位选手、18 场平局；再推送 34 手实时快照（206 事件），演示库共 101 场、42,672 事件。
 

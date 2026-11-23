@@ -962,17 +962,31 @@ def _text_from_value(value: Any) -> str:
 
 
 def _board_from_fen(fen: str) -> list[list[str]]:
-    ranks = fen.split()[0].split("/")
-    board: list[list[str]] = []
-    for rank in ranks:
-        row: list[str] = []
-        for char in rank:
-            if char.isdigit():
-                row.extend("·" for _ in range(int(char)))
-            elif char in _CHESS_PIECES:
-                row.append(_CHESS_PIECES[char])
-            else:
-                row.append(char)
+    """FEN 交给 python-chess；坏 FEN 退回轻量解析，单场导入不因一行坏数据中断。"""
+    try:
+        import chess
+
+        position = chess.Board(fen)
+    except (ImportError, ValueError):
+        ranks = fen.split()[0].split("/")
+        board: list[list[str]] = []
+        for rank in ranks:
+            row: list[str] = []
+            for char in rank:
+                if char.isdigit():
+                    row.extend("·" for _ in range(int(char)))
+                elif char in _CHESS_PIECES:
+                    row.append(_CHESS_PIECES[char])
+                else:
+                    row.append(char)
+            board.append(row)
+        return board
+    board = []
+    for rank in range(7, -1, -1):
+        row = []
+        for file in range(8):
+            piece = position.piece_at(chess.square(file, rank))
+            row.append(_CHESS_PIECES.get(piece.symbol(), "·") if piece else "·")
         board.append(row)
     return board
 

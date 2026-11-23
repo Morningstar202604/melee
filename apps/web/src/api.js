@@ -64,7 +64,10 @@ export async function request(path, { method = 'GET', body, headers = {}, timeou
 
 export const api = {
   games: () => request('/games'),
-  stats: () => request('/stats'),
+  stats: ({ source = '' } = {}) => {
+    const query = source ? `?source=${encodeURIComponent(source)}` : ''
+    return request('/stats' + query)
+  },
   archive: ({ limit = 24, offset = 0, game = '', status = '', q = '' } = {}) => {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
     if (game) params.set('game', game)
@@ -102,6 +105,19 @@ export const api = {
   pushCue: (matchId, body) => request(`/director/${encodeURIComponent(matchId)}/cue`, { method: 'POST', body }),
   ticket: () => request('/auth/ticket', { method: 'POST' }),
   quota: () => request('/quota'),
+}
+
+/** 二进制导出：棋谱这类文件不能先按文本读，否则浏览器会把 UTF-8 重编码。 */
+export async function downloadExport(matchId, format = 'pgn') {
+  const response = await fetch(
+    `${baseUrl}/matches/${encodeURIComponent(matchId)}/export?format=${encodeURIComponent(format)}`,
+    { headers: authHeaders() },
+  )
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(`${response.status} ${text || response.statusText}`)
+  }
+  return response.blob()
 }
 
 export function clipUrl(matchId, file, ticket = '') {

@@ -1,6 +1,6 @@
 # 前端（零构建）
 
-五个页面，直接消费比赛服务的 REST + SSE。没有打包器、没有框架、没有 node_modules。
+八个页面，直接消费比赛服务的 REST + SSE。没有打包器、没有框架、没有 node_modules。
 
 | 页面 | 作用 |
 |---|---|
@@ -9,6 +9,8 @@
 | `season.html` | 赛季：积分榜、赛程、宿敌、新建/推进 |
 | `recap.html` | 战报：一句话、数字、三个瞬间、选手数据、高光 |
 | `director.html` | 导播台：选台、镜头、人工切镜、实时事件 |
+| `overlay.html` | OBS 透明叠加层：选手、棋盘、最后一手、子力差、解说 |
+| `/embed/{id}` | 服务端生成的无外壳 iframe 页，复用观战舞台（没有独立静态文件） |
 
 ## 跑起来
 
@@ -34,7 +36,7 @@ python scripts/serve.py --port 8099
 python scripts/audit_ui.py --browser chromium --browser firefox --browser webkit
 ```
 
-需先起服务（默认 `--api http://127.0.0.1:8099`）。每个内核实测 35 项：
+需先起服务（默认 `--api http://127.0.0.1:8099`）。每个内核实测 39 项：
 页面无 pageerror、关键内容渲染、横向溢出、h1/alt/按钮可读名、
 搜索与赛制筛选、拖动进回放、导播台真实切镜写入。已接入 `scripts/verify_all.sh` 第 9 道门禁。
 
@@ -55,13 +57,13 @@ python scripts/audit_ui.py --browser chromium --browser firefox --browser webkit
 ## 结构
 
 ```
-index.html / watch.html / season.html / recap.html / director.html
+index.html / watch.html / season.html / recap.html / director.html / overlay.html
 src/view.js     事件 → 视图（纯 reducer，直播与回放共用）
 src/sse.js      EventSource 封装（token → 短时票据；断线自管重连，每次换票并带 lastEventId 续传）
 src/api.js      统一 REST 客户端、格式化、赛制元数据
 src/nav.js      顶栏与页脚（五页共用）
 src/paint.js    首次绘制前清静态占位，之后走 lit-html 增量
-src/home.js / main.js / season.js / recap.js / director.js
+src/home.js / main.js / season.js / recap.js / director.js / overlay.js
 ```
 
 ## 为什么没有用 React

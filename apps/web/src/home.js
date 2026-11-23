@@ -52,6 +52,45 @@ function labelOf(game) {
   return meta.label
 }
 
+function renderPoster() {
+  const stage = el('posterStage')
+  const item = state.live[0]
+  if (!item) {
+    litRender(
+      html`<div class="poster-empty"><span class="glyph-big">◇</span><span>${t('home.preview.noLive')}</span><a class="btn sm" href="#quickModal">${t('home.preview.start')}</a></div>`,
+      stage,
+    )
+    return
+  }
+  const meta = gameMeta(item.game)
+  const players = item.players || []
+  litRender(
+    html`<div class="col">
+        <div class="pc" style="--tone:var(--tone-a)">
+          <div class="role">${t('home.preview.first')}</div>
+          <div class="nm">${players[0] || '—'}</div>
+        </div>
+      </div>
+      <div class="mid">
+        <div style="border-radius:9px;border:1px solid var(--line);background:var(--sunken);padding:10px 12px">
+          <div class="glyph-big">${meta.glyph}</div>
+          <div class="game-title">${labelOf({ gameId: item.game })}</div>
+          <div class="counter">${t('home.live.events', { count: item.events })} · ${t('home.preview.live')}</div>
+        </div>
+        <div class="ticker">${players.join(' vs ')}</div>
+        <div class="tl"><i style="width:100%"></i></div>
+        <a class="enter" href="watch.html?match=${encodeURIComponent(item.matchId)}" data-keep-query>${t('home.preview.watch')} →</a>
+      </div>
+      <div class="col">
+        <div class="pc" style="--tone:var(--tone-b)">
+          <div class="role">${t('home.preview.second')}</div>
+          <div class="nm">${players[1] || '—'}</div>
+        </div>
+      </div>`,
+    stage,
+  )
+}
+
 function renderLive() {
   const strip = el('liveStrip')
   if (!state.live.length) {
@@ -64,6 +103,7 @@ function renderLive() {
     const button = document.getElementById('emptyQuick')
     if (button) button.onclick = openQuick
     el('liveCount').textContent = ''
+    renderPoster()
     return
   }
   el('liveCount').textContent = t('home.live.count', { count: state.live.length })
@@ -85,6 +125,7 @@ function renderLive() {
     })}`,
     strip,
   )
+  renderPoster()
 }
 
 function matchCard(item, maxEvents) {
@@ -206,7 +247,19 @@ async function loadLive() {
 
 async function loadStats() {
   try {
-    const data = await api.stats()
+    const base = await api.stats()
+    // 站内还没有赛事、但已经导入外部对局时，默认展示导入侧的真实活动与胜者榜。
+    // 数据仍然隔离，只是不再把“101 场导入”渲染成一张空表。
+    const importedOnly = (base.meleeMatches ?? 0) === 0 && (base.importedMatches ?? 0) > 0
+    let data = base
+    if (importedOnly) {
+      try {
+        data = { ...base, ...(await api.stats({ source: 'import' })) }
+      } catch {
+        data = base
+      }
+    }
+    const activity = importedOnly ? data.importedActivity || [] : data.activity || []
     const kpis = el('kpis').querySelectorAll('.kpi b')
     kpis[0].textContent = String(data.matches ?? 0)
     kpis[1].textContent = String(data.events ?? 0)
@@ -215,7 +268,13 @@ async function loadStats() {
     kpis[2].textContent = String(state.games.length || (data.byGame || []).length)
     kpis[3].textContent = String(data.viewers ?? 0)
 
-    const days = data.activity || []
+    document.getElementById('activityTitle').textContent = t(
+      importedOnly ? 'home.activity.importTitle' : 'home.activity.title',
+    )
+    document.getElementById('leadersTitle').textContent = t(
+      importedOnly ? 'home.leaders.importTitle' : 'home.leaders.title',
+    )
+    const days = activity
     const byDay = new Map(days.map((day) => [day.day, day.matches]))
     const slots = []
     for (let offset = 13; offset >= 0; offset -= 1) {
@@ -238,11 +297,11 @@ async function loadStats() {
       ? `${shortDay(slots[0].day)}　·　${shortDay(slots[6].day)}　·　${shortDay(slots[13].day)}`
       : ''
     el('activityMeta').textContent = days.length
-      ? t('home.activity.summary', {
+      ? t(importedOnly ? 'home.activity.importSummary' : 'home.activity.summary', {
           matches: days.reduce((sum, d) => sum + d.matches, 0),
           peak: max,
         })
-      : t('home.activity.none')
+      : t(importedOnly ? 'home.activity.importNone' : 'home.activity.none')
 
     litRender(
       data.topWinners && data.topWinners.length
@@ -251,9 +310,11 @@ async function loadStats() {
               <span class="nm">${winnerLabel(row.player)}</span><span class="w">${t(row.wins === 1 ? 'home.leaders.win' : 'home.leaders.wins', { count: row.wins })}</span></div>`,
           )}`
         : html`<span class="muted">${
-            data.importedMatches
-              ? t('home.leaders.importedOnly', { count: data.importedMatches })
-              : t('home.leaders.empty')
+            importedOnly
+              ? t('home.leaders.importEmpty')
+              : data.importedMatches
+                ? t('home.leaders.importedOnly', { count: data.importedMatches })
+                : t('home.leaders.empty')
           }</span>`,
       el('leaders'),
     )
