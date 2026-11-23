@@ -10,7 +10,7 @@ jsonschema==4.26.0
 fastjsonschema==2.22.2
 httpx==0.28.1
 # MCP 官方 SDK：melee mcp 子命令的 stdio 服务器（2.x 改了 API，锁定 1.x）
-mcp==1.30.0
+mcp==2.3.0
 # 运行时实际依赖（此前漏在 requirements 外，换机会直接 ImportError）
 cryptography==50.0.2
 Pillow==13.0.0

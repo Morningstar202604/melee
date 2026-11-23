@@ -12,4 +12,4 @@ fakeredis==2.32.0
 # 契约代码生成（packages/contracts/scripts/codegen.py）
 datamodel-code-generator==0.86.0
 # test_harness 走官方 MCP SDK 的工具面
-mcp==1.30.0
+mcp==2.3.0
