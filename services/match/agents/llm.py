@@ -18,6 +18,8 @@ import httpx
 
 from ..engine.base import Move
 from .base import AgentOutput, ThoughtSink, redact_sensitive_text
+from .errors import http_failure, stream_failure
+from .retry import retry_for
 
 ACTION_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -216,11 +218,7 @@ class LLMAgent:
             # 其他协议按非流式一次拿全（配置里的 stream 在这里被忽略）。
             body, failure = self._post_native(messages, started)
             if failure is not None:
-                return AgentOutput(
-                    move=Move(kind="ask", value=""),
-                    raw=redact_sensitive_text(failure, [self.config.api_key]),
-                    elapsed_ms=int((time.monotonic() - started) * 1000),
-                )
+                return self._failure_output(failure, started)
             content, thought, usage = _native_content(self.config.protocol, body)
             if on_thought is not None and thought:
                 on_thought(thought)
@@ -236,11 +234,7 @@ class LLMAgent:
             return self._act_streaming(payload, on_thought, legal, started)
         body, failure = self._post_with_retry(payload)
         if failure is not None:
-            return AgentOutput(
-                move=Move(kind="ask", value=""),
-                raw=redact_sensitive_text(failure, [self.config.api_key]),
-                elapsed_ms=int((time.monotonic() - started) * 1000),
-            )
+            return self._failure_output(failure, started)
 
         elapsed_ms = int((time.monotonic() - started) * 1000)
         content = _extract_content(body)
@@ -286,38 +280,28 @@ class LLMAgent:
         out["tokensUsedTotal"] = self.tokens_used
         return out
 
+    def _failure_output(self, failure: str, started: float) -> AgentOutput:
+        return AgentOutput(
+            move=Move(kind="ask", value=""),
+            raw=redact_sensitive_text(failure, [self.config.api_key]),
+            elapsed_ms=int((time.monotonic() - started) * 1000),
+        )
+
     def _post_with_retry(self, payload: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
         """发请求并做有限次退避重试；返回（响应体，失败描述）。"""
-        attempts = max(0, self.config.max_retries) + 1
-        last = "[transport-error] 未知错误"
-        for attempt in range(attempts):
-            # 预算检查放在每次尝试之前：重试也要计入，否则 429 风暴会让
-            # 实际消耗远超上限。
-            self._ensure_budget()
-            try:
-                response = self._client.post(
-                    f"{self.config.base_url.rstrip('/')}/chat/completions",
-                    headers={"Authorization": f"Bearer {self.config.api_key}"},
-                    json=payload,
-                )
-                response.raise_for_status()
-                body = response.json()
-                self._account(payload, body)
-                return body, None
-            except httpx.HTTPStatusError as exc:
-                # 上游错误体常带凭据回显，必须先脱敏再落事件。
-                detail = _redact(exc.response.text[:500], self.config.api_key)
-                last = f"[http-{exc.response.status_code}] {detail}"
-                retryable = exc.response.status_code == 429 or exc.response.status_code >= 500
-                if not retryable or attempt == attempts - 1:
-                    return None, last
-            # aqg: top-level boundary
-            except Exception as exc:  # noqa: BLE001 - 任何失败都要变成一次可记录的犯规  # aqg: top-level boundary
-                last = f"[transport-error] {_redact(str(exc), self.config.api_key)}"
-                if attempt == attempts - 1:
-                    return None, last
-            time.sleep(self.config.retry_backoff_s * (attempt + 1))
-        return None, last
+
+        def send() -> tuple[dict[str, Any] | None, str | None]:
+            response = self._client.post(
+                f"{self.config.base_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {self.config.api_key}"},
+                json=payload,
+            )
+            response.raise_for_status()
+            body = response.json()
+            self._account(payload, body)
+            return body, None
+
+        return retry_for(self.config, send, ensure_budget=self._ensure_budget)
 
     def _post_native(self, messages: list[dict[str, str]], started: float) -> tuple[dict[str, Any] | None, str | None]:
         """anthropic / gemini 原生协议：一次非流式请求，复用同一套预算与重试。
@@ -328,40 +312,26 @@ class LLMAgent:
         - gemini: generationConfig 里 maxOutputTokens/temperature/topP/stopSeeds/
           candidateCount；seed 用 candidateCount 的近义字段不存在，不下发。
         """
-        attempts = max(0, self.config.max_retries) + 1
-        last = "[transport-error] 未知错误"
-        for attempt in range(attempts):
-            self._ensure_budget()
-            try:
-                if self.config.protocol == "anthropic":
-                    url = f"{self.config.base_url.rstrip('/')}/messages"
-                    headers = {
-                        "x-api-key": self.config.api_key,
-                        "anthropic-version": "2023-06-01",
-                    }
-                    body_req = _anthropic_request(self.config, messages)
-                else:
-                    url = f"{self.config.base_url.rstrip('/')}/models/{self.config.model}:generateContent"
-                    headers = {"x-goog-api-key": self.config.api_key}
-                    body_req = _gemini_request(self.config, messages)
-                response = self._client.post(url, headers=headers, json=body_req)
-                response.raise_for_status()
-                body = response.json()
-                self._account_native(body_req, body)
-                return body, None
-            except httpx.HTTPStatusError as exc:
-                detail = _redact(exc.response.text[:500], self.config.api_key)
-                last = f"[http-{exc.response.status_code}] {detail}"
-                retryable = exc.response.status_code == 429 or exc.response.status_code >= 500
-                if not retryable or attempt == attempts - 1:
-                    return None, last
-            # aqg: top-level boundary
-            except Exception as exc:  # noqa: BLE001 - 任何失败都要变成一次可记录的犯规
-                last = f"[transport-error] {_redact(str(exc), self.config.api_key)}"
-                if attempt == attempts - 1:
-                    return None, last
-            time.sleep(self.config.retry_backoff_s * (attempt + 1))
-        return None, last
+
+        def send() -> tuple[dict[str, Any] | None, str | None]:
+            if self.config.protocol == "anthropic":
+                url = f"{self.config.base_url.rstrip('/')}/messages"
+                headers = {
+                    "x-api-key": self.config.api_key,
+                    "anthropic-version": "2023-06-01",
+                }
+                body_req = _anthropic_request(self.config, messages)
+            else:
+                url = f"{self.config.base_url.rstrip('/')}/models/{self.config.model}:generateContent"
+                headers = {"x-goog-api-key": self.config.api_key}
+                body_req = _gemini_request(self.config, messages)
+            response = self._client.post(url, headers=headers, json=body_req)
+            response.raise_for_status()
+            body = response.json()
+            self._account_native(body_req, body)
+            return body, None
+
+        return retry_for(self.config, send, ensure_budget=self._ensure_budget)
 
     def _account_native(self, request_body: dict[str, Any], body: dict[str, Any]) -> None:
         """原生协议的记账：anthropic 报 input/output_tokens，gemini 报
@@ -411,19 +381,13 @@ class LLMAgent:
                 response.raise_for_status()
                 buffer = self._consume_stream(response.iter_lines(), content, on_thought)
         except httpx.HTTPStatusError as exc:
-            detail = _redact(exc.response.text[:500], self.config.api_key)
-            return AgentOutput(
-                move=Move(kind="ask", value=""),
-                raw=redact_sensitive_text(f"[http-{exc.response.status_code}] {detail}", [self.config.api_key]),
-            )
+            message, _ = http_failure(exc, self.config.api_key, 500)
+            return AgentOutput(move=Move(kind="ask", value=""), raw=message)
         # aqg: top-level boundary
         except Exception as exc:  # noqa: BLE001
             return AgentOutput(
                 move=Move(kind="ask", value=""),
-                raw=redact_sensitive_text(
-                    f"[stream-error] {_redact(str(exc), self.config.api_key)}",
-                    [self.config.api_key],
-                ),
+                raw=stream_failure(exc, self.config.api_key),
             )
 
         if buffer:
@@ -743,9 +707,3 @@ def parse_action(content: str, legal: list[str]) -> Move:
         aspect, _, raw_value = value.partition("=")
         value = f"{aspect.strip()}={raw_value.strip()}"
     return Move(kind=kind, value=value)
-
-
-def _redact(text: str, secret: str) -> str:
-    if secret and secret in text:
-        return text.replace(secret, "***")
-    return text

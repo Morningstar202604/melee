@@ -13,11 +13,12 @@ import sqlite3
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from .clock import utc_now_iso
 from .contract import event_types
+from .db import connect
 
 logger = logging.getLogger("melee.eventlog")
 
@@ -31,7 +32,10 @@ CREATE TABLE IF NOT EXISTS matches (
   seed       INTEGER NOT NULL,
   players    TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  ended_at   TEXT
+  ended_at   TEXT,
+  source     TEXT NOT NULL DEFAULT 'melee',
+  source_id  TEXT,
+  played_at  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -70,7 +74,7 @@ class EventLogError(ValueError):
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now_iso()
 
 
 def _enable_wal(conn: sqlite3.Connection, attempts: int = 5) -> None:
@@ -113,7 +117,7 @@ class EventLog:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         # runner 在线程池里执行，事件由它写；reader 在事件循环里读。
         # 同一连接跨线程使用需要显式放开限制，并用锁保证写入串行。
-        conn = sqlite3.connect(str(path), check_same_thread=False, timeout=30.0)
+        conn = connect(str(path), check_same_thread=False, timeout=30.0)
         # 先设 busy_timeout 再切 WAL：切 journal_mode 需要短暂独占锁，
         # 并发 open 时若别的连接正持有锁，会直接抛 "database is locked"（CI 上实测）。
         conn.execute("PRAGMA busy_timeout=30000")
@@ -146,6 +150,54 @@ class EventLog:
         )
         self.conn.commit()
 
+    def _new_event(
+        self,
+        event_type: str,
+        payload: dict[str, Any],
+        *,
+        player: str | None = None,
+        at: str | None = None,
+        visibility: dict[str, Any] | str | None = None,
+    ) -> dict[str, Any]:
+        """事件对象只在这里组装：append 与 append_terminal 的字段顺序一致。"""
+        event: dict[str, Any] = {
+            "seq": self._next,
+            "matchId": self.match_id,
+            "type": event_type,
+            "at": at or _now(),
+            "payload": payload,
+        }
+        if player is not None:
+            event["player"] = player
+        if visibility is not None:
+            event["visibility"] = visibility
+        return event
+
+    def _insert_event(self, event: dict[str, Any], payload_json: str) -> None:
+        self.conn.execute(
+            "INSERT INTO events (match_id, seq, type, player, at, payload, visibility) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (
+                self.match_id,
+                event["seq"],
+                event["type"],
+                event.get("player"),
+                event["at"],
+                payload_json,
+                _visibility_json(event.get("visibility")),
+            ),
+        )
+
+    def _notify(self, event: dict[str, Any]) -> None:
+        """广播是通知，不是事实：Redis 抖动不能让事件写入失败。"""
+        if self.on_event is None:
+            return
+        try:
+            self.on_event(event)
+        # aqg: top-level boundary
+        except Exception as exc:  # noqa: BLE001 - 广播必须可降级  # aqg: top-level boundary
+            logging.getLogger("melee.eventlog").warning("事件广播失败（已忽略）：%s", exc)
+
     def append(
         self,
         event_type: str,
@@ -160,51 +212,23 @@ class EventLog:
         if not isinstance(payload, dict):
             raise EventLogError("payload 必须是对象")
 
-        event: dict[str, Any] = {
-            "seq": self._next,
-            "matchId": self.match_id,
-            "type": event_type,
-            "at": at or _now(),
-            "payload": payload,
-        }
-        if player is not None:
-            event["player"] = player
-        if visibility is not None:
-            event["visibility"] = visibility
-
+        event = self._new_event(
+            event_type, payload, player=player, at=at, visibility=visibility
+        )
         payload_json = json.dumps(payload, ensure_ascii=False)
         _check_contract(event)
         with self.lock:
             # 多个连接（API、worker、导播台）会同时写同一场比赛：
             # 各自的 _next 可能撞号，必须撞了重读再写，而不是抛给调用方。
             self._insert_with_retry(event, payload_json)
-        if self.on_event is not None:
-            # 广播是通知，不是事实：Redis 抖动不能让事件写入失败，
-            # 否则一次 Redis 重启会让正在跑的比赛整局作废。
-            try:
-                self.on_event(event)
-            # aqg: top-level boundary
-            except Exception as exc:  # noqa: BLE001 - 广播必须可降级  # aqg: top-level boundary
-                logging.getLogger("melee.eventlog").warning("事件广播失败（已忽略）：%s", exc)
+        self._notify(event)
         return event
 
     def _insert_with_retry(self, event: dict[str, Any], payload_json: str) -> None:
         for attempt in range(8):
             event["seq"] = self._next
             try:
-                self.conn.execute(
-                    "INSERT INTO events (match_id, seq, type, player, at, payload, visibility) "
-                    "VALUES (?,?,?,?,?,?,?)",
-                    (
-                        self.match_id,
-                        event["seq"],
-                        event["type"],
-                        event.get("player"),
-                        event["at"],
-                        payload_json,
-                        _visibility_json(event.get("visibility")),
-                    ),
-                )
+                self._insert_event(event, payload_json)
                 self.conn.commit()
                 self._next += 1
                 return
@@ -252,19 +276,9 @@ class EventLog:
                     (self.match_id,),
                 ).fetchone()
                 self._next = int(row[0])
-                event: dict[str, Any] = {
-                    "seq": self._next,
-                    "matchId": self.match_id,
-                    "type": "match.ended",
-                    "at": _now(),
-                    "payload": payload,
-                }
+                event = self._new_event("match.ended", payload)
                 _check_contract(event)
-                self.conn.execute(
-                    "INSERT INTO events (match_id, seq, type, player, at, payload, visibility) "
-                    "VALUES (?,?,?,?,?,?,?)",
-                    (self.match_id, event["seq"], "match.ended", None, event["at"], payload_json, None),
-                )
+                self._insert_event(event, payload_json)
                 self.conn.execute(
                     "UPDATE matches SET ended_at = COALESCE(ended_at, ?) WHERE match_id = ?",
                     (_now(), self.match_id),
@@ -275,12 +289,7 @@ class EventLog:
                 self.conn.rollback()
                 raise
             self._next += 1
-        if self.on_event is not None:
-            try:
-                self.on_event(event)
-            # aqg: top-level boundary
-            except Exception as exc:  # noqa: BLE001 - 同 append  # aqg: top-level boundary
-                logging.getLogger("melee.eventlog").warning("终局事件广播失败（已忽略）：%s", exc)
+        self._notify(event)
         return True
 
     def mark_ended(self) -> None:
@@ -372,7 +381,7 @@ def read_match(path: str | Path, match_id: str, after: int = -1, limit: int | No
 
 def has_match(path: str | Path, match_id: str) -> bool:
     """比赛是否已登记（不等于已有事件：worker 可能还没领取）。"""
-    conn = sqlite3.connect(str(path))
+    conn = connect(str(path))
     try:
         exists = conn.execute("SELECT 1 FROM matches WHERE match_id = ?", (match_id,)).fetchone()
         return exists is not None

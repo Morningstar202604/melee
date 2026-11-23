@@ -17,6 +17,9 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _harness import launch_browser  # noqa: E402
+
 DESKTOP = {"width": 1440, "height": 900}
 MOBILE = {"width": 390, "height": 844}
 
@@ -113,11 +116,7 @@ def shoot(page, out: Path, name: str) -> None:
 def run(api: str, out: Path, match_id: str, season_id: str) -> int:
     report = Report()
     with sync_playwright() as pw:
-        # 本机自带 chromium 未安装时退回系统 Edge，与 audit_ui.py 同策略。
-        try:
-            browser = pw.chromium.launch()
-        except Exception:
-            browser = pw.chromium.launch(channel="msedge")
+        browser = launch_browser(pw)
 
         for lang in ("en", "zh"):
             for name, path in PAGES:

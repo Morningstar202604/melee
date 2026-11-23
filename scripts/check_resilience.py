@@ -23,6 +23,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from _harness import report
+
 PASS: list[tuple[str, str]] = []
 FAIL: list[tuple[str, str]] = []
 
@@ -204,11 +206,7 @@ def main() -> int:
     else:
         print("SKIP no --db given; cleanup check is the gate's job")
 
-    print()
-    print(f"RESULT {len(PASS)} pass / {len(FAIL)} fail")
-    for name, detail in FAIL:
-        print("  FAILED:", name, "|", detail)
-    return 1 if FAIL else 0
+    return report(PASS, FAIL)
 
 
 if __name__ == "__main__":

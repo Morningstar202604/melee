@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .messages import format_message
+from .teams import is_known_team, team_label_zh, team_reference
 
 
 @dataclass
@@ -21,6 +22,8 @@ class Highlight:
     title: str
     detail: str
     weight: int
+    # 棋类的第 N 手（1-based）；seq 是事件序号，不是棋步数，不能拿来当"第几手"。
+    move: int | None = None
     # 标题/说明的模板键：事件流按语言重新渲染时用，老客户端继续读 title/detail。
     title_key: str = ""
     title_params: dict[str, Any] | None = None
@@ -36,6 +39,8 @@ class Highlight:
             "detail": self.detail,
             "weight": self.weight,
         }
+        if self.move is not None:
+            payload["move"] = self.move
         if self.title_key:
             payload["titleKey"] = self.title_key
             payload["titleParams"] = self.title_params or {}
@@ -102,6 +107,7 @@ def _hl(
     title_params: dict[str, Any] | None = None,
     detail_key: str = "",
     detail_params: dict[str, Any] | None = None,
+    move: int | None = None,
 ) -> Highlight:
     return Highlight(
         kind=kind,
@@ -110,6 +116,7 @@ def _hl(
         title=title,
         detail=detail,
         weight=weight,
+        move=move,
         title_key=title_key,
         title_params=title_params,
         detail_key=detail_key,
@@ -117,7 +124,13 @@ def _hl(
     )
 
 
-def _highlights_of(event: dict[str, Any], *, is_last_move: bool = False, move_index: int = 0) -> list[Highlight]:
+def _highlights_of(
+    event: dict[str, Any],
+    *,
+    is_last_move: bool = False,
+    move_index: int = 0,
+    has_winner: bool = True,
+) -> list[Highlight]:
     """单条事件产生的所有高光；没有就返回空列表。
 
     `is_last_move` / `move_index` 由 `find_highlights` 按整段流算好传进来：
@@ -140,7 +153,12 @@ def _highlights_of(event: dict[str, Any], *, is_last_move: bool = False, move_in
         if handler is None:
             continue
         if effect["kind"] == "action":
-            out += handler(event, effect, player, is_last=is_last_move, move_index=move_index)
+            out += handler(
+                event, effect, player,
+                is_last=is_last_move,
+                move_index=move_index,
+                has_winner=has_winner,
+            )
         else:
             out += handler(event, effect, player)
     return out
@@ -149,7 +167,7 @@ def _highlights_of(event: dict[str, Any], *, is_last_move: bool = False, move_in
 def _end_highlight(event: dict[str, Any], payload: dict[str, Any]) -> Highlight:
     winner = payload.get("winner")
     if winner:
-        tp = {"winner": _TEAM_LABELS.get(winner, winner)}
+        tp = {"winner": team_label_zh(winner)}
         key = "hl.end.win"
     else:
         tp = {}
@@ -159,7 +177,8 @@ def _end_highlight(event: dict[str, Any], payload: dict[str, Any]) -> Highlight:
 
     reason = localize_reason(payload.get("reason", ""), "en")
     return _hl(event, "end", format_message(key, tp), str(reason), 60,
-               title_key=key, title_params=tp)
+               title_key=key, title_params=tp,
+               detail_key="hl.end.detail", detail_params={"reason": payload.get("reason", "")})
 
 
 def _guess_highlight(event: dict[str, Any], effect: dict[str, Any], player: str) -> list[Highlight]:
@@ -193,6 +212,31 @@ def _forfeit_highlight(event: dict[str, Any], effect: dict[str, Any], player: st
 _BOARD_MOVE_WEIGHT = 20
 _BOARD_MOVE_WEIGHT_LATE = 35
 _BOARD_MOVE_WEIGHT_LAST = 95
+_BOARD_MOVE_WEIGHT_DRAW = 75
+
+
+def _board_highlight(
+    event: dict[str, Any],
+    player: str,
+    action: str,
+    *,
+    weight: int,
+    title_key: str,
+    detail_key: str,
+    move_index: int = 0,
+) -> Highlight:
+    tp = {"player": player, "action": action}
+    return _hl(
+        event,
+        "board_move",
+        format_message(title_key, tp),
+        format_message(detail_key),
+        weight,
+        title_key=title_key,
+        title_params=tp,
+        detail_key=detail_key,
+        move=move_index + 1,
+    )
 
 
 def _board_move_highlight(
@@ -202,6 +246,7 @@ def _board_move_highlight(
     *,
     is_last: bool = False,
     move_index: int = 0,
+    has_winner: bool = True,
 ) -> list[Highlight]:
     """棋类的一步落子。
 
@@ -218,44 +263,42 @@ def _board_move_highlight(
     if not action:
         return []
     if is_last:
-        tp = {"player": player, "action": action}
+        if not has_winner:
+            return [
+                _board_highlight(
+                    event, player, action,
+                    weight=_BOARD_MOVE_WEIGHT_DRAW,
+                    title_key="hl.board.draw.title",
+                    detail_key="hl.board.draw.detail",
+                    move_index=move_index,
+                )
+            ]
         return [
-            _hl(
-                event,
-                "board_move",
-                format_message("hl.board.decisive.title", tp),
-                format_message("hl.board.decisive.detail"),
-                _BOARD_MOVE_WEIGHT_LAST,
+            _board_highlight(
+                event, player, action,
+                weight=_BOARD_MOVE_WEIGHT_LAST,
                 title_key="hl.board.decisive.title",
-                title_params=tp,
                 detail_key="hl.board.decisive.detail",
+                move_index=move_index,
             )
         ]
     if move_index >= 8:
-        tp = {"player": player, "action": action}
         return [
-            _hl(
-                event,
-                "board_move",
-                format_message("hl.board.mid.title", tp),
-                format_message("hl.board.mid.detail"),
-                _BOARD_MOVE_WEIGHT_LATE,
+            _board_highlight(
+                event, player, action,
+                weight=_BOARD_MOVE_WEIGHT_LATE,
                 title_key="hl.board.mid.title",
-                title_params=tp,
                 detail_key="hl.board.mid.detail",
+                move_index=move_index,
             )
         ]
-    tp = {"player": player, "action": action}
     return [
-        _hl(
-            event,
-            "board_move",
-            format_message("hl.board.mid.title", tp),
-            format_message("hl.board.early.detail"),
-            _BOARD_MOVE_WEIGHT,
+        _board_highlight(
+            event, player, action,
+            weight=_BOARD_MOVE_WEIGHT,
             title_key="hl.board.mid.title",
-            title_params=tp,
             detail_key="hl.board.early.detail",
+            move_index=move_index,
         )
     ]
 
@@ -285,6 +328,8 @@ def find_highlights(events: list[dict[str, Any]], limit: int = 3) -> list[Highli
         )
     }
     last_board_seq = max(board_moves) if board_moves else -1
+    ended = next((event for event in reversed(events) if event["type"] == "match.ended"), None)
+    has_winner = bool(ended and (ended.get("payload") or {}).get("winner"))
 
     highlights: list[Highlight] = []
     for event in events:
@@ -293,6 +338,7 @@ def find_highlights(events: list[dict[str, Any]], limit: int = 3) -> list[Highli
                 event,
                 is_last_move=event["seq"] == last_board_seq,
                 move_index=board_moves.get(event["seq"], 0),
+                has_winner=has_winner,
             )
         )
     # 权重决定"选哪几段"，展示顺序按 seq 还原时间线——
@@ -308,36 +354,20 @@ def _is_board_move(event: dict[str, Any]) -> bool:
     return any(effect.get("kind") == "action" for effect in event["payload"].get("effects") or [])
 
 
-from .engine.codenames import team_label as _team_label
-
-_TEAM_LABELS = {"red": "红队", "blue": "蓝队"}
-
-
 def _winner_reference(winner: str | None) -> str:
     """把胜者转成语言无关的引用键；个人选手名原样返回。
 
     `red` -> `team.red`，`team3` -> `team.3`。渲染时由 messages 的词条
     落成当前语言，战报一句话才不会写死某一种语言。
     """
-    if not isinstance(winner, str):
-        return str(winner)
-    if winner in ("red", "blue", "neutral", "assassin"):
-        return f"team.{winner}"
-    if winner.startswith("team") and winner[4:].isdigit():
-        return f"team.{winner[4:]}"
-    return winner
+    return team_reference(winner)
 
 
 def _winner_label(winner: str | None) -> str:
     """代号/团队赛的胜者是队伍名，战报要翻成人话。
 
-    队伍名统一走 codenames.team_label：多队编队后可能是 team3 这类
-    动态名，不能只查红蓝两张小表。"""
-    if winner in _TEAM_LABELS:
-        return _TEAM_LABELS[winner]
-    if isinstance(winner, str) and (winner.startswith("team") or winner.startswith("side")):
-        return _team_label(winner)
-    return str(winner)
+    队伍名统一走 teams.team_label_zh：多队编队的 team3 会显示成「第 3 队」。"""
+    return team_label_zh(winner)
 
 
 @dataclass
@@ -632,8 +662,7 @@ def verify_summary(summary: dict[str, Any], events: list[dict[str, Any]]) -> lis
     # 团队赛的胜者是队伍名（red / blue / team3…），不在 perPlayer（选手 id）里，属正常。
     if (
         winner
-        and winner not in _TEAM_LABELS
-        and not (isinstance(winner, str) and winner.startswith("team"))
+        and not is_known_team(winner)
         and winner not in summary.get("perPlayer", {})
     ):
         problems.append("胜者不在参赛名单里")

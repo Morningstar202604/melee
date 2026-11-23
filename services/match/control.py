@@ -15,6 +15,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .db import connect
 from .eventlog import EventLog, read_match
 
 SHOTS = ("wide", "close", "thought", "reveal", "slowmo")
@@ -111,7 +112,7 @@ def live_matches(db_path: str | Path, limit: int = 50) -> list[dict[str, Any]]:
 
     from .rehydrate import rehydrate, summarize
 
-    conn = sqlite3.connect(str(db_path), timeout=5)
+    conn = connect(str(db_path), timeout=5)
     try:
         rows = conn.execute(
             "SELECT match_id FROM matches WHERE ended_at IS NULL ORDER BY created_at DESC LIMIT ?",

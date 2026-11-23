@@ -307,3 +307,32 @@ def test_find_match_returns_single_row(client):
     item = find_match(api_module.DB_PATH, match_id)
     assert item is not None and item["matchId"] == match_id
     assert find_match(api_module.DB_PATH, "m_missing") is None
+
+
+def test_overview_keeps_imported_wins_out_of_site_leaderboard(tmp_path):
+    from services.match.archive import overview
+    from services.match.episode import import_episode
+
+    db_path = tmp_path / "imported.db"
+    sample = {
+        "format": "melee.episode/1",
+        "source": "kaggle-game-arena",
+        "episodeId": "archive-import-1",
+        "game": "chess",
+        "players": ["Imported A", "Imported B"],
+        "winner": "Imported A",
+        "steps": [{"player": "Imported A", "action": "e4"}],
+    }
+    import_episode(db_path, sample, fmt="episode")
+
+    data = overview(db_path, "en")
+    assert data["importedMatches"] == 1
+    assert data["meleeMatches"] == 0
+    assert data["topWinners"] == []
+    assert data["activity"] == []
+    assert data["importedActivity"][0]["matches"] == 1
+    assert data["sourceScope"] == "all"
+    assert data["topWinnersScope"] == "melee"
+
+    imported = overview(db_path, "en", source="import")
+    assert imported["topWinners"][0]["player"] == "Imported A"

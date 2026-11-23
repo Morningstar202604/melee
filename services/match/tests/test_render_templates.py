@@ -64,10 +64,10 @@ def test_same_template_is_pixel_identical(sample):
 
 
 def test_spotlight_wraps_long_text_without_losing_characters(sample):
-    from services.match.render import _wrap_text
+    from services.match.textfit import wrap_text
 
     text = "灰隼问「是不是建筑」答否排除 8 个候选只剩 3 个"
-    lines = _wrap_text(text, 16)
+    lines = wrap_text(text, 16, wide=True, flatten=True)
     assert "".join(lines).replace(" ", "") == text.replace(" ", "")
     assert all(lines)
 

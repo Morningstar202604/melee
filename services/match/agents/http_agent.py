@@ -35,6 +35,7 @@ import httpx
 
 from ..engine.base import Move
 from .base import AgentOutput, ThoughtSink
+from .retry import retry_for
 
 
 @dataclass
@@ -135,32 +136,20 @@ class HTTPAgent:
         )
 
     def _post(self, payload: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
-        attempts = max(0, self.config.max_retries) + 1
-        last = "[transport-error] 未知错误"
         headers = {"Content-Type": "application/json"}
         if self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
-        for attempt in range(attempts):
+
+        def send() -> tuple[dict[str, Any] | None, str | None]:
             self.requests_made += 1
-            try:
-                response = self._client.post(self.config.endpoint, json=payload, headers=headers)
-                response.raise_for_status()
-                body = response.json()
-                if not isinstance(body, dict):
-                    return None, f"[bad-response] 期望 JSON 对象，收到 {type(body).__name__}"
-                return body, None
-            except httpx.HTTPStatusError as exc:
-                detail = _redact(exc.response.text[:300], self.config.api_key)
-                last = f"[http-{exc.response.status_code}] {detail}"
-                retryable = exc.response.status_code == 429 or exc.response.status_code >= 500
-                if not retryable or attempt == attempts - 1:
-                    return None, last
-            except Exception as exc:  # noqa: BLE001 - 任何失败都要变成一次可记录的犯规
-                last = f"[transport-error] {_redact(str(exc), self.config.api_key)}"
-                if attempt == attempts - 1:
-                    return None, last
-            time.sleep(self.config.retry_backoff_s * (attempt + 1))
-        return None, last
+            response = self._client.post(self.config.endpoint, json=payload, headers=headers)
+            response.raise_for_status()
+            body = response.json()
+            if not isinstance(body, dict):
+                return None, f"[bad-response] 期望 JSON 对象，收到 {type(body).__name__}"
+            return body, None
+
+        return retry_for(self.config, send, error_chars=300)
 
 
 def _parse_response(
@@ -194,9 +183,3 @@ def _parse_response(
         return Move(kind="guess", value=text), thought_text
 
     return Move(kind="ask", value=""), thought_text
-
-
-def _redact(text: str, secret: str) -> str:
-    if secret and secret in text:
-        return text.replace(secret, "***")
-    return text

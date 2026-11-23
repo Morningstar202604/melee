@@ -13,45 +13,17 @@ from pathlib import Path
 from typing import Any
 
 from .archive import find_match
-from .render import _font
+from .font import font
+from .palette import DARK, LIGHT
+from .teams import team_label_zh
+from .textfit import wrap_text
 
 WIDTH = 1200
 HEIGHT = 630
 
-# 亮色是产品默认（与网页同一套令牌），深色卡片留给深色社交场景。
-# 分享卡由爬虫抓取、无法跟随用户主题，所以在 URL 上用 ?theme=dark 显式选择。
-BG = (244, 246, 251)
-PANEL = (255, 255, 255)
-LINE = (221, 228, 239)
-TEXT = (15, 23, 41)
-DIM = (74, 85, 104)
-FAINT = (107, 118, 144)
-ACCENT = (14, 116, 144)
-ACCENT_B = (161, 98, 7)
-OK = (4, 120, 87)
-
-DARK = {
-    "bg": (7, 9, 13),
-    "panel": (17, 20, 27),
-    "line": (35, 40, 56),
-    "text": (232, 234, 242),
-    "dim": (154, 163, 181),
-    "faint": (92, 100, 120),
-    "accent": (34, 211, 238),
-    "accent_b": (245, 165, 36),
-    "ok": (52, 211, 153),
-}
-
 
 def palette(dark: bool = False) -> dict[str, tuple[int, int, int]]:
-    if not dark:
-        return {"bg": BG, "panel": PANEL, "line": LINE, "text": TEXT, "dim": DIM,
-                "faint": FAINT, "accent": ACCENT, "accent_b": ACCENT_B, "ok": OK}
-    return dict(DARK)
-
-from .engine.codenames import team_label as _team_label
-
-_TEAM = {"red": "红队", "blue": "蓝队"}
+    return DARK if dark else LIGHT
 
 
 def _find(db_path: str | Path, match_id: str) -> dict[str, Any] | None:
@@ -61,19 +33,6 @@ def _find(db_path: str | Path, match_id: str) -> dict[str, Any] | None:
     最近 500 场的事件计数全部算一遍，比赛一多就是全库扫描。
     """
     return find_match(db_path, match_id)
-
-
-def _wrap(text: str, width: int) -> list[str]:
-    lines: list[str] = []
-    current = ""
-    for char in text:
-        current += char
-        if len(current) >= width:
-            lines.append(current)
-            current = ""
-    if current:
-        lines.append(current)
-    return lines or [""]
 
 
 def render_card(db_path: str | Path, match_id: str, out_path: str | Path, *, dark: bool = False) -> Path:
@@ -94,24 +53,24 @@ def render_card(db_path: str | Path, match_id: str, out_path: str | Path, *, dar
     draw.rectangle([0, 0, WIDTH, 6], fill=tone["accent"])
     draw.rectangle([60, 74, 66, 556], fill=tone["panel"])
 
-    draw.text((96, 84), "MELEE / Broadcast", font=_font(26), fill=tone["accent"])
-    draw.text((96, 128), item["gameLabel"], font=_font(58), fill=tone["text"])
-    draw.text((96, 208), " · ".join(item["players"]), font=_font(30), fill=tone["dim"])
+    draw.text((96, 84), "MELEE / Broadcast", font=font(26), fill=tone["accent"])
+    draw.text((96, 128), item["gameLabel"], font=font(58), fill=tone["text"])
+    draw.text((96, 208), " · ".join(item["players"]), font=font(30), fill=tone["dim"])
 
     winner = item.get("winner")
-    label = _TEAM.get(winner) or (_team_label(winner) if isinstance(winner, str) and winner.startswith("team") else winner) if winner else ""
+    label = team_label_zh(winner) if winner else ""
     if item["status"] == "ended":
         headline = f"{label} 胜" if label else "无人获胜"
         color = tone["ok"] if winner else tone["faint"]
     else:
         headline = "直播中"
         color = tone["accent_b"]
-    draw.text((96, 300), headline, font=_font(86), fill=color)
+    draw.text((96, 300), headline, font=font(86), fill=color)
 
     reason = (item.get("reason") or "").strip()
     if reason:
-        for index, line in enumerate(_wrap(reason, 22)[:2]):
-            draw.text((96, 410 + index * 44), line, font=_font(30), fill=tone["dim"])
+        for index, line in enumerate(wrap_text(reason, 22)[:2]):
+            draw.text((96, 410 + index * 44), line, font=font(30), fill=tone["dim"])
 
     stats = [
         ("事件", str(item["events"])),
@@ -120,12 +79,12 @@ def render_card(db_path: str | Path, match_id: str, out_path: str | Path, *, dar
     ]
     x = 96
     for key, value in stats:
-        draw.text((x, 520), value, font=_font(34), fill=tone["text"])
-        draw.text((x, 562), key, font=_font(18), fill=tone["faint"])
+        draw.text((x, 520), value, font=font(34), fill=tone["text"])
+        draw.text((x, 562), key, font=font(18), fill=tone["faint"])
         x += 180
 
-    draw.text((WIDTH - 96, 520), "melee · AI matches, worth watching", font=_font(22), fill=tone["faint"], anchor="ra")
-    draw.text((WIDTH - 96, 556), match_id, font=_font(20), fill=tone["faint"], anchor="ra")
+    draw.text((WIDTH - 96, 520), "melee · AI matches, worth watching", font=font(22), fill=tone["faint"], anchor="ra")
+    draw.text((WIDTH - 96, 556), match_id, font=font(20), fill=tone["faint"], anchor="ra")
 
     image.save(out_path, format="PNG", optimize=True)
     return out_path

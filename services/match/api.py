@@ -25,6 +25,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from .auth import AuthError, authenticate
 from .observability import install_metrics
@@ -32,6 +33,7 @@ from .routes import ROUTERS
 from .routes.common import auth_config, visible
 from .scheduler import start_from_env, stop_current
 from .settings import settings
+from .version import APP_VERSION
 from .worker import ensure_inline_worker, stop_inline_worker
 
 logger = logging.getLogger("melee.match")
@@ -186,7 +188,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
     app = FastAPI(
         title="melee match service",
-        version="1.9.2",
+        version=APP_VERSION,
         lifespan=lifespan,
         # token 模式下不公开接口表：/docs 与 /openapi.json 之前无需鉴权即可读。
         docs_url=None if auth_config().mode != "off" else "/docs",
@@ -204,6 +206,10 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
+    # 事件列表是最大的响应体：一场长对局可达数 MB。gzip 只压缩
+    # 大于 1KB 的普通响应；Starlette 默认跳过 text/event-stream，
+    # 所以 SSE 的逐条推送不会被缓冲，直播延迟不受影响。
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
     _apply_security_headers(app)
     install_metrics(app, resolved)

@@ -17,12 +17,13 @@ from __future__ import annotations
 import shutil
 import subprocess
 from dataclasses import dataclass, field
-from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from .clips import Clip
+from .font import font as _font
+from .textfit import wrap_text
 
 WIDTH = 1600
 HEIGHT = 900
@@ -40,16 +41,6 @@ ACCENT_B = (245, 165, 36)
 OK = (52, 211, 153)
 BAD = (248, 113, 113)
 
-FONT_CANDIDATES = (
-    "C:/Windows/Fonts/msyh.ttc",
-    "C:/Windows/Fonts/msyhbd.ttc",
-    "C:/Windows/Fonts/simhei.ttf",
-    "/System/Library/Fonts/PingFang.ttc",
-    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-)
-
-
 # 高光模板：同一份事件、不同的信息主次。全部确定性，不含随机与时钟。
 #   broadcast —— 现在这套：左标题 + 左账本 + 右局面面板，信息最全
 #   spotlight —— 大字居中：一句话 + 一个巨大数字，适合竖屏与社交传播
@@ -65,24 +56,6 @@ def normalize_template(name: str | None) -> str:
     """未知模板退回默认，不报错——渲染是异步长任务，不该因参数拼错整段失败。"""
     text = (name or "broadcast").strip().lower()
     return text if text in TEMPLATES else "broadcast"
-
-
-@lru_cache(maxsize=64)
-def _font(size: int):
-    """字号 → 字体对象，进程内缓存。
-
-    之前每画一行文字都重新 truetype 载入一次（一帧约 20 次），
-    高光渲染 10 帧/秒、每段几十帧，载入字体成了最贵的操作。
-    """
-    from PIL import ImageFont
-
-    for path in FONT_CANDIDATES:
-        if Path(path).exists():
-            try:
-                return ImageFont.truetype(path, size)
-            except OSError:
-                continue
-    return ImageFont.load_default()
 
 
 @dataclass
@@ -462,7 +435,7 @@ def _draw_templated(event: dict[str, Any], context: dict[str, Any], template: st
     if template == "spotlight":
         draw.text((80, 70), "MELEE / 高光", font=_font(22), fill=DIM)
         draw.line([(80, 110), (WIDTH - 80, 110)], fill=LINE, width=2)
-        lines = _wrap_text(headline, 16)[:4]
+        lines = wrap_text(headline, 16, wide=True, flatten=True)[:4]
         y = 250 - max(0, len(lines) - 2) * 40
         for line in lines:
             draw.text((80, y), line, font=_font(72), fill=TEXT)
@@ -491,21 +464,6 @@ def _draw_templated(event: dict[str, Any], context: dict[str, Any], template: st
             draw.text((x + 30, y + 140), stat[1], font=_font(22), fill=FAINT)
     _draw_progress(draw, context, event)
     return image
-
-
-def _wrap_text(text: str, width: int) -> list[str]:
-    """按显示宽度折行：中文字符算 2 列。"""
-    lines: list[str] = []
-    current = ""
-    flat = str(text).replace(chr(10), " ")
-    for char in flat:
-        current += char
-        if sum(2 if ord(c) > 0x2E80 else 1 for c in current) >= width * 2:
-            lines.append(current)
-            current = ""
-    if current:
-        lines.append(current)
-    return lines or [""]
 
 
 def _spotlight_metric(context: dict[str, Any], event: dict[str, Any]) -> tuple[str, str]:

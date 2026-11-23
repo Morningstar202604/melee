@@ -1,17 +1,13 @@
 // 导播台：选台、切镜、看事件。人工切镜写进事件流，回放能重现。
 import { html } from '../vendor/lit-html.js'
 import { paint as litRender } from './paint.js'
-import { api, configure, el, propagateQuery, shotLabel, toast, gameMeta } from './api.js'
-import { mountTopbar, mountFooter } from './nav.js'
+import { api, el, shotLabel, toast, gameMeta } from './api.js'
+import { mountFooter } from './nav.js'
 import { activateOnKey } from './a11y.js'
-import { applyI18n, resolveLang, setLang, t } from './i18n.js'
+import { t } from './i18n.js'
+import { bootstrapPage } from './ui.js'
 
-setLang(resolveLang())
-configure()
-propagateQuery()
-mountTopbar({ active: 'director' })
-document.title = t('director.title')
-applyI18n()
+bootstrapPage({ active: 'director', titleKey: 'director.title', footer: false })
 
 const params = new URLSearchParams(location.search)
 const SHOTS = ['wide', 'close', 'thought', 'reveal', 'slowmo']

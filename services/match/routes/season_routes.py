@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from ..engine import registry as game_registry
+from ..db import open_db
 from ..player_specs import PlayerSpec
 from ..schedule import SeasonBusyError, run_season
 from ..season import Season, load, persist
@@ -21,6 +21,7 @@ from .common import (
     quota,
     remaining_fixtures,
     safe_season_id,
+    validate_players,
 )
 
 router = APIRouter()
@@ -45,9 +46,7 @@ class SeasonCreate(BaseModel):
 async def list_seasons(request: Request) -> dict[str, Any]:
     """列出全部赛季，供赛季页做入口。"""
     guard(request, "read")
-    conn = sqlite3.connect(db_path_of(request))
-    conn.row_factory = sqlite3.Row
-    try:
+    with open_db(db_path_of(request), rows=True) as conn:
         try:
             rows = conn.execute(
                 "SELECT s.season_id, s.name, s.game, s.created_at, "
@@ -71,25 +70,19 @@ async def list_seasons(request: Request) -> dict[str, Any]:
                 for row in rows
             ],
         }
-    finally:
-        conn.close()
 
 
 @router.post("/seasons", status_code=201)
 async def create_season(body: SeasonCreate, request: Request) -> dict[str, Any]:
     guard(request, "write_season")
     safe_season_id(body.seasonId)
-    players = [p.id for p in body.players]
-    if len(set(players)) != len(players):
-        raise HTTPException(status_code=400, detail="选手 id 必须唯一")
-    if body.game not in game_registry.available():
-        raise HTTPException(
-            status_code=400,
-            detail=f"暂不支持的赛制：{body.game}（可用：{', '.join(game_registry.available())}）",
-        )
-    low, high = game_registry.player_range(body.game)
-    if not (low <= 2 <= high):
-        raise HTTPException(status_code=400, detail=f"{body.game} 不是双人赛制，无法排赛季")
+    validate_players(
+        body.game,
+        [p.id for p in body.players],
+        supports=2,
+        supports_error=f"{body.game} 不是双人赛制，无法排赛季",
+        enforce_range=False,
+    )
 
     season = Season(season_id=body.seasonId, name=body.name, game=body.game)
     for spec in body.players:
@@ -102,12 +95,9 @@ async def create_season(body: SeasonCreate, request: Request) -> dict[str, Any]:
         double=bool(body.doubleRoundRobin),
     )
 
-    conn = sqlite3.connect(db_path_of(request))
-    try:
+    with open_db(db_path_of(request)) as conn:
         # 同一 seasonId 重建：先清旧 roster/fixtures/results，避免两批选手混榜。
         persist(conn, season, replace=True)
-    finally:
-        conn.close()
 
     return {
         "seasonId": season.season_id,

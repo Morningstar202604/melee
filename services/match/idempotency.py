@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .db import ensure_schema_for
+from .db import connect, ensure_schema_for
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS idempotency (
@@ -60,7 +60,7 @@ def fingerprint(payload: Any) -> str:
 
 
 def _connect(db_path: str | Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path), timeout=5.0)
+    conn = connect(db_path, timeout=5.0)
     ensure_schema_for(conn, SCHEMA, "idempotency")
     return conn
 

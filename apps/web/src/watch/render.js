@@ -54,8 +54,8 @@ function playerCard(player, index, shown) {
   return html`<div class="card ${active ? 'active' : ''}" style="--tone:${tone}">
     <div class="phead">
       <div class="avatar">${player.slice(0, 1)}</div>
-      <div><div class="pname">${player}</div><div class="pmodel">${t('watch.player')}</div></div>
-      <div class="status ${active ? 'think' : ''}">${active ? t('watch.playerThinking') : t('watch.playerWaiting')}</div>
+      <div class="pwho"><div class="pname" title=${player}>${player}</div><div class="pmodel">${t('watch.player')}</div></div>
+      <div class="status ${active ? 'think' : ''}">${shown.status === 'ended' ? t('watch.playerDone') : active ? t('watch.playerThinking') : t('watch.playerWaiting')}</div>
     </div>
     <div class="big"><div class="n">${history.length}</div><div class="l">${isQuiz ? t('watch.playerAsked') : t('watch.playerMoves')}</div></div>
     <div class="label">${t('watch.playerThought')}</div>
@@ -87,6 +87,7 @@ export function renderSides(shown) {
 export function renderArena(shown) {
   const isQuiz = shown.gameKind === 'twenty-questions'
   el('gameLabel').textContent = 'TRANSMISSION · ' + gameMeta(shown.gameKind).label
+  renderProvenance(shown)
 
   litRender(
     isQuiz
@@ -118,6 +119,26 @@ export function renderArena(shown) {
   if (shown.gameKind === 'nim') return renderPiles(shown)
   return renderBoard(shown)
 }
+
+function renderProvenance(shown) {
+  const node = el('provenance')
+  if (!node) return
+  if (!shown.imported) {
+    node.textContent = ''
+    node.title = ''
+    node.hidden = true
+    return
+  }
+  const source = shown.sourceLabel || (shown.source === 'kaggle-game-arena'
+    ? 'Kaggle Game Arena'
+    : shown.source === 'textarena' ? 'TextArena' : (shown.source || 'External'))
+  const episode = shown.episodeId ? `#${shown.episodeId}` : ''
+  const license = shown.sourceLicense ? ` · ${shown.sourceLicense}` : ''
+  node.hidden = false
+  node.textContent = t('watch.provenance', { source, episode, license })
+  node.title = [source, shown.episodeId, shown.sourceLicense, shown.sourceUrl].filter(Boolean).join(' · ')
+}
+
 
 function renderPiles(shown) {
   const piles = shown.gameState && shown.gameState.piles
@@ -158,11 +179,51 @@ function renderCodenames(shown) {
 
 function renderBoard(shown) {
   const board = shown.gameState && shown.gameState.board
-  if (!Array.isArray(board)) return litRender(html`<div class="empty">${t('watch.board.waiting')}</div>`, el('historyList'))
-  litRender(
-    html`<div class="board">${board.map(
-      (row) => html`<div class="brow">${row.map((cell) => html`<span class="cell">${cell || '·'}</span>`)}</div>`,
+  if (!Array.isArray(board)) {
+    // 外部对局可能没有二维棋盘，只有一段文字局面（如 FEN/文字棋谱）。
+    // 不把这类导入场次判成"等待中"，否则导入了却看起来像没开始。
+    const text = shown.gameState && (shown.gameState.text || shown.gameState.fen)
+    if (text) {
+      return litRender(
+        html`<pre class="externalState" style="white-space:pre-wrap;line-height:1.5;font-size:13px;padding:12px;color:var(--text-2)">${text}</pre>`,
+        el('historyList'),
+      )
+    }
+    return litRender(html`<div class="empty">${t('watch.board.waiting')}</div>`, el('historyList'))
+  }
+  const columns = Math.max(1, board[0].length)
+  const rows = board.length
+  const square = (row, col) => `${String.fromCharCode(97 + col)}${rows - row}`
+  const last = shown.gameState && shown.gameState.lastMove
+  const marked = new Set()
+  if (last && columns === 8 && rows === 8) {
+    for (const key of ['from', 'to']) {
+      const value = String(last[key] || '')
+      if (!/^[a-h][1-8]$/.test(value)) continue
+      marked.add(`${8 - Number(value[1])}:${value.charCodeAt(0) - 97}`)
+    }
+  }
+  const cellSize = columns === 8 ? '39px' : columns > 9 ? `${Math.max(16, Math.floor(520 / columns))}px` : '44px'
+  const grid = html`<div class="board">${board.map(
+    (row, rowIndex) => html`<div class="brow">${row.map(
+      (cell, colIndex) => html`<span class="cell ${marked.has(`${rowIndex}:${colIndex}`) ? 'last' : ''}"
+        style="width:${cellSize};height:${cellSize}"
+        title="${square(rowIndex, colIndex)}"
+        aria-label="${square(rowIndex, colIndex)} ${cell || 'empty'}">${cell || '·'}</span>`,
     )}</div>`,
+  )}</div>`
+  if (columns !== 8 || rows !== 8) {
+    return litRender(grid, el('historyList'))
+  }
+  litRender(
+    html`<div class="boardWrap">
+      <div class="ranks">${[8,7,6,5,4,3,2,1].map((rank) => html`<span>${rank}</span>`)}</div>
+      ${grid}
+      <div class="files">${'abcdefgh'.split('').map((file) => html`<span>${file}</span>`)}</div>
+      ${last ? html`<div class="lastMove">${t('watch.board.lastMove', {
+        from: last.from || '—', to: last.to || '—',
+      })}</div>` : null}
+    </div>`,
     el('historyList'),
   )
 }

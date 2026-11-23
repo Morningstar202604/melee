@@ -1,5 +1,7 @@
 # Versioning and release process
 
+**English** · [简体中文](zh-CN/VERSIONING.md)
+
 This document defines how melee is versioned, what a release must contain, and who is allowed to publish one. It exists so a release is a repeatable procedure rather than a judgement call made from memory.
 
 ## Semantic versioning

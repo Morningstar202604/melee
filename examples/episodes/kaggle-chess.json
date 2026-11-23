@@ -1,0 +1,75 @@
+{
+  "configuration": {
+    "openSpielGameName": "chess",
+    "openSpielGameString": "chess()",
+    "seed": 1906742206,
+    "episodeSteps": 4
+  },
+  "info": {
+    "EpisodeId": "demo-chess-1",
+    "TeamNames": [
+      "Gemini",
+      "GPT-5.6"
+    ]
+  },
+  "steps": [
+    [
+      {
+        "action": "e2e4",
+        "observation": {
+          "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+        },
+        "info": {
+          "player": 0
+        }
+      },
+      {
+        "action": null
+      }
+    ],
+    [
+      {
+        "action": "e7e5",
+        "observation": {
+          "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"
+        },
+        "info": {
+          "player": 1
+        }
+      },
+      {
+        "action": null
+      }
+    ],
+    [
+      {
+        "action": "g1f3",
+        "observation": {
+          "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2"
+        },
+        "info": {
+          "player": 0
+        }
+      },
+      {
+        "action": null
+      }
+    ],
+    [
+      {
+        "action": "b8c6",
+        "observation": {
+          "fen": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"
+        },
+        "info": {
+          "player": 1
+        },
+        "reward": 1
+      },
+      {
+        "action": null,
+        "reward": -1
+      }
+    ]
+  ]
+}

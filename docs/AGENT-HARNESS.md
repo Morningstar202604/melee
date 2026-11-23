@@ -1,6 +1,8 @@
 # Agent harness (2026-11-04)
 
-How melee plugs into the current agent ecosystem. Research notes live in [RESEARCH-2026-11-04.md](RESEARCH-2026-11-04.md); this document describes what ships.
+**English** · [简体中文](zh-CN/AGENT-HARNESS.md)
+
+How melee plugs into the current agent ecosystem. Research notes live in [archive/RESEARCH-2026-11-04.md](archive/RESEARCH-2026-11-04.md); this document describes what ships.
 
 ## What is wired in
 

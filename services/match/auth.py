@@ -21,6 +21,8 @@ from typing import Any
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
+from .db import connect
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS quotas (
   token_name TEXT NOT NULL,
@@ -127,7 +129,7 @@ def check_and_consume(
             "WHERE quotas.renders + ? <= ?"
         )
 
-    conn = sqlite3.connect(str(db_path), timeout=10)
+    conn = connect(str(db_path), timeout=10)
     try:
         from .db import ensure_schema
 
@@ -178,49 +180,49 @@ def _ticket_serializer() -> URLSafeTimedSerializer:
 _EPHEMERAL_SECRET: str | None = None
 
 
-def issue_ticket(principal: Principal, *, ttl_s: float = 60.0) -> str:
-    """SSE 票据：签名 + 内嵌过期时间（不同实例用同一密钥即可验证）。"""
-    return _ticket_serializer().dumps(
-        {"n": principal.name, "k": "sse", "exp": time.time() + ttl_s}
-    )
+def _issue_ticket(principal: Principal, kind: str, ttl_s: float, **extra: Any) -> str:
+    payload = {"n": principal.name, "k": kind, **extra, "exp": time.time() + ttl_s}
+    return _ticket_serializer().dumps(payload)
 
 
-def redeem_ticket(ticket: str, *, max_age: float = 60.0) -> Principal | None:
+def _redeem_ticket(
+    ticket: str, kind: str, max_age: float, match_id: str | None = None
+) -> Principal | None:
     try:
         data = _ticket_serializer().loads(ticket, max_age=max_age)
     except (BadSignature, SignatureExpired):
         return None
-    if not isinstance(data, dict) or data.get("k") != "sse":
+    if not isinstance(data, dict) or data.get("k") != kind:
+        return None
+    # 媒体票据额外绑定一场；SSE 票据不绑。
+    if kind == "media" and data.get("m") != match_id:
         return None
     # 到期时刻本身即视为过期（< 会让 exp==now 仍然有效）
     if float(data.get("exp", 0)) <= time.time():
         return None
     return Principal(name=str(data.get("n", "")), authenticated=True)
+
+
+def issue_ticket(principal: Principal, *, ttl_s: float = 600.0) -> str:
+    return _issue_ticket(principal, "sse", ttl_s)
+
+
+def redeem_ticket(ticket: str, *, max_age: float = 60.0) -> Principal | None:
+    return _redeem_ticket(ticket, "sse", max_age)
 
 
 def issue_media_ticket(principal: Principal, match_id: str, *, ttl_s: float = 600.0) -> str:
     """媒体票据：额外绑定 matchId，可重复使用（<video> 的 Range 请求会多次打同一 URL）。"""
-    return _ticket_serializer().dumps(
-        {"n": principal.name, "k": "media", "m": match_id, "exp": time.time() + ttl_s}
-    )
+    return _issue_ticket(principal, "media", ttl_s, m=match_id)
 
 
 def redeem_media_ticket(ticket: str, match_id: str, *, max_age: float = 600.0) -> Principal | None:
     """媒体票据可重复使用，但只能读签发时绑定的那一场。"""
-    try:
-        data = _ticket_serializer().loads(ticket, max_age=max_age)
-    except (BadSignature, SignatureExpired):
-        return None
-    if not isinstance(data, dict) or data.get("k") != "media" or data.get("m") != match_id:
-        return None
-    # 到期时刻本身即视为过期（< 会让 exp==now 仍然有效）
-    if float(data.get("exp", 0)) <= time.time():
-        return None
-    return Principal(name=str(data.get("n", "")), authenticated=True)
+    return _redeem_ticket(ticket, "media", max_age, match_id)
 
 
 def usage(db_path: str | Path, principal: Principal) -> dict[str, Any]:
-    conn = sqlite3.connect(str(db_path))
+    conn = connect(str(db_path))
     try:
         from .db import ensure_schema
 

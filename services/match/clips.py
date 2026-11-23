@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .messages import localize_highlights
 from .recap import find_highlights
 
 
@@ -21,11 +22,15 @@ class Clip:
     detail: str
     startSeq: int
     endSeq: int
+    title_key: str = ""
+    title_params: dict[str, Any] | None = None
+    detail_key: str = ""
+    detail_params: dict[str, Any] | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
     durationMs: int = 0
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "kind": self.kind,
             "title": self.title,
             "detail": self.detail,
@@ -34,6 +39,13 @@ class Clip:
             "eventCount": len(self.events),
             "durationMs": self.durationMs,
         }
+        if self.title_key:
+            payload["titleKey"] = self.title_key
+            payload["titleParams"] = self.title_params or {}
+        if self.detail_key:
+            payload["detailKey"] = self.detail_key
+            payload["detailParams"] = self.detail_params or {}
+        return payload
 
 
 def build_clips(
@@ -43,14 +55,22 @@ def build_clips(
     before: int = 2,
     after: int = 3,
     per_event_ms: int = 900,
+    lang: str = "",
 ) -> list[Clip]:
     """挑转折点，各取前后若干条事件，拼成剪辑清单。"""
     highlights = find_highlights(events, limit=limit)
+    if lang:
+        localized = [
+            localize_highlights([highlight.as_dict()], lang)[0]
+            for highlight in highlights
+        ]
+    else:
+        localized = [highlight.as_dict() for highlight in highlights]
     by_seq = {event["seq"]: index for index, event in enumerate(events)}
     clips: list[Clip] = []
     used: set[int] = set()
 
-    for highlight in highlights:
+    for highlight_index, highlight in enumerate(highlights):
         anchor = by_seq.get(highlight.seq)
         if anchor is None:
             continue
@@ -63,10 +83,14 @@ def build_clips(
         clips.append(
             Clip(
                 kind=highlight.kind,
-                title=highlight.title,
-                detail=highlight.detail,
+                title=localized[highlight_index].get("title", highlight.title),
+                detail=localized[highlight_index].get("detail", highlight.detail),
                 startSeq=window[0]["seq"],
                 endSeq=window[-1]["seq"],
+                title_key=highlight.title_key,
+                title_params=highlight.title_params,
+                detail_key=highlight.detail_key,
+                detail_params=highlight.detail_params,
                 events=window,
                 durationMs=len(window) * per_event_ms,
             )
@@ -81,9 +105,10 @@ def export_manifest(
     *,
     limit: int = 3,
     per_event_ms: int = 900,
+    lang: str = "",
 ) -> dict[str, Any]:
     """给前端/渲染器的完整剪辑清单。"""
-    clips = build_clips(events, limit=limit, per_event_ms=per_event_ms)
+    clips = build_clips(events, limit=limit, per_event_ms=per_event_ms, lang=lang)
     return {
         "matchId": match_id,
         "clipCount": len(clips),

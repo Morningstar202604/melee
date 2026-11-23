@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .agents.scripted import BoardAgent, GreedyAgent
+from .db import connect
 from .director import Director
 from .engine import registry as game_registry
 from .engine.twenty_questions import CATALOG
@@ -134,7 +135,7 @@ def due_season_ids(db_path: str | Path, *, now: float | None = None) -> list[str
     没给 startAt 的赛季保持纯手动（用户没要自动推进，就不能替他开赛）。
     """
     moment = time.time() if now is None else now
-    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn = connect(str(db_path), timeout=30.0)
     try:
         rows = conn.execute(
             """
@@ -166,7 +167,7 @@ def run_season(
 
     agent_factory 默认给每个选手一个贪心算法；接真实模型时传自己的工厂。
     """
-    conn = sqlite3.connect(str(db_path), timeout=30.0)
+    conn = connect(str(db_path), timeout=30.0)
     owner = f"{os.getpid()}-{threading.get_ident()}"
     if not _acquire_season_lock(conn, season_id, owner):
         raise SeasonBusyError(f"赛季 {season_id} 正在被另一个执行体推进")

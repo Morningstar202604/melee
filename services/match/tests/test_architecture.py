@@ -17,6 +17,8 @@ EXPECTED_ROUTES = {
     ("GET", "/archive"),
     ("GET", "/matches/{match_id}/export"),
     ("POST", "/matches/import"),
+    ("POST", "/matches/import-episode"),
+    ("POST", "/matches/import-episode/live"),
     ("POST", "/auth/ticket"),
     ("GET", "/director/matches"),
     ("GET", "/director/{match_id}"),
@@ -119,27 +121,31 @@ def test_version_matches_changelog_head():
 
 
 def test_every_version_carrier_matches_the_changelog():
-    """四处版本号必须一致：API、CLI、打包脚本、前端 package.json。
+    """版本号只允许一个字面量：`services/match/version.py`。
 
-    以前只校验 API 与 CHANGELOG，另外三处靠人记——`melee --version` 与
-    便携包内嵌版本因此可能悄悄落后于实际发布版本，用户看到的版本号是假的。
+    API、CLI、A2A 卡与两个打包脚本都引用它；前端 package.json 由发布
+    流程同步。以前每处各写一份，A2A 卡与安装器已经分别落后到 1.8.0 / 1.9.2。
     """
     import json
     import re
     from pathlib import Path
 
+    from services.match.version import APP_VERSION
+
     root = Path(__file__).resolve().parents[3]
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     expected = re.search(r"^## \[(\d+\.\d+\.\d+)\]", changelog, re.MULTILINE).group(1)
 
-    cli = (root / "services" / "match" / "cli.py").read_text(encoding="utf-8")
-    build = (root / "scripts" / "build_exe.py").read_text(encoding="utf-8")
+    assert APP_VERSION == expected, f"version.py={APP_VERSION} 与 CHANGELOG 顶部 {expected} 不一致"
     web = json.loads((root / "apps" / "web" / "package.json").read_text(encoding="utf-8"))
+    assert web["version"] == expected, f"package.json={web['version']} 与 CHANGELOG 顶部 {expected} 不一致"
 
-    carriers = {
-        "cli.py APP_VERSION": re.search(r'APP_VERSION = "(\d+\.\d+\.\d+)"', cli).group(1),
-        "build_exe.py APP_VERSION": re.search(r'APP_VERSION = "(\d+\.\d+\.\d+)"', build).group(1),
-        "apps/web/package.json": web["version"],
-    }
-    for name, value in carriers.items():
-        assert value == expected, f"{name}={value} 与 CHANGELOG 顶部 {expected} 不一致"
+    for rel in ("scripts/build_exe.py", "scripts/build_installer.py"):
+        source = (root / rel).read_text(encoding="utf-8")
+        assert "from _version import read_version" in source, f"{rel} 没有走共享版本读取器"
+        assert not re.search(r'^APP_VERSION\s*=\s*"', source, re.MULTILINE), f"{rel} 仍在硬编码版本号"
+    reader = (root / "scripts" / "_version.py").read_text(encoding="utf-8")
+    assert "version.py" in reader, "构建脚本的版本读取器没有指向单一版本源"
+
+    a2a = (root / "services" / "match" / "a2a.py").read_text(encoding="utf-8")
+    assert "from .version import APP_VERSION" in a2a, "a2a.py 没有引用单一版本源"

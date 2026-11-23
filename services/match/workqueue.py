@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from .db import connect as db_connect
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
   job_id      TEXT PRIMARY KEY,
@@ -82,9 +84,8 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     from .db import ensure_schema
 
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path), timeout=10.0)
+    conn = db_connect(db_path, timeout=10.0, rows=True)
     ensure_schema(conn, db_path, SCHEMA, "workqueue")
-    conn.row_factory = sqlite3.Row
     return conn
 
 

@@ -1,42 +1,45 @@
-# 项目状态
+# Status
 
-这份文件只记录当前能力边界、复验入口和明确欠账，不固化会过期的测试数量或覆盖率。
+**English** · [简体中文](zh-CN/STATUS.md)
 
-## 当前能力
+What the project can do today, what depends on the environment, and what it deliberately refuses to do. Test counts and coverage live in the gate output, not here.
 
-- 事件日志、REST、SSE、断线续传、状态快照、事件重放、多视角回放和赛后私有事件解锁。
-- 内置二十问与代号；安装可选 TextArena 依赖后，注册表最多包含 12 个已验证赛制。
-- 自动导播、人工切镜、规则式/可选 LLM 解说、战报事实校验、高光清单、分享卡和 OG 分享页。
-- 赛事库、统计、在线人数、赛季循环赛和到点开赛。
-- BYOK OpenAI-compatible/Anthropic/Gemini、采样参数、流式思考、选手自记忆、token 预算、`{env:VAR}` 和真实回合墙钟。
-- HTTPAgent 外部接入；平台发送裁剪观察与合法动作，不发送隐藏信息。
-- SSRF 门禁、Fernet 队列封存、Bearer 鉴权、配额、限流、安全响应头和审计脚本。
+## Capable today
 
-## 外部依赖边界
+- Append-only event log, REST, SSE with resume, state snapshots, event replay, per-player replay and post-match reveal.
+- Built-in Twenty Questions and Codenames; with the optional TextArena dependency, the registry covers a dozen verified games.
+- Automatic directing, manual cuts, rule-based or optional LLM narration, recap fact-checking, highlight lists, share cards and OG pages.
+- Archive, statistics, live viewer count, round-robin seasons and time-based starts.
+- External episode import: finished Kaggle/TextArena replay, live snapshot push, idempotent `(source, episodeId)` keys, provenance/license display and import-vs-site statistics.
+- BYOK OpenAI-compatible / Anthropic / Gemini endpoints, sampling parameters, streaming thoughts, per-player memory, token budgets, `{env:VAR}` references and real turn wall clocks.
+- HTTPAgent access: the platform sends trimmed observations and legal moves, never hidden information.
+- SSRF guard, Fernet-sealed queue payloads, Bearer auth, quotas, rate limits, security headers and audit scripts.
 
-- TextArena 是可选依赖；未安装时只有内置赛制。
-- 真实模型、Redis、ffmpeg、Docker daemon、浏览器内核和生产反向代理需要在目标环境单独验收。
-- 自动化测试中的 FakeOpenAI、MockTransport、fakeredis 和静态 Docker 校验验证的是契约与错误处理，不是第三方服务的长期可用性保证。
+## Depends on the environment
 
-## 明确不做
+- TextArena is optional. Without it, only the built-in games exist.
+- Real models, Redis, ffmpeg, a Docker daemon, browser engines and a production reverse proxy must be accepted on the target machine.
+- FakeOpenAI, MockTransport, fakeredis and static Docker checks prove contracts and error handling, not a third party's long-term uptime.
 
-- 平台侧模型工具调用、联网、文件访问、子代理和多步工具循环；完整 agent 能力由 HTTPAgent 自己提供。
-- 匿名投票、全站 Elo、账号型多租户 SaaS、计费、完整 TextArena 环境目录。
-- 多队赛季积分、通用开放式主持赛制、分布式追踪和 OIDC 账号体系。
+## Deliberately out of scope
 
-## 复验
+- Platform-side model tooling: browsing, file access, sub-agents, multi-step tool loops. The caller's HTTPAgent owns that.
+- Anonymous voting, site-wide Elo, multi-tenant accounts, billing, the full TextArena catalogue.
+- Multi-team season points, a generic open-ended hosting format, distributed tracing, OIDC accounts.
+
+## Re-verify
 
 ```bash
 bash scripts/verify_all.sh
 ```
 
-门禁命令和每一步的解释见 [QUALITY.md](QUALITY.md)。
+Every gate and what it protects is explained in [QUALITY](QUALITY.md).
 
-## 深入文档
+## Further reading
 
 - [API](API.md)
-- [架构](ARCHITECTURE.md)
-- [公平性](FAIRNESS.md)
-- [部署](DEPLOY.md)
-- [路线图](ROADMAP.md)
-- [变更记录](../CHANGELOG.md)
+- [Architecture](ARCHITECTURE.md)
+- [Fairness](FAIRNESS.md)
+- [Deploy](DEPLOY.md)
+- [Roadmap](ROADMAP.md)
+- [Changelog](../CHANGELOG.md)

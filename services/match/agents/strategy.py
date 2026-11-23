@@ -320,21 +320,31 @@ def othello_move(state: dict, moves: list) -> str:
     return scored[0][1]
 
 
-def _card_of(state: dict) -> str:
-    cards = (state.get("gameState") or {}).get("player_cards")
+def _own_value(state: dict, key: str, *, first_from_list: bool = False):
+    """从 player_cards / player_hands 里取“自己的”那一项。
+
+    字典按座位号优先匹配，座位号对不上就回落到同序号；列表型牌局
+    只有一张/一组公共列表时直接取。取不到返回 None。
+    """
+    values = (state.get("gameState") or {}).get(key)
     raw = None
-    if isinstance(cards, dict):
-        raw = cards.get(state.get("you"))
+    if isinstance(values, dict):
+        raw = values.get(state.get("you"))
         if raw is None:
             players = state.get("players") or []
             you = state.get("you")
             if you in players:
                 idx = players.index(you)
-                raw = cards.get(idx + 1) or cards.get(idx)
-            if raw is None:
-                raw = next(iter(cards.values()), "")
-    elif isinstance(cards, list) and cards:
-        raw = cards[0]
+                raw = values.get(idx + 1) or values.get(idx)
+        if raw is None:
+            raw = next(iter(values.values()), None)
+    elif isinstance(values, list) and values:
+        raw = values[0] if first_from_list else values
+    return raw
+
+
+def _card_of(state: dict) -> str:
+    raw = _own_value(state, "player_cards", first_from_list=True)
     return str(raw or "").strip("[]'\" ").upper()[:1]
 
 
@@ -357,23 +367,8 @@ def kuhn_move(state: dict, moves: list) -> str:
 
 
 def _hand_of(state: dict) -> list:
-    hands = (state.get("gameState") or {}).get("player_hands")
-    mine = []
-    if isinstance(hands, dict):
-        raw = hands.get(state.get("you"))
-        if raw is None:
-            players = state.get("players") or []
-            you = state.get("you")
-            if you in players:
-                idx = players.index(you)
-                raw = hands.get(idx + 1) or hands.get(idx)
-            if raw is None:
-                raw = next(iter(hands.values()), [])
-        mine = [str(x) for x in raw] if isinstance(raw, list) else []
-    elif isinstance(hands, list):
-        mine = [str(x) for x in hands]
-    return mine
-
+    raw = _own_value(state, "player_hands")
+    return [str(x) for x in raw] if isinstance(raw, list) else []
 
 def gops_move(state: dict, moves: list) -> str:
     # Spend a big card on a big prize, a small card on a small prize.

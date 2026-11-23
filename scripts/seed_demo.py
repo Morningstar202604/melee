@@ -16,67 +16,10 @@
 from __future__ import annotations
 
 import argparse
-import json
-import time
-import urllib.error
-import urllib.request
-from typing import Any
 
-# 每个赛制用一套贴题的名字，截图里读起来才像节目而不是测试数据。
-ROSTERS = {
-    "twenty-questions": ["灰隼", "砚台"],
-    "codenames": ["红队队长", "蓝队队长", "红队队员", "蓝队队员"],
-    "tic-tac-toe": ["左撇子", "右撇子"],
-    "connect-four": ["直线", "斜线"],
-    "othello": ["黑子", "白子"],
-    "nim": ["取一", "取二"],
-    "reverse-tic-tac-toe": ["逆风", "顺风"],
-    "kuhn-poker": ["老千", "新手"],
-    "game-of-pure-strategy": ["压价", "抬价"],
-    "simple-tak": ["铺路", "封路"],
-    "wild-tic-tac-toe": ["双面", "单面"],
-    "crusade": ["骑士", "游侠"],
-}
-
-
-def post(api: str, path: str, body: dict[str, Any], attempts: int = 8) -> dict[str, Any]:
-    """建场会撞每分钟 10 次的限流（默认档位），这里按 Retry-After 退避重试。
-
-    脚本要一连建十几场，不重试就只能跑到第 11 场报 429——
-    这是脚本自身的缺陷，不是服务的问题。
-    """
-    request = urllib.request.Request(
-        f"{api}{path}",
-        data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    for attempt in range(attempts):
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                return json.load(response)
-        except urllib.error.HTTPError as exc:
-            if exc.code != 429 or attempt == attempts - 1:
-                raise
-            wait = 61 if attempt < 2 else 5
-            print(f"  限流中，{wait}s 后重试（第 {attempt + 1} 次）")
-            time.sleep(wait)
-    raise RuntimeError("重试次数已用尽")
-
-
-def get(api: str, path: str) -> dict[str, Any]:
-    with urllib.request.urlopen(f"{api}{path}", timeout=30) as response:
-        return json.load(response)
-
-
-def wait_finished(api: str, match_id: str, timeout: float = 120.0) -> bool:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        events = get(api, f"/matches/{match_id}/events")["events"]
-        if any(event["type"] == "match.ended" for event in events):
-            return True
-        time.sleep(0.5)
-    return False
+from _demo import ROSTERS, SEASON_PLAYERS  # noqa: E402
+from _harness import api_post as post  # noqa: E402
+from _harness import wait_finished  # noqa: E402
 
 
 def main() -> int:
@@ -84,7 +27,11 @@ def main() -> int:
     parser.add_argument("--api", default="http://127.0.0.1:8099")
     parser.add_argument("--season", default="demo-2026")
     parser.add_argument("--skip-live", action="store_true", help="不新建直播场")
+    parser.add_argument("--lang", choices=["zh", "en"], default="zh", help="演示数据的选手名与赛季文案语言")
     args = parser.parse_args()
+    roster = ROSTERS["en"] if args.lang == "en" else ROSTERS["zh"]
+    season_name = "Autumn 2026" if args.lang == "en" else "2026 秋季赛"
+    season_players = SEASON_PLAYERS["en" if args.lang == "en" else "zh"]
 
     created: dict[str, str] = {}
 
@@ -104,7 +51,7 @@ def main() -> int:
         "twenty-questions",
     )
     for seed, game in enumerate(order):
-        names = ROSTERS[game]
+        names = roster[game]
         match = post(
             args.api,
             "/matches",
@@ -114,9 +61,10 @@ def main() -> int:
                 "players": [{"id": name, "delayMs": 60} for name in names],
                 "maxQuestions": 21,
             },
+            lang=args.lang,
         )
         created[game] = match["matchId"]
-        finished = wait_finished(args.api, match["matchId"])
+        finished = wait_finished(args.api, match["matchId"], raise_on_timeout=False)
         print(f"{game:16s} {match['matchId']} {'已终局' if finished else '未在超时内结束'}")
 
     try:
@@ -125,12 +73,13 @@ def main() -> int:
             "/seasons",
             {
                 "seasonId": args.season,
-                "name": "2026 秋季赛",
+                "name": season_name,
                 "game": "twenty-questions",
-                "players": [{"id": name} for name in ("灰隼", "砚台", "观测者", "审核员")],
+                "players": [{"id": name} for name in season_players],
             },
+            lang=args.lang,
         )
-        run = post(args.api, f"/seasons/{args.season}/run?maxFixtures=3", {})
+        run = post(args.api, f"/seasons/{args.season}/run?maxFixtures=3", {}, lang=args.lang)
         print(f"\n赛季 {season['seasonId']}：{len(season['fixtures'])} 场排期，本次跑完 {run['played']} 场")
     # aqg: top-level boundary
     except Exception as exc:  # noqa: BLE001 - 重复灌数据时赛季已存在  # aqg: top-level boundary
@@ -144,8 +93,9 @@ def main() -> int:
                 "game": "twenty-questions",
                 "seed": 2027,
                 "maxQuestions": 21,
-                "players": [{"id": "灰隼", "delayMs": 5200}, {"id": "砚台", "delayMs": 5200}],
+                "players": [{"id": name, "delayMs": 5200} for name in roster["twenty-questions"]],
             },
+            lang=args.lang,
         )
         created["live"] = live["matchId"]
         print(f"直播中           {live['matchId']}（每步 5.2 秒）")

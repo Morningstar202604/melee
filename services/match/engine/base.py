@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
@@ -26,6 +27,41 @@ class MoveResult:
     retryable: bool = False
     effects: list[AppliedEffect] = field(default_factory=list)
     public_state: dict[str, Any] = field(default_factory=dict)
+
+
+def legal_result(
+    public_state: Callable[[dict[str, Any]], dict[str, Any]],
+    next_state: dict[str, Any],
+    effects: list[AppliedEffect],
+) -> MoveResult:
+    """合法落子结果：三个引擎都要带 next_state / effects / 裁剪后的公开态。
+
+    public_state 传 self.public_state（绑定方法），既保留各赛制的裁剪逻辑，
+    又不必在每个 apply 分支重复四行构造。
+    """
+    return MoveResult(
+        legal=True,
+        next_state=next_state,
+        effects=effects,
+        public_state=public_state(next_state),
+    )
+
+
+def ensure_turn(
+    state: dict[str, Any],
+    player: PlayerId,
+    current: PlayerId | None,
+) -> MoveResult | None:
+    """三个引擎共用的回合前置守卫：已结束、或没轮到该玩家时返回拒绝结果。
+
+    以前 twenty_questions / codenames / textarena_adapter 各抄一遍同样的
+    两段判断，错误文案与 retryable 口径逐渐分叉。返回 None 表示可以继续。
+    """
+    if state.get("finished"):
+        return MoveResult(legal=False, reason="对局已结束", retryable=False)
+    if current != player:
+        return MoveResult(legal=False, reason=f"现在轮到 {current}", retryable=False)
+    return None
 
 
 class Game(Protocol):

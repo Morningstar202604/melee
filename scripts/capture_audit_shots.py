@@ -8,21 +8,15 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from _harness import get_json  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 PAGES = ["index.html", "watch.html", "season.html", "recap.html", "director.html"]
-
-
-def get_json(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=15) as response:
-        return json.load(response)
 
 
 def main() -> int:

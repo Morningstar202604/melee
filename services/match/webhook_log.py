@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .db import ensure_schema_for
+from .db import connect, ensure_schema_for
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS webhook_deliveries (
@@ -63,8 +63,7 @@ class Delivery:
 
 
 def _connect(db_path: str | Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path), timeout=10.0)
-    conn.row_factory = sqlite3.Row
+    conn = connect(db_path, timeout=10.0, rows=True)
     ensure_schema_for(conn, SCHEMA, "webhook")
     return conn
 

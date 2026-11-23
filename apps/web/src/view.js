@@ -31,6 +31,13 @@ export function reduce(view, event) {
       next.players = payload.players || []
       next.gameKind = payload.game || 'twenty-questions'
       next.status = 'live'
+      next.config = payload.config || {}
+      next.imported = Boolean((payload.config || {}).imported)
+      next.source = (payload.config || {}).source || ''
+      next.sourceLabel = (payload.config || {}).sourceLabel || ''
+      next.episodeId = (payload.config || {}).episodeId || ''
+      next.sourceLicense = (payload.config || {}).license || ''
+      next.sourceUrl = (payload.config || {}).sourceUrl || ''
       break
 
     case 'match.started':

@@ -14,6 +14,8 @@ import pytest
 from services.match import webhooks
 from services.match.settings import reset_settings, settings
 
+from .support import create, wait_ended
+
 
 class _Receiver(http.server.BaseHTTPRequestHandler):
     received: list = []
@@ -64,26 +66,9 @@ def hook_url(monkeypatch):
     _Receiver.received.clear()
 
 
-def _wait_ended(client, match_id, timeout_s: float = 60.0):
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        events = client.get("/matches/" + match_id + "/events").json()["events"]
-        if any(e["type"] == "match.ended" for e in events):
-            return
-        time.sleep(0.5)
-    raise AssertionError("match never ended")
-
-
-def _create_match(client):
-    return client.post(
-        "/matches",
-        json={"game": "tic-tac-toe", "seed": 3, "players": [{"id": "A"}, {"id": "B"}]},
-    ).json()["matchId"]
-
-
 def test_webhook_delivers_signed_match_ended(hook_url, client):
-    match_id = _create_match(client)
-    _wait_ended(client, match_id)
+    match_id = create(client, game="tic-tac-toe", seed=3)["matchId"]
+    wait_ended(client, match_id)
     results = webhooks.dispatch(client.app.state.db_path, match_id, async_mode=False)
     assert results and results[0]["delivered"] is True
     assert _Receiver.received, "receiver must be called"
@@ -103,8 +88,8 @@ def test_webhook_delivers_signed_match_ended(hook_url, client):
 
 def test_webhook_retries_on_500(hook_url, client):
     _Receiver.fail_first = 1
-    match_id = _create_match(client)
-    _wait_ended(client, match_id)
+    match_id = create(client, game="tic-tac-toe", seed=3)["matchId"]
+    wait_ended(client, match_id)
     results = webhooks.dispatch(client.app.state.db_path, match_id, async_mode=False)
     assert results[0]["delivered"] is True
     assert len(_Receiver.received) >= 2, "must retry after a 500"
@@ -115,8 +100,8 @@ def test_webhook_skips_loopback_without_allowlist(hook_url, client, monkeypatch)
     monkeypatch.delenv("MELEE_ALLOW_PRIVATE_ENDPOINTS")
     reset_settings()
     assert webhooks._targets() == []
-    match_id = _create_match(client)
-    _wait_ended(client, match_id)
+    match_id = create(client, game="tic-tac-toe", seed=3)["matchId"]
+    wait_ended(client, match_id)
     results = webhooks.dispatch(client.app.state.db_path, match_id, async_mode=False)
     assert results == []
     assert _Receiver.received == []
@@ -125,7 +110,7 @@ def test_webhook_skips_loopback_without_allowlist(hook_url, client, monkeypatch)
 def test_webhook_silent_without_targets(client, monkeypatch):
     monkeypatch.delenv("MELEE_WEBHOOK_URLS", raising=False)
     reset_settings()
-    match_id = _create_match(client)
+    match_id = create(client, game="tic-tac-toe", seed=3)["matchId"]
     results = webhooks.dispatch(client.app.state.db_path, match_id, async_mode=False)
     assert results == []
 
@@ -142,8 +127,8 @@ def test_webhook_targets_reject_metadata_and_bad_urls(monkeypatch):
 
 def test_webhook_async_dispatch_offloads_thread(hook_url, client):
     """async_mode=True（默认）必须立刻返回且真实送达（等接收端收到）。"""
-    match_id = _create_match(client)
-    _wait_ended(client, match_id)
+    match_id = create(client, game="tic-tac-toe", seed=3)["matchId"]
+    wait_ended(client, match_id)
     results = webhooks.dispatch(client.app.state.db_path, match_id, async_mode=True)
     assert results[0]["dispatched"] is True
     import time as _t
@@ -160,8 +145,8 @@ def test_delivery_record_persists_and_is_queryable(hook_url, client):
     旧实现只写服务器日志：进程重启就没了，后台与 CLI 都看不到，
     "昨天那个 webhook 为什么失败"只能靠翻日志文件。
     """
-    match_id = _create_match(client)
-    _wait_ended(client, match_id)
+    match_id = create(client, game="tic-tac-toe", seed=3)["matchId"]
+    wait_ended(client, match_id)
     webhooks.dispatch(client.app.state.db_path, match_id, async_mode=False)
 
     response = client.get(f"/webhooks/deliveries?match_id={match_id}")
@@ -180,8 +165,8 @@ def test_delivery_record_persists_and_is_queryable(hook_url, client):
 def test_failed_delivery_records_the_reason(hook_url, client, monkeypatch):
     """失败要记录可诊断的原因，而不是只有一个 False。"""
     _Receiver.fail_first = 99  # 一直返回 500
-    match_id = _create_match(client)
-    _wait_ended(client, match_id)
+    match_id = create(client, game="tic-tac-toe", seed=3)["matchId"]
+    wait_ended(client, match_id)
     results = webhooks.dispatch(client.app.state.db_path, match_id, async_mode=False)
     assert results[0]["delivered"] is False
 
@@ -198,8 +183,8 @@ def test_failed_delivery_records_the_reason(hook_url, client, monkeypatch):
 
 def test_redispatch_resends_and_records(hook_url, client):
     """手动重发：接收方修好后能补投，且同样留下记录。"""
-    match_id = _create_match(client)
-    _wait_ended(client, match_id)
+    match_id = create(client, game="tic-tac-toe", seed=3)["matchId"]
+    wait_ended(client, match_id)
     before = len(_Receiver.received)
 
     response = client.post("/webhooks/redispatch", json={"matchId": match_id})
@@ -216,8 +201,8 @@ def test_redispatch_without_targets_explains_why(client, monkeypatch):
     """没有配置目标时要明确告知，而不是返回空结果让人猜。"""
     monkeypatch.delenv("MELEE_WEBHOOK_URLS", raising=False)
     reset_settings()
-    match_id = _create_match(client)
-    _wait_ended(client, match_id)
+    match_id = create(client, game="tic-tac-toe", seed=3)["matchId"]
+    wait_ended(client, match_id)
     response = client.post("/webhooks/redispatch", json={"matchId": match_id})
     assert response.status_code == 409
     assert "MELEE_WEBHOOK_URLS" in response.json()["detail"]

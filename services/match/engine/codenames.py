@@ -24,7 +24,8 @@ import random
 from dataclasses import dataclass
 from typing import Any
 
-from .base import AppliedEffect, Move, MoveResult, PlayerId
+from ..teams import team_label_zh
+from .base import AppliedEffect, Move, MoveResult, PlayerId, ensure_turn, legal_result
 
 # 25 个词。选常见名词，便于模型给出有意义的线索。
 # 双语：英文界面下棋盘里出现中文词，是最刺眼的"语言错乱"——
@@ -49,32 +50,10 @@ def word_pool(lang: str = "zh") -> list[str]:
     """按语言取词表；未知语言回退中文（与既有行为一致）。"""
     return WORDS_EN if str(lang).lower().startswith("en") else WORDS_ZH
 
-_CN = {"red": "红队", "blue": "蓝队"}
-
-
 def team_label(team: str) -> str:
-    """公开的显示名，其他模块（战报/解说/卡片/渲染）统一引用这一份。
+    """兼容入口：显示名统一走 teams.team_label_zh，别处不再各留一张表。"""
+    return team_label_zh(team)
 
-    之前战报、解说、分享卡各自维护一份 {red: 红队, blue: 蓝队}，
-    多队编队落地后 team3 的胜利在战报里显示原始字符串、还会触发
-    「胜者不在参赛名单里」的假警告——五处漂移就是五处 bug。
-    队伍与棋子（中立/刺客）都在这张表里，调用方不用再分。"""
-    if team in _CN:
-        return _CN[team]
-    if team in ("neutral", "assassin"):
-        return {"neutral": "中立", "assassin": "刺客"}[team]
-    return _label(team)
-
-
-def _label(team: str) -> str:
-    """队伍显示名。多队编队时不能查表（会 KeyError），
-    未预置的队伍按编号显示，不允许因为"多了一支队伍"就把比赛跑崩。"""
-    if team in _CN:
-        return _CN[team]
-    if team.startswith("team") and team[4:].isdigit():
-        # team3 是第 3 支队伍（索引从 2 开始编号），显示成"第 3 队"。
-        return f"第 {int(team[4:])} 队"
-    return team
 
 TEAM_RED = "red"
 TEAM_BLUE = "blue"
@@ -336,12 +315,9 @@ class Codenames:
     # ---- 动作 ----
 
     def apply(self, state: dict[str, Any], player: PlayerId, move: Move) -> MoveResult:
-        if state["finished"]:
-            return MoveResult(legal=False, reason="对局已结束", retryable=False)
-
-        current = self.current_player(state)
-        if current != player:
-            return MoveResult(legal=False, reason=f"现在轮到 {current}", retryable=False)
+        guard = ensure_turn(state, player, self.current_player(state))
+        if guard is not None:
+            return guard
 
         if move.kind == "forfeit":
             players = state["players"]
@@ -353,11 +329,10 @@ class Codenames:
             # 正确语义：弃权队出局，胜者按"活着的队伍里先手顺位最靠前的"。
             next_state["winner"] = _winner_after_forfeit(state, team)
             next_state["endReason"] = "弃权"
-            return MoveResult(
-                legal=True,
-                next_state=next_state,
-                effects=[AppliedEffect(kind="forfeit", detail={"by": player, "team": team})],
-                public_state=self.public_state(next_state),
+            return legal_result(
+                self.public_state,
+                next_state,
+                [AppliedEffect(kind="forfeit", detail={"by": player, "team": team})],
             )
 
         if state["phase"] == "hint":
@@ -394,11 +369,10 @@ class Codenames:
         next_state["remainingGuesses"] = count + 1  # 允许多猜一次
         next_state["turnIndex"] += 1
 
-        return MoveResult(
-            legal=True,
-            next_state=next_state,
-            effects=[AppliedEffect(kind="hint", detail={"word": clue, "count": count})],
-            public_state=self.public_state(next_state),
+        return legal_result(
+            self.public_state,
+            next_state,
+            [AppliedEffect(kind="hint", detail={"word": clue, "count": count})],
         )
 
     def _apply_pick(self, state: dict[str, Any], player: PlayerId, move: Move) -> MoveResult:
@@ -435,12 +409,7 @@ class Codenames:
             next_state["winner"] = winner
             next_state["endReason"] = reason
 
-        return MoveResult(
-            legal=True,
-            next_state=next_state,
-            effects=effects,
-            public_state=self.public_state(next_state),
-        )
+        return legal_result(self.public_state, next_state, effects)
 
     @staticmethod
     def _resolve_pick(
@@ -449,7 +418,7 @@ class Codenames:
         if color == TEAM_ASSASSIN:
             # 翻刺客 = 本队出局，胜者从其余队伍里按先手顺位取（不再固定红/蓝）。
             winner = _winner_after_forfeit(next_state, team)
-            return winner, f"翻到刺客「{raw}」，{_label(team)}立即判负"
+            return winner, f"翻到刺客「{raw}」，{team_label_zh(team)}立即判负"
         if color != team:
             # 翻到中立词：中立不是参赛方，不能当胜者。规则上"把中立词翻完"
             # 是对翻牌方的惩罚——最后一张中立词被翻开时，翻牌方出局。
@@ -464,12 +433,12 @@ class Codenames:
             # 对手翻掉了你最后一个词，等于你的词全被翻开——该队直接获胜。
             # 旧实现只换手，0 个剩余词的一方永远赢不了，最后只能靠 max_turns 收场。
             if _own_left(next_state, color) == 0:
-                return color, f"{_label(color)}的词已被翻完"
+                return color, f"{team_label_zh(color)}的词已被翻完"
             _pass_turn(next_state)
             return None, ""
 
         if _own_left(next_state, team) == 0:
-            return team, f"{_label(team)}翻完全部己方词"
+            return team, f"{team_label_zh(team)}翻完全部己方词"
 
         next_state["remainingGuesses"] -= 1
         next_state["guessesThisTurn"] = next_state.get("guessesThisTurn", 0) + 1

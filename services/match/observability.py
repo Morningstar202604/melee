@@ -14,6 +14,8 @@ from typing import Any
 
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from .db import connect
+
 _METRICS_LOCK = threading.Lock()
 _METRICS: dict[str, Any] = {}
 
@@ -30,7 +32,7 @@ def install_metrics(app: Any, db_path: Path) -> None:
 
     def refresh() -> None:
         try:
-            conn = sqlite3.connect(str(db_path), timeout=2)
+            conn = connect(str(db_path), timeout=2)
             try:
                 rows = conn.execute("SELECT match_id, COUNT(*) FROM events GROUP BY match_id").fetchall()
             finally:

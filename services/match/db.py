@@ -1,4 +1,6 @@
-"""SQLite 建表缓存：同一进程、同一路径只执行一次 DDL。
+"""SQLite 建表缓存与唯一连接工厂。
+
+建表缓存：同一进程、同一路径只执行一次 DDL。
 
 之前 `EventLog.open`、`read_match`、`workqueue.connect`、`auth.check_and_consume`
 每次调用都 `executescript(SCHEMA)`。一次读事件就要跑一遍建表语句，
@@ -11,7 +13,10 @@
 
 from __future__ import annotations
 
+import sqlite3
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -54,3 +59,51 @@ def reset_schema_cache() -> None:
     """测试与「删库重建」场景用：忘掉已建表记录。"""
     with _LOCK:
         _READY.clear()
+
+
+def connect(
+    db_path: str | Path,
+    *,
+    timeout: float = 10.0,
+    rows: bool = False,
+    check_same_thread: bool = True,
+) -> sqlite3.Connection:
+    """打开 SQLite 连接：超时、行工厂、线程开关只在这里决定。
+
+    之前 23 处各自 `sqlite3.connect`，timeout 有 2/5/10/30 四种，row_factory
+    有的设、有的不设；同一个库在不同调用方眼里行为不同。需要行对象就传
+    `rows=True`，需要跨线程就显式关掉 `check_same_thread`，不再隐式约定。
+    """
+    conn = sqlite3.connect(
+        str(db_path),
+        timeout=timeout,
+        check_same_thread=check_same_thread,
+    )
+    if rows:
+        conn.row_factory = sqlite3.Row
+    return conn
+
+
+@contextmanager
+def open_db(
+    db_path: str | Path,
+    *,
+    timeout: float = 10.0,
+    rows: bool = False,
+    check_same_thread: bool = True,
+) -> Iterator[sqlite3.Connection]:
+    """连接即资源：退出 with 时一定 close。
+
+    路由与脚本里大量 `conn = connect(...); try: ... finally: conn.close()`
+    是同一个生命周期；把 close 放回工厂，调用方只关心 SQL。
+    """
+    conn = connect(
+        db_path,
+        timeout=timeout,
+        rows=rows,
+        check_same_thread=check_same_thread,
+    )
+    try:
+        yield conn
+    finally:
+        conn.close()

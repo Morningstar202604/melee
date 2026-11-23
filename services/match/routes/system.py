@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -11,6 +10,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .. import scheduler as scheduler_module
 from .. import workqueue
+from ..db import open_db
 from ..engine import registry as game_registry
 from ..messages import game_label
 from ..scheduler import ScheduleConfig
@@ -25,12 +25,9 @@ async def health(request: Request) -> JSONResponse:
     db_path = db_path_of(request)
     checks: dict[str, Any] = {"db": False, "queue": False}
     try:
-        conn = sqlite3.connect(str(db_path), timeout=2)
-        try:
+        with open_db(str(db_path), timeout=2) as conn:
             conn.execute("SELECT 1")
             checks["db"] = True
-        finally:
-            conn.close()
     # aqg: top-level boundary
     except Exception:  # noqa: BLE001 - 探针只报告，不抛
         pass

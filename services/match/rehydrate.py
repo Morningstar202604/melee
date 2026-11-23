@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .db import connect
 from .engine import registry as game_registry
 from .engine.base import Game, Move
 from .eventlog import read_match
@@ -64,7 +65,7 @@ def _seed_from_row(db_path: str | Path, match_id: str) -> int | None:
     只在这一列存在时才用；库被裁剪或行被删就当没有，好让报错走正常路径。
     """
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = connect(str(db_path))
     except sqlite3.Error:
         return None
     try:
@@ -120,7 +121,7 @@ def known_matches(db_path: str | Path) -> list[str]:
     """列出日志里出现过的所有 matchId，供跨副本发现。"""
     import sqlite3
 
-    conn = sqlite3.connect(str(db_path))
+    conn = connect(str(db_path))
     try:
         rows = conn.execute("SELECT DISTINCT match_id FROM events ORDER BY match_id").fetchall()
         return [row[0] for row in rows]

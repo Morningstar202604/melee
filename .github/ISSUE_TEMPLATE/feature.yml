@@ -1,0 +1,47 @@
+name: Feature request
+description: A capability or a change worth making
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that melee makes hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: Keep it concrete. If it touches the event contract or the API, say so.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: How we would know it works
+      description: A checkable acceptance criterion. If it cannot be tested, it belongs in discussion first.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Live view / replay
+        - Directing
+        - Recap / highlights
+        - Games and engines
+        - Models and agents
+        - Seasons and archive
+        - Deployment / operations
+        - Documentation
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmations
+      options:
+        - label: I checked the roadmap and this is not already listed
+          required: true
