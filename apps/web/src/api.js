@@ -77,7 +77,7 @@ export const api = {
   },
   createMatch: (body) => request('/matches', { method: 'POST', body }),
   events: (matchId, after = -1, limit = 0) => {
-    const query = new URLSearchParams({ after: String(after) })
+    const query = new URLSearchParams({ after: String(after), lang: getLang() })
     // limit=0 表示"服务端不限"：保持旧调用行为，分页只在新代码里显式传。
     if (limit) query.set('limit', String(limit))
     return request(`/matches/${encodeURIComponent(matchId)}/events?${query}`)

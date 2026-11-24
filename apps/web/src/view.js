@@ -11,6 +11,7 @@ export function createView() {
     remaining: null,
     history: [],
     thoughts: {}, // player -> string[]
+    lastThoughts: {}, // player -> 当前/最近一回合的完整思考（delta 累加）
     currentThought: null,
     lastAction: null,
     narration: [],
@@ -48,14 +49,17 @@ export function reduce(view, event) {
 
     case 'turn.started':
       next.activePlayer = event.player || null
+      if (event.player) next.lastThoughts = { ...next.lastThoughts, [event.player]: '' }
       next.currentThought = null
       break
 
     case 'thought.delta': {
       const player = event.player
       const list = (next.thoughts[player] || []).concat(payload.text)
+      const full = (next.lastThoughts[player] || '') + payload.text
       next.thoughts = { ...next.thoughts, [player]: list }
-      next.currentThought = { player, text: payload.text }
+      next.lastThoughts = { ...next.lastThoughts, [player]: full }
+      next.currentThought = { player, text: full }
       break
     }
 
@@ -171,6 +175,7 @@ export function currentCue(view) {
 }
 
 export function latestThoughtOf(view, player) {
+  if (view.lastThoughts && Object.hasOwn(view.lastThoughts, player)) return view.lastThoughts[player]
   const list = view.thoughts[player] || []
   return list.length ? list[list.length - 1] : ''
 }

@@ -108,6 +108,10 @@ def test_arena3d_static_surface_is_wired(client):
     assert "MIT" in (root / "vendor" / "three" / "LICENSE").read_text(encoding="utf-8")
     assert "api.coach" in js
     assert "a3CoachForm" in js
+    assert 'id="a3Thoughts"' in html and 'id="a3Timeline"' in html
+    assert "renderTrace" in js and "lastThoughts" in (root / "src" / "view.js").read_text(encoding="utf-8")
+    assert "lang: getLang()" in (root / "src" / "api.js").read_text(encoding="utf-8")
+    assert "lang: getLang()" in (root / "src" / "sse.js").read_text(encoding="utf-8")
     assert "coach.message" in (root / "src" / "view.js").read_text(encoding="utf-8")
     assert "PCFShadowMap" in js
     assert "PCFSoftShadowMap" not in js

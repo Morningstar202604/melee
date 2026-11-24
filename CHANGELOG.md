@@ -4,6 +4,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 The full history, including the early 0.x builds, lives in the [Chinese archive](docs/zh-CN/CHANGELOG.md). This file keeps the releases a reader is most likely to care about.
 
+## [1.10.1] — 2026-11-24
+
+### Added
+
+- **AI trace panel in the 3D arena.** The left deck now shows a live thinking stream (`lastThoughts`, accumulated per turn) and a play-by-play rail for turns, proposed/applied actions, coach deliveries, narration and the final result. Long thoughts are no longer reduced to the last streamed chunk.
+- **Coach onboarding.** The live coach form carries a one-line instruction guide; the empty trace states explain what will appear before sending.
+
+### Changed
+
+- The 2D player cards and the 3D trace both read the complete per-turn thought buffer, so streamed reasoning stays readable as one paragraph.
+- Event reads and SSE subscriptions now pass the active language (`lang`) explicitly, keeping live commentary in the same language as the UI.
+
+### Fixed
+
+- Live SSE commentary no longer falls back to English after the initial localized snapshot; the stream URL carries the same language as the page.
+- The 3D trace keeps turn deltas and coach commands in sequence order, so a coach delivery is visible next to the action it preceded.
+
 ## [1.10.0] — 2026-11-24
 
 ### Added

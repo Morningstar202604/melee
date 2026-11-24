@@ -32,6 +32,7 @@ let boardSize = 8
 let stageSize = 0
 let lastBoardKey = ''
 let lastPlayersKey = ''
+let lastTraceKey = ''
 let podGroup = null
 let abstractGroup = null
 let abstractLabel = null
@@ -210,6 +211,7 @@ function sync() {
   updatePlayers(view.players || [])
   setHud()
   renderCoachForm()
+  renderTrace()
 }
 
 function currentBoard() {
@@ -273,6 +275,105 @@ function renderCoachForm() {
       option.textContent = player
       return option
     }))
+  }
+}
+
+function renderTrace() {
+  const thoughtsEl = el('a3Thoughts')
+  const timelineEl = el('a3Timeline')
+  if (!thoughtsEl || !timelineEl) return
+  const players = view.players || []
+  const signature = [
+    events.length,
+    view.seq,
+    view.activePlayer || '',
+    ...players.map((player) => `${player}:${(view.lastThoughts?.[player] || '').length}`),
+  ].join('|')
+  if (signature === lastTraceKey) return
+  lastTraceKey = signature
+
+  const visible = players
+    .map((player, index) => ({ player, index, text: (view.lastThoughts?.[player] || '').trim() }))
+    .filter((row) => row.text || (view.status === 'live' && view.activePlayer === row.player))
+  if (!visible.length) {
+    const empty = document.createElement('p')
+    empty.className = 'a3-traceempty'
+    empty.textContent = t('arena3d.noThought')
+    thoughtsEl.replaceChildren(empty)
+  } else {
+    thoughtsEl.replaceChildren(...visible.map((row) => {
+      const item = document.createElement('div')
+      item.className = 'a3-thought' + (view.activePlayer === row.player && view.status === 'live' ? ' active' : '')
+      const head = document.createElement('div')
+      head.className = 'a3-thoughthead'
+      const dot = document.createElement('i')
+      dot.style.background = TEAM_COLORS[row.index % TEAM_COLORS.length]
+      const name = document.createElement('b')
+      name.textContent = row.player
+      head.append(dot, name)
+      if (view.activePlayer === row.player && view.status === 'live') {
+        const now = document.createElement('span')
+        now.textContent = t('arena3d.thinking')
+        head.append(now)
+      }
+      const text = document.createElement('p')
+      text.textContent = row.text || t('arena3d.thinkingNow')
+      item.append(head, text)
+      return item
+    }))
+  }
+
+  const trace = events
+    .filter((event) => (
+      event.type === 'turn.started' ||
+      event.type === 'action.proposed' ||
+      event.type === 'action.applied' ||
+      event.type === 'narration.line' ||
+      event.type === 'match.ended' ||
+      (event.type === 'coach.message' && event.payload?.status !== 'queued')
+    ))
+    .slice(-7)
+  if (!trace.length) {
+    const empty = document.createElement('li')
+    empty.className = 'a3-traceempty'
+    empty.textContent = t('arena3d.traceEmpty')
+    timelineEl.replaceChildren(empty)
+    return
+  }
+  timelineEl.replaceChildren(...trace.map((event) => {
+    const item = document.createElement('li')
+    const seq = document.createElement('span')
+    seq.className = 'a3-tseq'
+    seq.textContent = `#${event.seq}`
+    const text = document.createElement('span')
+    text.className = 'a3-ttext ' + (event.type === 'coach.message' ? 'coach' : event.type.split('.')[0])
+    text.textContent = traceText(event)
+    text.title = text.textContent
+    item.append(seq, text)
+    return item
+  }))
+}
+
+function traceText(event) {
+  const payload = event.payload || {}
+  const value = payload.action?.value ?? payload.action?.kind ?? ''
+  switch (event.type) {
+    case 'turn.started': {
+      const turn = payload.turnIndex ?? payload.turn
+      return `${event.player || '—'} · ${turn == null ? t('arena3d.turnStart') : `${t('arena3d.turn')} ${turn}`}`
+    }
+    case 'action.proposed':
+      return `${event.player || '—'} · ${String(value)}`
+    case 'action.applied':
+      return `${event.player || '—'} · ${String(value)} ✓`
+    case 'coach.message':
+      return `⚑ ${payload.target || '—'} · ${payload.instruction || ''}`
+    case 'narration.line':
+      return String(payload.text || '')
+    case 'match.ended':
+      return `${t('watch.status.ended')} · ${String(payload.winner ?? payload.reason ?? '')}`
+    default:
+      return event.type
   }
 }
 

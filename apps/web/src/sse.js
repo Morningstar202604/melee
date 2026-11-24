@@ -1,6 +1,7 @@
 // SSE 客户端：只负责建立事件流与断线重连，不掺任何状态逻辑。
 // HTTP 取数一律走 api.js：两套 fetch 会各写一份超时、鉴权与错误格式。
 import { api, authHeaders, token } from './api.js'
+import { getLang } from './i18n.js'
 
 async function fetchTicket() {
   try {
@@ -31,7 +32,7 @@ export async function connectEvents(matchId, { onEvent, onOpen, onError, baseUrl
     }
     const ticket = token() ? await fetchTicket() : ''
     if (closed) return
-    const params = new URLSearchParams()
+    const params = new URLSearchParams({ lang: getLang() })
     if (ticket) params.set('ticket', ticket)
     if (cursor !== null) params.set('lastEventId', String(cursor))
     // 带上 lastEventId 就必须关掉浏览器自带重连（它的 URL 里是旧票据）。

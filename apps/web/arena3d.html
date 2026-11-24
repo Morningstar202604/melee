@@ -59,8 +59,19 @@
         <button id="a3CoachSend" class="a3-coachsend" type="submit" data-i18n="arena3d.coachSend">Send</button>
         <textarea id="a3CoachText" rows="2" maxlength="280" data-i18n-attr="placeholder:arena3d.coachPlaceholder|aria-label:arena3d.coachPlaceholder"></textarea>
         <p id="a3CoachError" class="a3-coacherror" role="alert" hidden></p>
+        <p class="a3-coachguide" data-i18n="arena3d.coachGuide">Pick a player, write one executable instruction. It lands before the next move.</p>
       </form>
       <div id="a3Coach" class="a3-coachfeed">—</div>
+    </div>
+    <div class="a3-trace">
+      <div class="a3-trace-block">
+        <span class="a3-kicker" data-i18n="arena3d.trace">AI thinking</span>
+        <div id="a3Thoughts" class="a3-thoughts" aria-label="AI thinking stream" data-i18n-attr="aria-label:arena3d.trace"></div>
+      </div>
+      <div class="a3-trace-block">
+        <span class="a3-kicker" data-i18n="arena3d.playByPlay">Play-by-play</span>
+        <ol id="a3Timeline" class="a3-timeline" role="log" aria-live="polite" aria-label="Play-by-play" data-i18n-attr="aria-label:arena3d.playByPlay"></ol>
+      </div>
     </div>
     <p class="a3-hint" data-i18n="arena3d.orbitHint">Drag to orbit · scroll to zoom · right-drag to pan</p>
   </section>
