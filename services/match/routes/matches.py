@@ -584,12 +584,15 @@ async def coach_command(match_id: str, body: CoachCommandIn, request: Request) -
     guard(request, "coach")
     db_path = db_path_of(request)
     from ..coach import CoachError, enqueue, is_live, live_players, log_queued
-    from ..eventlog import has_match
+    from ..episode import is_imported
 
     if not has_match(db_path, match_id):
         raise HTTPException(status_code=404, detail="比赛不存在")
     if not is_live(db_path, match_id):
         raise HTTPException(status_code=409, detail="只有直播中的比赛可以接受教练指令")
+    # 导入的实时快照虽然也是 live，但它是只读事实；不能从 API 绕开前端写教练指令。
+    if is_imported(read_match(db_path, match_id)):
+        raise HTTPException(status_code=409, detail="导入/回放的比赛只读，不接受教练指令")
     players = live_players(db_path, match_id)
     if body.target not in players:
         raise HTTPException(status_code=400, detail=f"教练指令目标必须是本场选手：{', '.join(players)}")

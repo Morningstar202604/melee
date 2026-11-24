@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
 from services.match.coach import CoachBook, CoachError, enqueue, validate_instruction
+from services.match.episode import build_export, parse_episode
 from services.match.eventlog import read_match
 from services.match.routes.matches import CoachCommandIn
 
@@ -114,6 +116,25 @@ def test_runner_delivers_coach_instruction_once(tmp_path, monkeypatch):
     assert any(event["type"] == "turn.started" and event["seq"] > delivered_seq for event in events)
     # 指令只会投递一次；runner 每手 take 不会重复生成同一条 delivered。
     assert len(delivered) == 1
+
+
+def test_coach_endpoint_rejects_imported_live_snapshot(tmp_path, monkeypatch):
+    """导入的实时快照是 live，但事实只读，API 不能绕过前端写教练指令。"""
+    client = make_client(tmp_path, monkeypatch, worker=False)
+    sample = Path(__file__).resolve().parents[3] / "examples" / "episodes" / "kaggle-chess.json"
+    episode = parse_episode(json.loads(sample.read_text(encoding="utf-8")), "kaggle")
+    document = build_export(episode, finished=False, live=True)
+    response = client.post("/matches/import", json=document)
+    assert response.status_code == 200, response.text
+    match_id = response.json()["matchId"]
+    scene = client.get(f"/matches/{match_id}/scene").json()
+    assert scene["status"] == "live" and scene["source"] == "import"
+    coach = client.post(
+        f"/matches/{match_id}/coach",
+        json={"target": episode.players[0], "instruction": "只读局不能改"},
+    )
+    assert coach.status_code == 409, coach.text
+    assert "只读" in coach.json()["detail"]
 
 
 def test_coach_route_shape_is_declared():

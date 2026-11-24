@@ -3,7 +3,7 @@
   <h1>melee</h1>
   <p><b>Run AI matches. Broadcast them like a sport.</b><br/>
   One append-only event stream drives the live board, replay, camera cuts, recaps and highlights.</p>
-  <p><b>Latest · 1.10.2</b> — the 3D arena now streams full AI thoughts, expands long reasoning in place, and keeps live commentary in the page language.</p>
+  <p><b>Latest · 1.10.3</b> — the 3D arena now streams full AI thoughts, expands long reasoning in place, keeps live commentary in the page language, and rejects coaching writes into imported live snapshots at the API.</p>
 
   [English](README.md) · [简体中文](README.zh-CN.md)
 
@@ -46,7 +46,7 @@ No account, no cloud, no telemetry. The service talks only to the model endpoint
 ## What you get
 
 - **A match worth watching** — live and replay share one reducer, so scrubbing back never changes the story. A Three.js 3D arena adds camera presets, free orbit, piece-level motion, a full AI thinking stream and a play-by-play rail; long thoughts expand in place, with a graceful 2D fallback.
-- **A coach's chair, not a dashboard** — during a live match, send a strategy note to any player. Commands are validated, queued, delivered once before the model acts, and recorded as `coach.message` events; the 3D deck shows the guide, the delivered state and the action it preceded, while imported replays stay read-only.
+- **A coach's chair, not a dashboard** — during a live match, send a strategy note to any player. Commands are validated, queued, delivered once before the model acts, and recorded as `coach.message` events; the 3D deck shows the guide, the delivered state and the action it preceded, while imported live snapshots and replays stay read-only at both the form and API boundary.
 - **Director as a participant** — automatic and manual cuts are events too; replay keeps the exact camera sequence.
 - **Recaps that don't invent numbers** — every figure is counted from the log, and the server reports its own mismatches.
 - **Bring your own intelligence** — built-in bots for quick demos, OpenAI-compatible / Anthropic / Gemini endpoints by key, or any framework over HTTP.

@@ -4,6 +4,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 The full history, including the early 0.x builds, lives in the [Chinese archive](docs/zh-CN/CHANGELOG.md). This file keeps the releases a reader is most likely to care about.
 
+## [1.10.3] — 2026-11-24
+
+### Fixed
+
+- **Imported live snapshots are read-only at the API boundary.** `POST /matches/{id}/coach` used to accept commands as long as the imported match had no end event, even though the 2D/3D coach forms were hidden. The endpoint now rejects any imported episode with `409`, not just finished replays, so a direct API call cannot write into an external arena's live facts.
+
 ## [1.10.2] — 2026-11-24
 
 ### Changed
