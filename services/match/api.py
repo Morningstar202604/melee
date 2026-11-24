@@ -154,7 +154,9 @@ def _apply_security_headers(app: FastAPI) -> None:
         frame_value = frame_ancestors if embed_page else "'none'"
         response.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "default-src 'self'; "
+            "script-src 'self' 'sha256-gh7NRJ7MEWdYUGMcXx0SUMJY93gUi2UqlztG1amlvwA='; "
+            "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; media-src 'self'; "
             f"connect-src {connect}; frame-ancestors {frame_value}; "
             "base-uri 'self'; form-action 'self'",

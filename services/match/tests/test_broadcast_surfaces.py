@@ -89,3 +89,36 @@ def test_material_and_empty_scene_branches():
     empty = _scene_from_events("m_missing", [])
     assert empty["status"] == "waiting" and empty["source"] == "log"
     assert empty["lastSeq"] == -1
+
+
+def test_arena3d_static_surface_is_wired(client):
+    """3D 页、vendor 的 Three.js 与 CSP importmap hash 必须一起成立。"""
+    root = Path(__file__).resolve().parents[3] / "apps" / "web"
+    html = (root / "arena3d.html").read_text(encoding="utf-8")
+    js = (root / "src" / "arena3d.js").read_text(encoding="utf-8")
+    assert "./src/arena3d.js" in html
+    assert "./src/theme-boot.js" in html
+    assert 'id="a3CoachForm"' in html
+    assert 'id="a3CoachTarget"' in html
+    assert "vendor/three/three.module.js" in html
+    assert "vendor/three/addons/" in html
+    assert (root / "vendor" / "three" / "three.module.js").is_file()
+    assert (root / "vendor" / "three" / "three.core.js").is_file()
+    assert (root / "vendor" / "three" / "addons" / "controls" / "OrbitControls.js").is_file()
+    assert "MIT" in (root / "vendor" / "three" / "LICENSE").read_text(encoding="utf-8")
+    assert "api.coach" in js
+    assert "a3CoachForm" in js
+    assert "coach.message" in (root / "src" / "view.js").read_text(encoding="utf-8")
+    assert "PCFShadowMap" in js
+    assert "PCFSoftShadowMap" not in js
+
+    import base64
+    import hashlib
+    import re
+
+    match = re.search(r'<script type="importmap">(.*?)</script>', html, re.S)
+    assert match
+    digest = "sha256-" + base64.b64encode(hashlib.sha256(match.group(1).encode()).digest()).decode()
+    response = client.get("/arena3d.html")
+    assert response.status_code == 200
+    assert digest in response.headers["content-security-policy"]

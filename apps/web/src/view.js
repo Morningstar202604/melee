@@ -18,6 +18,8 @@ export function createView() {
     winner: null,
     endReason: '',
     rejected: 0,
+    coach: [],
+    lastCoach: null,
     seq: -1,
   }
 }
@@ -120,6 +122,23 @@ export function reduce(view, event) {
         seq: event.seq,
       })
       break
+
+    case 'coach.message': {
+      // 同一 commandId 有 queued / delivered 两条事件：合并成一条，
+      // 时间线只保留最新状态，避免“教练说了一次、画面显示两遍”。
+      const id = payload.commandId
+      const item = {
+        id,
+        target: payload.target,
+        instruction: payload.instruction,
+        status: payload.status,
+        seq: event.seq,
+      }
+      const others = (next.coach || []).filter((row) => row.id !== id)
+      next.coach = others.concat(item).slice(-8)
+      next.lastCoach = item
+      break
+    }
 
     case 'match.ended':
       next.status = 'ended'

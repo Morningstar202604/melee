@@ -127,11 +127,29 @@ def _m004_match_source(conn: sqlite3.Connection) -> None:
         )
 
 
+def _m005_coach_messages(conn: sqlite3.Connection) -> None:
+    """1.10：教练席指令队列；与事件日志同库，跨副本可见。"""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS coach_messages ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " match_id TEXT NOT NULL,"
+        " target TEXT NOT NULL,"
+        " instruction TEXT NOT NULL,"
+        " created_at TEXT NOT NULL,"
+        " delivered_at TEXT)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_coach_pending "
+        "ON coach_messages (match_id, target, delivered_at)"
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "events.visibility", _m001_visibility),
     Migration(2, "seasons.game/status", _m002_season_game_status),
     Migration(3, "index events(type, seq)", _m003_leaderboard_index),
     Migration(4, "matches source/source_id/played_at", _m004_match_source),
+    Migration(5, "coach_messages queue", _m005_coach_messages),
 )
 
 TARGET_VERSION = MIGRATIONS[-1].version

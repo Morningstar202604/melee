@@ -31,6 +31,7 @@ EXPECTED_ROUTES = {
     ("GET", "/jobs/{job_id}"),
     ("GET", "/matches"),
     ("POST", "/matches"),
+    ("POST", "/matches/{match_id}/coach"),
     ("GET", "/matches/{match_id}/card.png"),
     ("GET", "/matches/{match_id}/clips"),
     ("POST", "/matches/{match_id}/clips/render"),

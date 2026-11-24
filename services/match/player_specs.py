@@ -209,6 +209,7 @@ def build_agents(
                     stream=spec.model.stream,
                     include_history=spec.model.includeHistory,
                     protocol=spec.model.protocol,
+                    game_id=game_id,
                 ),
             )
         elif spec.http is not None:

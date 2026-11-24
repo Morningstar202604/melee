@@ -30,6 +30,7 @@ PROFILES: dict[str, str] = {
     "render": "5/minute",
     "read": "120/minute",
     "stream": "30/minute",
+    "coach": "6/minute",
 }
 
 _DEFAULT = "60/minute"

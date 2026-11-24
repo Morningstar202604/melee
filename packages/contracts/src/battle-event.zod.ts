@@ -17,6 +17,7 @@ export const EVENT_TYPES = [
   'narration.line',
   'match.ended',
   'director.cue',
+  'coach.message',
 ] as const
 
 const visibilitySchema = z.union([
@@ -187,6 +188,21 @@ export const directorCueSchema = z
   })
   .strict()
 
+export const coachMessageSchema = z
+  .object({
+    ...baseShape,
+    type: z.literal('coach.message'),
+    payload: z
+      .object({
+        commandId: z.number().int().min(1),
+        target: z.string().min(1).max(80),
+        instruction: z.string().max(280),
+        status: z.enum(['queued', 'delivered']),
+      })
+      .strict(),
+  })
+  .strict()
+
 export const battleEventSchema = z.discriminatedUnion('type', [
   matchCreatedSchema,
   matchStartedSchema,
@@ -200,6 +216,7 @@ export const battleEventSchema = z.discriminatedUnion('type', [
   narrationLineSchema,
   matchEndedSchema,
   directorCueSchema,
+  coachMessageSchema,
 ])
 
 export type BattleEvent = z.infer<typeof battleEventSchema>

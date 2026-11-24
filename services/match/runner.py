@@ -118,6 +118,7 @@ class Runner:
         resume: bool = False,
         enforce_deadline: bool = False,
         seed_mode: str = "",
+        coach: Any | None = None,
     ) -> None:
         self.game = game
         self.log = log
@@ -132,6 +133,8 @@ class Runner:
         self.resume = resume
         # seed_mode：secure 时不把种子写进公开事件（种子能重建隐藏信息）。
         self.seed_mode = seed_mode
+        # 教练席：每手取一次待投递指令；None 表示没有教练面。
+        self.coach = coach
         # enforce_deadline：config.turnTimeoutMs 设置后由墙钟强制。
         # 关闭时 deadline_ms 只写进 turn.started 事件（旧行为：告知，不执行）。
         self.enforce_deadline = enforce_deadline
@@ -296,6 +299,25 @@ class Runner:
         """
         observation = self.game.observe(state, player)
         legal = self.game.legal_moves(state, player)
+        # 教练指令在观察之后、模型调用之前注入；只影响本手，不改引擎状态。
+        # 先落 delivered 事件再调用模型：即便模型超时，观众也能看到"指令已送达"。
+        if self.coach is not None:
+            commands = self.coach.take(player)
+            if commands:
+                text = "\n".join(command.instruction for command in commands)
+                observation = dict(observation)
+                observation["coachInstruction"] = text
+                for command in commands:
+                    self.log.append(
+                        "coach.message",
+                        {
+                            "commandId": command.command_id,
+                            "target": command.target,
+                            "instruction": command.instruction,
+                            "status": "delivered",
+                        },
+                        player=player,
+                    )
 
         result = None
         move: Move | None = None

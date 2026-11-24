@@ -80,6 +80,11 @@ class MatchConfig(BaseModel):
     turnTimeoutMs: int | None = Field(default=None, ge=1000, le=600_000)
 
 
+class CoachCommandIn(BaseModel):
+    target: str = Field(min_length=1, max_length=80)
+    instruction: str = Field(min_length=1, max_length=280)
+
+
 class CreateMatch(BaseModel):
     game: str = "twenty-questions"
     seed: int | None = None
@@ -567,6 +572,33 @@ def _scene_from_events(match_id: str, events: list[dict[str, Any]], lang: str = 
         "lastSeq": events[-1]["seq"] if events else -1,
         "updatedAt": events[-1].get("at") if events else None,
     }
+
+
+@router.post("/matches/{match_id}/coach", status_code=201)
+async def coach_command(match_id: str, body: CoachCommandIn, request: Request) -> dict[str, Any]:
+    """教练席下发一条策略指令。
+
+    只允许直播中的站内比赛；导入赛与已结束比赛返回 409，避免"指挥一场
+    已经结束的棋"。指令公开落事件，回放时能看到谁给了什么建议。
+    """
+    guard(request, "coach")
+    db_path = db_path_of(request)
+    from ..coach import CoachError, enqueue, is_live, live_players, log_queued
+    from ..eventlog import has_match
+
+    if not has_match(db_path, match_id):
+        raise HTTPException(status_code=404, detail="比赛不存在")
+    if not is_live(db_path, match_id):
+        raise HTTPException(status_code=409, detail="只有直播中的比赛可以接受教练指令")
+    players = live_players(db_path, match_id)
+    if body.target not in players:
+        raise HTTPException(status_code=400, detail=f"教练指令目标必须是本场选手：{', '.join(players)}")
+    try:
+        command = enqueue(db_path, match_id, body.target, body.instruction)
+    except CoachError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    event = log_queued(db_path, command)
+    return {"matchId": match_id, "command": {"id": command.command_id, "target": command.target, "instruction": command.instruction}, "event": event}
 
 
 @router.get("/matches/{match_id}/state")

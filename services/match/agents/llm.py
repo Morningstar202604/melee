@@ -65,6 +65,8 @@ class LLMConfig:
     include_history: bool = False
     # 原生协议：openai（默认）/ anthropic / gemini。
     protocol: str = "openai"
+    # 赛制 id：提示词协议层据此追加场景约束；未知 id 回退通用协议。
+    game_id: str = ""
 
 
 class LLMBudgetExceeded(RuntimeError):
@@ -123,7 +125,18 @@ class LLMAgent:
         else:
             system, user = self._board_messages(observation, legal)
         system = _apply_system_prompt(system, self.config.system_prompt)
+        if self.config.game_id:
+            from ..prompting import protocol_for
+
+            system += protocol_for(self.config.game_id)
         user = self._with_history(user)
+        # 教练指令放在最后：模型对最后一段指令的服从度最高，同时不覆盖
+        # 平台格式约束（约束仍在 system 里）。
+        coach = observation.get("coachInstruction")
+        if coach:
+            from ..prompting import coach_block
+
+            user += coach_block(coach)
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
     def _twenty_questions_messages(self, observation: dict[str, Any]) -> tuple[str, str]:

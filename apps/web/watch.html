@@ -34,6 +34,7 @@
     <button id="btnShare" data-i18n="watch.share">Share</button>
     <button id="btnEmbed" data-i18n="watch.embed" data-i18n-attr="title:watch.embedTitle">Embed</button>
     <button id="btnRender" data-i18n="watch.render">Export highlights</button>
+    <button id="btnArena3d" data-i18n="watch.arena3d" data-i18n-attr="title:watch.arena3dTitle">3D view</button>
     <button id="btnPgn" style="display:none" data-i18n="watch.pgn" data-i18n-attr="title:watch.pgnTitle">PGN</button>
     <button id="btnTheater" title="Theater mode (F)" data-i18n="watch.theater" data-i18n-attr="title:watch.theaterTitle">Theater</button>
   </div>
@@ -74,6 +75,24 @@
             <div class="bar"><i id="bar" style="width:100%"></i></div>
           </div>
           <div class="history" id="historyList"></div>
+        </div>
+        <div class="coachbox" id="coachPanel" hidden>
+          <div class="coach-head">
+            <span class="tag" data-i18n="watch.coach.title">Coach deck</span>
+            <span class="coach-live"><i></i><span data-i18n="watch.coach.live">Live intervention</span></span>
+          </div>
+          <div class="coach-row">
+            <label class="sr-only" for="coachTarget" data-i18n="watch.coach.target">Instruction target</label>
+            <select id="coachTarget"></select>
+            <button class="btn primary" id="btnCoach" type="button" data-i18n="watch.coach.send">Send instruction</button>
+          </div>
+          <label class="sr-only" for="coachText" data-i18n="watch.coach.placeholder">Instruction</label>
+          <textarea id="coachText" maxlength="280" rows="2" data-i18n-attr="placeholder:watch.coach.placeholder"></textarea>
+          <div class="coach-meta">
+            <span data-i18n="watch.coach.hint">One shot, max 280 chars.</span>
+            <span id="coachError" role="alert"></span>
+          </div>
+          <div class="coach-feed" id="coachFeed"></div>
         </div>
         <div class="statusbox">
           <div><span data-i18n="watch.status">Status</span><b id="viewStatus" role="status" aria-live="polite" data-i18n="watch.status.waiting">Waiting to start</b></div>

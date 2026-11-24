@@ -15,12 +15,15 @@
 - 外部对局导入：Kaggle/TextArena 赛后回放、实时快照推送、`(source, episodeId)` 幂等、出处/许可证展示，以及导入与站内统计隔离。
 - 标准国际象棋 PGN 导出与观战页下载按钮；`kagglehub` 数据集解析；首页在只有导入对局时仍能画出真实统计，直播预览取真实数据。
 - 紧凑 `/scene` 快照、无外壳 `/embed/{id}` 页，以及给 OBS 的透明 `/overlay.html` 浏览器源；跨站嵌入由 `MELEE_EMBED_ORIGINS` 白名单控制。
+- 3D 赛场 `arena3d.html`：同一事件流驱动的棋盘瓦片、棋子动效、选手 pod、镜头预设/自由环绕；无棋盘赛制用全息舞台。
+- 直播教练席：`POST /matches/{id}/coach`，校验、排队、模型下一手前一次性投递、`coach.message` 事件与 2D/3D 双入口；导入回放只读。
 - SSRF 门禁、Fernet 队列封存、Bearer 鉴权、配额、限流、安全响应头和审计脚本。
 
 ## 外部依赖边界
 
 - TextArena 是可选依赖；未安装时只有内置赛制。
 - 真实模型、Redis、ffmpeg、Docker daemon、浏览器内核和生产反向代理需要在目标环境单独验收。
+- 3D 需要 WebGL；没有时页面给出 2D 回退入口，不显示空白画布。
 - 自动化测试中的 FakeOpenAI、MockTransport、fakeredis 和静态 Docker 校验验证的是契约与错误处理，不是第三方服务的长期可用性保证。
 
 ## 明确不做

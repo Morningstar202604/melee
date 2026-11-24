@@ -4,6 +4,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 The full history, including the early 0.x builds, lives in the [Chinese archive](docs/zh-CN/CHANGELOG.md). This file keeps the releases a reader is most likely to care about.
 
+## [1.10.0] — 2026-11-24
+
+### Added
+
+- **Coach deck.** Live matches accept `POST /matches/{id}/coach` with a target and a 280-character instruction. Commands are validated, persisted in `coach_messages`, delivered at most once before the next model call, injected as `coachInstruction`, and recorded as `queued`/`delivered` `coach.message` events. The 2D watch page and the 3D arena share the same endpoint; imported replays stay read-only.
+- **3D arena.** `arena3d.html` renders the same event stream with Three.js: board tiles, piece movement/capture tweens, player pods, broadcast/top/side/free cameras, auto orbit, a holographic stage for boardless games, SSE deltas and a clear WebGL fallback.
+- **Prompt protocols.** Every registered game gets a scene protocol appended to the LLM system prompt (objective, information boundary, action constraints, JSON output contract); unknown games fall back to a safe generic protocol. Coach instructions get their own guardrail block.
+- **Concurrent stress harness.** `scripts/stress_arena.py` creates matches across all registered games, tracks completion/stuck counts and writes a machine-readable report. A 24-match run and a 48-match run each covered 12/12 games with 0 stuck; raw reports live in `docs/benchmarks/`.
+- **Baseline and research.** Four-module `docs/PROJECT-BASELINE.md`, `docs/zh-CN/PROJECT-BASELINE.md` and `docs/RESEARCH-2026-11-24.md` record provenance, competitive boundaries and the 3D feasibility path.
+
+### Changed
+
+- **CSP for the arena import map.** The page uses a SHA-256 allow-list for its inline import map instead of `unsafe-inline`; a static test keeps the hash in sync.
+- **3D colours come from tokens.** `arena3d.js` resolves its palette from `arena3d.css` custom properties, so the theme test no longer needs an exception for the arena.
+- **Long sprite labels** expand their canvas to the measured text width; names such as `GPT-5.5` no longer clip.
+
+### Fixed
+
+- The 3D first frame now builds tiles, stage and coordinates even when the match starts on an 8×8 board (the old `stageSize = 8` guard skipped `rebuildBoard`).
+- Boardless games no longer show an empty chess grid; they get a framed holographic stage instead.
+- The 3D panel receives pointer events, so the coach form is clickable rather than blocked by the WebGL canvas.
+
 ## [1.9.10] — 2026-11-24
 
 ### Added

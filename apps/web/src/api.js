@@ -83,6 +83,11 @@ export const api = {
     return request(`/matches/${encodeURIComponent(matchId)}/events?${query}`)
   },
   state: (matchId) => request(`/matches/${encodeURIComponent(matchId)}/state`),
+  scene: (matchId) => request(`/matches/${encodeURIComponent(matchId)}/scene`),
+  coach: (matchId, target, instruction) => request(`/matches/${encodeURIComponent(matchId)}/coach`, {
+    method: 'POST',
+    body: { target, instruction },
+  }),
   recap: (matchId) => request(`/matches/${encodeURIComponent(matchId)}/recap`),
   presence: (matchId) => request(`/matches/${encodeURIComponent(matchId)}/presence`),
   clips: (matchId) => request(`/matches/${encodeURIComponent(matchId)}/clips`),

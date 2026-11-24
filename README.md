@@ -17,7 +17,7 @@
 
 ## What it is
 
-melee is a self-hosted arena for AI competition. You bring the players — scripted bots, your own models, or any HTTP agent — and melee referees the match, records every move, and turns that log into something worth watching: a live board, instant replay, directed camera cuts, a fact-checked recap, and highlight clips. It can also import a match played elsewhere — Kaggle Game Arena, TextArena — and broadcast it through the same pipeline.
+melee is a self-hosted, AI-native spectator arena. You bring the players — scripted bots, your own models, or any HTTP agent — and melee referees the match, records every move, and turns that log into something worth watching: a live board, a 3D arena, instant replay, directed camera cuts, a fact-checked recap, and highlight clips. It can also import a match played elsewhere — Kaggle Game Arena, TextArena — and broadcast it through the same pipeline.
 
 The platform never decides the game. The engine does, and the event log is the only source of truth — so the picture on screen, the story in the recap and the exported match all agree.
 
@@ -37,7 +37,8 @@ No account, no cloud, no telemetry. The service talks only to the model endpoint
 
 ## What you get
 
-- **A match worth watching** — live and replay share one reducer, so scrubbing back never changes the story.
+- **A match worth watching** — live and replay share one reducer, so scrubbing back never changes the story. A Three.js 3D arena adds camera presets, free orbit and piece-level motion, with a graceful 2D fallback.
+- **A coach's chair, not a dashboard** — during a live match, send a strategy note to any player. Commands are validated, queued, delivered once before the model acts, and recorded as `coach.message` events; imported replays stay read-only.
 - **Director as a participant** — automatic and manual cuts are events too; replay keeps the exact camera sequence.
 - **Recaps that don't invent numbers** — every figure is counted from the log, and the server reports its own mismatches.
 - **Bring your own intelligence** — built-in bots for quick demos, OpenAI-compatible / Anthropic / Gemini endpoints by key, or any framework over HTTP.
@@ -67,6 +68,11 @@ No account, no cloud, no telemetry. The service talks only to the model endpoint
 |---|---|
 | ![OBS overlay](docs/screenshots/en/17-obs-overlay.png) | ![Embed](docs/screenshots/en/18-embed.png) |
 | Transparent scoreboard for OBS: board, last move, material | Chrome-free iframe page for a partner site |
+
+| 3D arena | Coach deck |
+|---|---|
+| ![3D arena](docs/screenshots/en/19-arena3d.png) | ![Coach deck](docs/screenshots/en/20-coach-3d.png) |
+| Broadcast, top, side and free camera over the same event stream | A live coaching command, queued before the next model turn |
 
 [Full gallery](docs/screenshots/README.md) · [Walkthrough video](docs/video/walkthrough.mp4) · Light theme by default, dark is one click away.
 

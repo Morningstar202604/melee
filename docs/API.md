@@ -51,6 +51,28 @@ Native and imported matches use the same shape; imported chess keeps its board a
  "narration":{"text":"..."},"source":"import","events":206}
 ```
 
+### `POST /matches/{matchId}/coach`
+
+Queue one coaching instruction for a player in a live, native match.
+
+```json
+{"target":"A","instruction":"Trade the bishop, then push the a-pawn"}
+```
+
+Returns `201` with the command and the `coach.message` event that was appended:
+
+```json
+{"matchId":"m_ab12","command":{"id":7,"target":"A","instruction":"Trade the bishop, then push the a-pawn"},"event":{"seq":91,"type":"coach.message","payload":{"commandId":7,"target":"A","instruction":"Trade the bishop, then push the a-pawn","status":"queued"}}}
+```
+
+The runner takes at most three undispatched commands for the acting player before
+each model call, injects them into the observation as `coachInstruction` and logs a
+second `coach.message` with `status:"delivered"`. Delivery is one-shot; the same
+command is never sent twice. Only real live matches accept commands: imported replays
+and ended matches return `409`, an unknown target `400`, an empty/over-280-character
+instruction `422`, an unknown match `404`. The 2D coach panel and the 3D arena both use
+this endpoint; `arena3d.html?match=<id>&token=<token>` is the 3D entry point.
+
 ### `GET /embed/{matchId}`
 
 A chrome-free iframe wrapper around `watch.html?embed=1`. Same-origin embedding

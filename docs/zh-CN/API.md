@@ -52,6 +52,27 @@ SSE 长连接。支持 `Last-Event-ID` 请求头（浏览器原生）与 `lastEv
  "narration":{"text":"..."},"source":"import","events":206}
 ```
 
+### `POST /matches/{matchId}/coach`
+
+给直播中的站内比赛排队一条教练指令。
+
+```json
+{"target":"A","instruction":"先换掉这匹马，再推进 a 兵"}
+```
+
+`201` 返回指令与刚刚追加的 `coach.message` 事件：
+
+```json
+{"matchId":"m_ab12","command":{"id":7,"target":"A","instruction":"先换掉这匹马，再推进 a 兵"},"event":{"seq":91,"type":"coach.message","payload":{"commandId":7,"target":"A","instruction":"先换掉这匹马，再推进 a 兵","status":"queued"}}}
+```
+
+Runner 在每次模型调用前，取走当前选手最多 3 条未投递指令，写进 observation 的
+`coachInstruction`，再追加一条 `status:"delivered"` 的 `coach.message`。投递是一次性的，
+同一条指令不会重复下发。只有真实直播接受指令：导入回放与已结束比赛返回 `409`，
+目标不在本场返回 `400`，空指令/超过 280 字返回 `422`，未知场次返回 `404`。
+2D 教练席与 3D 赛场共用这个端点；3D 入口是
+`arena3d.html?match=<id>&token=<token>`。
+
 ### `GET /embed/{matchId}`
 
 无产品外壳的 iframe 包装页，内层是 `watch.html?embed=1`。默认只允许同源嵌入；

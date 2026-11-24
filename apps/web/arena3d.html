@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="./favicon.svg">
+<title>3D arena · melee</title>
+<script src="./src/theme-boot.js"></script>
+<link rel="stylesheet" href="./src/theme.css">
+<link rel="stylesheet" href="./src/arena3d.css">
+<script type="importmap">{"imports":{"three":"./vendor/three/three.module.js","three/addons/":"./vendor/three/addons/"}}</script>
+</head>
+<body class="arena3d-body">
+<a class="skip-link" href="#arenaHud" data-i18n="nav.skip">Skip to main content</a>
+<div id="arenaStage" aria-hidden="true"></div>
+
+<header class="a3-top">
+  <a class="a3-brand" href="index.html" data-keep-query aria-label="melee home">
+    <span class="a3-mark">M</span><span>melee</span><b>3D</b>
+  </a>
+  <div class="a3-title">
+    <span class="a3-kicker">AI ARENA / LIVE SCENE</span>
+    <span id="a3Game" class="a3-game">—</span>
+  </div>
+  <div class="a3-top-actions">
+    <span id="a3Conn" class="a3-conn">—</span>
+    <span id="a3Lang" class="a3-lang"></span>
+    <a id="a3Back" class="a3-back" href="watch.html" data-i18n="arena3d.back">Back to 2D</a>
+  </div>
+</header>
+
+<nav class="a3-cameras" aria-label="Camera presets">
+  <button class="a3-cam on" data-camera="broadcast" type="button" data-i18n="arena3d.broadcast">Broadcast</button>
+  <button class="a3-cam" data-camera="top" type="button" data-i18n="arena3d.top">Top</button>
+  <button class="a3-cam" data-camera="side" type="button" data-i18n="arena3d.side">Side</button>
+  <button class="a3-cam" data-camera="free" type="button" data-i18n="arena3d.free">Free camera</button>
+  <button class="a3-cam" id="a3Auto" type="button" aria-pressed="false" data-i18n="arena3d.auto">Auto orbit</button>
+</nav>
+
+<main id="arenaHud" class="a3-hud">
+  <h1 class="sr-only" data-i18n="arena3d.title">3D arena</h1>
+
+  <section class="a3-panel a3-left" aria-label="Match scoreboard">
+    <div class="a3-statusline">
+      <span id="a3Status" class="a3-pill">—</span>
+      <span id="a3Turn" class="a3-muted">—</span>
+    </div>
+    <div id="a3Players" class="a3-players"></div>
+    <div class="a3-stats">
+      <div><span data-i18n="arena3d.material">Material</span><b id="a3Material">—</b></div>
+      <div><span data-i18n="arena3d.lastMove">Last move</span><b id="a3Last">—</b></div>
+      <div><span data-i18n="arena3d.events">Events</span><b id="a3Events">0</b></div>
+    </div>
+    <div class="a3-coach">
+      <span class="a3-kicker" data-i18n="arena3d.coach">Coach deck</span>
+      <form id="a3CoachForm" class="a3-coachform" hidden>
+        <label class="sr-only" for="a3CoachTarget" data-i18n="arena3d.coachTarget">Send to</label>
+        <select id="a3CoachTarget" data-i18n-attr="aria-label:arena3d.coachTarget"></select>
+        <button id="a3CoachSend" class="a3-coachsend" type="submit" data-i18n="arena3d.coachSend">Send</button>
+        <textarea id="a3CoachText" rows="2" maxlength="280" data-i18n-attr="placeholder:arena3d.coachPlaceholder|aria-label:arena3d.coachPlaceholder"></textarea>
+        <p id="a3CoachError" class="a3-coacherror" role="alert" hidden></p>
+      </form>
+      <div id="a3Coach" class="a3-coachfeed">—</div>
+    </div>
+    <p class="a3-hint" data-i18n="arena3d.orbitHint">Drag to orbit · scroll to zoom · right-drag to pan</p>
+  </section>
+
+  <section class="a3-bottom" aria-label="Commentary">
+    <span class="a3-kicker" data-i18n="watch.narration">Commentary</span>
+    <p id="a3Narration">—</p>
+  </section>
+</main>
+
+<div id="a3Loading" class="a3-loading" role="status" data-i18n="arena3d.loading">Building the arena…</div>
+<div id="a3Error" class="a3-error" role="alert" hidden>
+  <b id="a3ErrorTitle">3D arena</b>
+  <p id="a3ErrorText"></p>
+  <a id="a3ErrorBack" class="a3-back" href="watch.html" data-i18n="arena3d.back">Back to 2D</a>
+</div>
+
+<script type="module" src="./src/arena3d.js"></script>
+</body>
+</html>

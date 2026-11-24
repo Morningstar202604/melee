@@ -1,0 +1,21 @@
+{
+  "api": "http://127.0.0.1:8910",
+  "generatedAt": "2026-11-24T08:55:29+0800",
+  "registeredGames": 12,
+  "wallMs": 14312,
+  "copiesPerGame": 4,
+  "created": 48,
+  "completed": 48,
+  "stuck": 0,
+  "createErrors": 0,
+  "stateErrors": 0,
+  "scenarioCoverage": "12/12",
+  "missingGames": [],
+  "durationMs": {
+    "p50": 9464.5,
+    "p95": 13851.5,
+    "max": 13974
+  },
+  "events": 8188,
+  "errors": []
+}

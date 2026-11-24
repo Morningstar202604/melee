@@ -4,7 +4,7 @@
 import { html } from '../vendor/lit-html.js'
 import { paint as litRender } from './paint.js'
 import {
-  api, apiBase, clipTicket, clipUrl, configure, downloadExport, el, gameMeta, propagateQuery, shotLabel, teamLabel, toast,
+  api, apiBase, clipTicket, clipUrl, configure, downloadExport, el, gameMeta, propagateQuery, shotLabel, teamLabel, token, toast,
 } from './api.js'
 import { connectEvents } from './sse.js'
 import { createView, reduce, replayView } from './view.js'
@@ -108,6 +108,7 @@ function render() {
   if (!idle) renderArena(shown)
   renderTimeline(events, player.state.mode, player.state.cursor, timeline)
   renderStatus(shown)
+  renderCoach(shown)
 
   const hasMatch = Boolean(currentMatchId)
   el('liveLabel').textContent = !hasMatch
@@ -139,6 +140,43 @@ function render() {
     }
   }
   el('btnPause').textContent = player.state.playing ? t('watch.pause') : t('watch.resume')
+}
+
+function renderCoach(shown) {
+  const panel = el('coachPanel')
+  if (!panel) return
+  const canCoach = Boolean(currentMatchId) && shown.status === 'live' && !shown.imported
+  panel.hidden = !canCoach
+  if (!canCoach) return
+
+  const target = el('coachTarget')
+  const key = (shown.players || []).join('|')
+  if (target.dataset.key !== key) {
+    target.dataset.key = key
+    target.replaceChildren(...(shown.players || []).map((player) => {
+      const option = document.createElement('option')
+      option.value = player
+      option.textContent = player
+      return option
+    }))
+  }
+
+  const feed = el('coachFeed')
+  const rows = (shown.coach || []).slice(-3)
+  if (!rows.length) {
+    const empty = document.createElement('div')
+    empty.className = 'empty'
+    empty.textContent = t('watch.coach.empty')
+    feed.replaceChildren(empty)
+    return
+  }
+  feed.replaceChildren(...rows.map((row) => {
+    const line = document.createElement('div')
+    const who = document.createElement('b')
+    who.textContent = `${row.target} · ${t(row.status === 'delivered' ? 'watch.coach.delivered' : 'watch.coach.queued', { target: row.target })}`
+    line.append(who, document.createTextNode(` ${row.instruction}`))
+    return line
+  }))
 }
 
 function appendEvent(event) {
@@ -403,6 +441,33 @@ el('btnEmbed').addEventListener('click', async () => {
     toast(t('watch.embedDone'))
   } catch {
     toast(t('common.copyFailed', { url }), 'bad')
+  }
+})
+
+el('btnArena3d').addEventListener('click', () => {
+  if (!currentMatchId) return
+  const query = token() ? `&token=${encodeURIComponent(token())}` : ''
+  location.href = `arena3d.html?match=${encodeURIComponent(currentMatchId)}${query}`
+})
+
+el('btnCoach').addEventListener('click', async () => {
+  if (!currentMatchId) return
+  const target = el('coachTarget').value
+  const instruction = el('coachText').value.trim()
+  if (!target || !instruction) return
+  const button = el('btnCoach')
+  button.disabled = true
+  button.textContent = t('watch.coach.sending')
+  el('coachError').textContent = ''
+  try {
+    const data = await api.coach(currentMatchId, target, instruction)
+    el('coachText').value = ''
+    toast(t('watch.coach.queued', { target: data.command.target }))
+  } catch (error) {
+    el('coachError').textContent = t('watch.coach.error', { error: String(error.message || error) })
+  } finally {
+    button.disabled = false
+    button.textContent = t('watch.coach.send')
   }
 })
 

@@ -135,6 +135,8 @@ def run_match_job(db_path: str | Path, payload: dict[str, Any]) -> None:
             ensure_terminal(log, game, state)
         else:
             turn_timeout = _turn_timeout_of(payload)
+            from .coach import CoachBook
+
             Runner(
                 game,
                 log,
@@ -145,6 +147,7 @@ def run_match_job(db_path: str | Path, payload: dict[str, Any]) -> None:
                 deadline_ms=turn_timeout,
                 enforce_deadline=turn_timeout is not None,
                 seed_mode=str((payload.get("config") or {}).get("seedMode") or ""),
+                coach=CoachBook(db_path, match_id),
             ).play_with_budget(state)
     finally:
         log.close()

@@ -896,6 +896,82 @@
           }
         }
       ]
+    },
+    {
+      "title": "CoachMessage",
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "seq",
+            "matchId",
+            "type",
+            "at",
+            "payload"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matchId": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "visibility": {
+              "type": [
+                "string",
+                "object"
+              ]
+            },
+            "player": {
+              "type": "string"
+            },
+            "type": {
+              "const": "coach.message"
+            },
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "commandId",
+                "target",
+                "instruction",
+                "status"
+              ],
+              "properties": {
+                "commandId": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "target": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "instruction": {
+                  "type": "string",
+                  "maxLength": 280
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "delivered"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }

@@ -137,6 +137,23 @@ body{background:var(--bg-deep)}
 .cell{width:44px;height:44px;display:flex;align-items:center;justify-content:center;
   background:var(--cell-hidden);border:1px solid var(--line);border-radius:6px;font-size:20px;color:var(--txt);font-weight:600;position:relative}
 .cell.last{background:color-mix(in srgb, var(--a) 18%, var(--cell-hidden));border-color:var(--a);box-shadow:inset 0 0 0 1px var(--a)}
+.coachbox{flex:none;border:1px solid var(--line-strong);border-radius:10px;background:linear-gradient(120deg,var(--panel-2),var(--sunken));padding:8px 12px;display:flex;flex-direction:column;gap:6px}
+.coachbox[hidden]{display:none}
+.coach-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.coach-head .tag{font-size:9px;letter-spacing:.2em;color:var(--a);text-transform:uppercase}
+.coach-live{font-size:9px;color:var(--dim);display:flex;align-items:center;gap:5px}
+.coach-live i{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.coach-row{display:flex;gap:7px}
+.coach-row select{max-width:210px;background:var(--panel);border:1px solid var(--line);border-radius:7px;color:var(--txt);padding:5px 8px;font:inherit;font-size:11px}
+.coach-row .btn{white-space:nowrap;padding:5px 11px;font-size:11px}
+.coachbox textarea{width:100%;box-sizing:border-box;resize:none;background:var(--panel);border:1px solid var(--line);border-radius:7px;color:var(--txt);padding:6px 8px;font:inherit;font-size:11px;line-height:1.4}
+.coachbox textarea:focus{outline:2px solid var(--a);outline-offset:1px}
+.coach-meta{display:flex;justify-content:space-between;gap:8px;font-size:9px;color:var(--faint);min-height:12px}
+.coach-meta #coachError{color:var(--bad);text-align:right}
+.coach-feed{display:flex;flex-direction:column;gap:2px;max-height:38px;overflow:auto;font-size:10px;color:var(--dim)}
+.coach-feed .empty{color:var(--faint)}
+.coach-feed b{color:var(--a);font-weight:600}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .statusbox{flex:none;border:1px solid var(--line);border-radius:10px;background:var(--sunken);padding:10px 14px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 .statusbox div{font-size:9.5px;color:var(--faint);letter-spacing:.06em}
 .statusbox b{display:block;font-size:13px;color:var(--txt);margin-top:3px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -243,7 +260,9 @@ body.theater #stage{padding:24px 40px}
   #stage{width:100%;max-width:100%;height:auto;min-height:0;transform:none !important;margin:0 !important;
     padding:10px 12px 24px;border-radius:0;display:block;box-sizing:border-box;overflow-x:hidden}
   #stage *{max-width:100%}
-  .main,.center,.field,.card,.secret,.narration,.statusbox{min-width:0}
+  .main,.center,.field,.card,.secret,.narration,.statusbox,.coachbox{min-width:0}
+  .coach-row{flex-wrap:wrap}
+  .coach-row select{max-width:none;flex:1}
   .topline{height:auto;flex-wrap:wrap;gap:6px;padding-bottom:8px}
   .pill{font-size:11px;padding:3px 10px}
   .topline .prov{font-size:9px;letter-spacing:.12em;color:var(--faint);max-width:46vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

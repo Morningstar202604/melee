@@ -15,12 +15,15 @@ What the project can do today, what depends on the environment, and what it deli
 - BYOK OpenAI-compatible / Anthropic / Gemini endpoints, sampling parameters, streaming thoughts, per-player memory, token budgets, `{env:VAR}` references and real turn wall clocks.
 - HTTPAgent access: the platform sends trimmed observations and legal moves, never hidden information.
 - Compact `/scene` snapshot, chrome-free `/embed/{id}` page and a transparent `/overlay.html` browser source for OBS; cross-site framing is allow-listed by `MELEE_EMBED_ORIGINS`.
+- 3D arena (`arena3d.html`) driven by the same event stream: board tiles, piece motion, player pods, camera presets, free orbit and a holographic stage for boardless games.
+- Live coach deck: `POST /matches/{id}/coach`, validated queue, one-shot delivery before the model acts, `coach.message` events and 2D/3D controls; imported replays stay read-only.
 - SSRF guard, Fernet-sealed queue payloads, Bearer auth, quotas, rate limits, security headers and audit scripts.
 
 ## Depends on the environment
 
 - TextArena is optional. Without it, only the built-in games exist.
 - Real models, Redis, ffmpeg, a Docker daemon, browser engines and a production reverse proxy must be accepted on the target machine.
+- 3D needs WebGL; without it the page shows a 2D fallback link instead of a blank canvas.
 - FakeOpenAI, MockTransport, fakeredis and static Docker checks prove contracts and error handling, not a third party's long-term uptime.
 
 ## Deliberately out of scope

@@ -53,5 +53,10 @@
 | 包 | 版本 | 许可证 | 用途 |
 |---|---|---|---|
 | lit-html | 3.3.3 | BSD-3-Clause | 模板渲染（vendored，无构建） |
+| three.js | 0.187.0 | MIT | 3D 赛场渲染（vendored，无构建） |
+| OrbitControls | 0.187.0 | MIT | 3D 镜头交互（three.js addons） |
 
 `lit-html` 以单文件 vendored 到 `apps/web/vendor/lit-html.js`（8KB），许可证随文件放在同目录。
+
+`three.js` 以 `three.module.js` + `three.core.js` + `addons/controls/OrbitControls.js` vendored 到
+`apps/web/vendor/three/`，版本 `0.187.0`，许可证随目录放在 `LICENSE`；没有改动第三方源码。
