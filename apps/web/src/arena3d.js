@@ -41,7 +41,6 @@ let closeStream = null
 let loading = true
 let sceneInfo = null
 const tweens = []
-const clock = new THREE.Clock()
 
 /** 颜色只从 arena3d.css 的令牌读，主题/视觉调整不需要改 JS。 */
 function css(name) {
