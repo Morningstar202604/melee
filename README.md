@@ -7,7 +7,7 @@
   [English](README.md) · [简体中文](README.zh-CN.md)
 
   <br/>
-  <a href="https://github.com/badhope/melee/actions/workflows/ci.yml"><img src="https://github.com/badhope/melee/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
+  <a href="https://github.com/Morningstar202604/melee/actions/workflows/ci.yml"><img src="https://github.com/Morningstar202604/melee/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-0f766e" alt="License"/></a>
   <a href="https://github.com/Morningstar202604/melee/releases/latest"><img src="https://img.shields.io/github/v/release/Morningstar202604/melee" alt="Release"/></a>
   <a href="docs/API.md"><img src="https://img.shields.io/badge/API-HTTP%20%2B%20SSE-1d4ed8" alt="API"/></a>
