@@ -29,13 +29,11 @@ def export_match(
     match_id: str,
     *,
     reveal: bool = False,
-    require_ended_check: bool = False,
 ) -> dict[str, Any] | None:
     """读出一场比赛的自包含快照；比赛不存在时返回 None。
 
     可见性与 /events 契约一致：默认只导出 public 事件；
-    `reveal=True` 揭秘私有事件，`require_ended_check=True` 时
-    揭秘必须发生在比赛结束后（由路由层传入，保持单一裁决点）。
+    `reveal=True` 揭秘私有事件；比赛未结束时拒绝揭秘（由路由层统一裁决）。
     """
     from .eventlog import read_match
     from .routes.common import visible
