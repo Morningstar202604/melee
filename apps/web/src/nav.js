@@ -45,7 +45,16 @@ export function mountTopbar({ active = '', tools = null } = {}) {
   brand.className = 'brand'
   brand.href = 'index.html'
   brand.setAttribute('data-keep-query', '')
-  brand.innerHTML = `<span class="mark">M</span>${t('common.brand')} <span>/</span> ${t('common.brandSuffix')}`
+  const mark = document.createElement('img')
+  mark.className = 'mark'
+  mark.src = 'brand-mark.svg'
+  mark.alt = ''
+  mark.width = 22
+  mark.height = 22
+  mark.setAttribute('aria-hidden', 'true')
+  const slash = document.createElement('span')
+  slash.textContent = '/'
+  brand.append(mark, document.createTextNode(`${t('common.brand')} `), slash, document.createTextNode(` ${t('common.brandSuffix')}`))
   bar.appendChild(brand)
 
   const nav = document.createElement('nav')

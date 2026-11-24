@@ -30,7 +30,7 @@ body.arena3d-body{
   background:linear-gradient(180deg,rgba(4,7,12,.92),rgba(4,7,12,.48) 70%,transparent);
 }
 .a3-brand{display:flex;align-items:center;gap:9px;color:var(--a3-text);text-decoration:none;font-weight:800;letter-spacing:.02em}
-.a3-mark{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,#ffcf70,#e6a93c);color:#17120a;font-weight:900}
+.a3-mark{width:28px;height:28px;object-fit:contain;filter:drop-shadow(0 0 12px rgba(34,211,238,.30))}
 .a3-brand b{font-size:10px;letter-spacing:.22em;color:var(--a3-gold);border:1px solid rgba(241,196,106,.4);border-radius:99px;padding:2px 7px}
 .a3-title{display:flex;flex-direction:column;gap:3px;min-width:0}
 .a3-kicker{font-size:9px;letter-spacing:.24em;text-transform:uppercase;color:var(--a3-faint)}

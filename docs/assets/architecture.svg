@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 760" role="img" aria-label="melee architecture: one event log powers live, replay and 3D">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#080D14"/><stop offset="1" stop-color="#0B1220"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.35" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#123047" stop-opacity=".42"/><stop offset="1" stop-color="#0B1220" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#111A27"/><stop offset="1" stop-color="#0D1520"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#22D3EE"/><stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#8B96AA" stroke-opacity=".055"/>
+    </pattern>
+    <filter id="soft"><feGaussianBlur stdDeviation="1.4"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L9 5L0 10z" fill="#22D3EE" fill-opacity=".9"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="760" fill="url(#bg)"/>
+  <rect width="1600" height="760" fill="url(#glow)"/>
+  <rect width="1600" height="760" fill="url(#grid)"/>
+
+  <g transform="translate(72,58) scale(0.78)">
+  <defs>
+    <linearGradient id="m" x1="8" y1="54" x2="56" y2="10" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22D3EE"/>
+      <stop offset="0.55" stop-color="#38BDF8"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="32" cy="35" r="13" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F1C46A" stop-opacity=".38"/>
+      <stop offset="1" stop-color="#F1C46A" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="32" cy="35" r="13" fill="url(#halo)"/>
+  <path d="M6 53C6 22 58 22 58 53" fill="none" stroke="#22D3EE" stroke-opacity=".16" stroke-width="1.6"/>
+  <path d="M10 52L17 12L32 35L47 12L54 52" fill="none" stroke="url(#m)" stroke-width="7.2" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="32" cy="35" r="4.2" fill="#F1C46A"/>
+  <circle cx="32" cy="35" r="8.4" fill="none" stroke="#F1C46A" stroke-opacity=".55" stroke-width="1.2"/>
+</g>
+  <text x="128" y="90" fill="#E8EAF2" font-family="Inter, ui-sans-serif, -apple-system, 'Segoe UI', sans-serif" font-size="25" font-weight="700" letter-spacing="-0.6">melee</text>
+  <text x="128" y="116" fill="#7F8DA3" font-family="Inter, ui-sans-serif, -apple-system, 'Segoe UI', sans-serif" font-size="11" letter-spacing="2.2">SYSTEM MAP / 01</text>
+
+  <text x="72" y="192" fill="#F4F7FB" font-family="Inter, ui-sans-serif, -apple-system, 'Segoe UI', sans-serif" font-size="42" font-weight="700" letter-spacing="-1.2">A match is a stream of events.</text>
+  <text x="72" y="226" fill="#9AA8BC" font-family="Inter, ui-sans-serif, -apple-system, 'Segoe UI', sans-serif" font-size="17">Live board, 3D arena, replay and recap are views of one append-only log.</text>
+
+  <!-- arrows -->
+  <path d="M326 382H366" stroke="#22D3EE" stroke-opacity=".65" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M634 382H672" stroke="#22D3EE" stroke-opacity=".65" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M1000 382H1082" stroke="#22D3EE" stroke-opacity=".7" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <path d="M1000 330C1040 330 1050 276 1082 276" stroke="#22D3EE" stroke-opacity=".25" stroke-width="1.2"/>
+  <path d="M1000 436C1040 436 1050 486 1082 486" stroke="#22D3EE" stroke-opacity=".25" stroke-width="1.2"/>
+
+  <!-- source -->
+  <g>
+    <rect x="72" y="302" width="254" height="160" rx="14" fill="url(#card)" stroke="#26354A"/>
+    <rect x="72" y="302" width="254" height="3" rx="1.5" fill="url(#accent)"/>
+    <text x="94" y="336" fill="#F1C46A" font-family="Inter, sans-serif" font-size="11" font-weight="700" letter-spacing="1.8">01 / SOURCE</text>
+    <text x="94" y="368" fill="#E8EAF2" font-family="Inter, sans-serif" font-size="20" font-weight="700">Players &amp; models</text>
+    <text x="94" y="394" fill="#8F9DB2" font-family="Inter, sans-serif" font-size="13">Two seats. One table.</text>
+    <text x="94" y="414" fill="#8F9DB2" font-family="Inter, sans-serif" font-size="13">Moves arrive as intents.</text>
+    <g font-family="Inter, sans-serif" font-size="10" font-weight="600">
+      <rect x="94" y="428" width="48" height="20" rx="5" fill="#0A1822" stroke="#1D4152"/><text x="104" y="442" fill="#67E8F9">LLM</text>
+      <rect x="148" y="428" width="54" height="20" rx="5" fill="#0A1822" stroke="#1D4152"/><text x="158" y="442" fill="#67E8F9">HTTP</text>
+      <rect x="208" y="428" width="46" height="20" rx="5" fill="#0A1822" stroke="#1D4152"/><text x="216" y="442" fill="#67E8F9">LOCAL</text>
+    </g>
+  </g>
+
+  <!-- referee -->
+  <g>
+    <rect x="380" y="302" width="254" height="160" rx="14" fill="url(#card)" stroke="#26354A"/>
+    <rect x="380" y="302" width="254" height="3" rx="1.5" fill="#38BDF8"/>
+    <text x="402" y="336" fill="#F1C46A" font-family="Inter, sans-serif" font-size="11" font-weight="700" letter-spacing="1.8">02 / REFEREE</text>
+    <text x="402" y="368" fill="#E8EAF2" font-family="Inter, sans-serif" font-size="20" font-weight="700">Rules &amp; turn order</text>
+    <text x="402" y="394" fill="#8F9DB2" font-family="Inter, sans-serif" font-size="13">Validate. Dedupe. Advance.</text>
+    <text x="402" y="414" fill="#8F9DB2" font-family="Inter, sans-serif" font-size="13">No hidden side effects.</text>
+    <g>
+      <circle cx="416" cy="440" r="3" fill="#22D3EE"/><text x="426" y="444" fill="#A9B7C9" font-family="Inter, sans-serif" font-size="11">deterministic reducer</text>
+      <circle cx="548" cy="440" r="3" fill="#F1C46A"/><text x="558" y="444" fill="#A9B7C9" font-family="Inter, sans-serif" font-size="11">turn clock</text>
+    </g>
+  </g>
+
+  <!-- event log -->
+  <g>
+    <rect x="700" y="250" width="300" height="264" rx="16" fill="#0E1B28" stroke="#22D3EE" stroke-opacity=".55"/>
+    <rect x="700" y="250" width="300" height="4" rx="2" fill="url(#accent)"/>
+    <text x="724" y="286" fill="#F1C46A" font-family="Inter, sans-serif" font-size="11" font-weight="700" letter-spacing="1.8">03 / TRUTH</text>
+    <text x="724" y="318" fill="#F4F7FB" font-family="Inter, sans-serif" font-size="22" font-weight="700">Append-only event log</text>
+    <text x="724" y="344" fill="#8F9DB2" font-family="Inter, sans-serif" font-size="13">Every move is immutable. Every view is derived.</text>
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11">
+      <rect x="724" y="360" width="252" height="28" rx="5" fill="#08131D" stroke="#1B3A49"/>
+      <text x="736" y="378" fill="#67E8F9">seq 042</text><text x="804" y="378" fill="#6E7F96">board.move d1 → d8</text>
+      <rect x="724" y="396" width="252" height="28" rx="5" fill="#08131D" stroke="#1B3A49"/>
+      <text x="736" y="414" fill="#67E8F9">seq 043</text><text x="804" y="414" fill="#6E7F96">clock.tick 00:12</text>
+      <rect x="724" y="432" width="252" height="28" rx="5" fill="#08131D" stroke="#1B3A49"/>
+      <text x="736" y="450" fill="#67E8F9">seq 044</text><text x="804" y="450" fill="#6E7F96">coach.note queued</text>
+      <rect x="724" y="468" width="252" height="28" rx="5" fill="#08131D" stroke="#1B3A49"/>
+      <text x="736" y="486" fill="#67E8F9">seq 045</text><text x="804" y="486" fill="#6E7F96">match.end 1–0</text>
+    </g>
+    <text x="724" y="503" fill="#F1C46A" font-family="Inter, sans-serif" font-size="10" letter-spacing="1.2">ONE SOURCE OF TRUTH</text>
+  </g>
+
+  <!-- views -->
+  <text x="1100" y="212" fill="#F1C46A" font-family="Inter, sans-serif" font-size="11" font-weight="700" letter-spacing="1.8">04 / VIEWS</text>
+  <g font-family="Inter, sans-serif">
+    <g>
+      <rect x="1100" y="236" width="198" height="104" rx="12" fill="url(#card)" stroke="#26354A"/>
+      <text x="1116" y="266" fill="#F4F7FB" font-size="17" font-weight="700">Live board</text>
+      <text x="1116" y="288" fill="#8F9DB2" font-size="11">The match, now.</text>
+      <text x="1116" y="316" fill="#67E8F9" font-size="10" letter-spacing="1">SSE + REST</text>
+    </g>
+    <g>
+      <rect x="1318" y="236" width="214" height="104" rx="12" fill="url(#card)" stroke="#26354A"/>
+      <text x="1334" y="266" fill="#F4F7FB" font-size="17" font-weight="700">3D arena</text>
+      <text x="1334" y="288" fill="#8F9DB2" font-size="11">Camera cuts, spatial replay.</text>
+      <text x="1334" y="316" fill="#67E8F9" font-size="10" letter-spacing="1">WEBGL</text>
+    </g>
+    <g>
+      <rect x="1100" y="356" width="198" height="104" rx="12" fill="url(#card)" stroke="#26354A"/>
+      <text x="1116" y="386" fill="#F4F7FB" font-size="17" font-weight="700">Replay</text>
+      <text x="1116" y="408" fill="#8F9DB2" font-size="11">Scrub from move zero.</text>
+      <text x="1116" y="436" fill="#67E8F9" font-size="10" letter-spacing="1">SAME REDUCER</text>
+    </g>
+    <g>
+      <rect x="1318" y="356" width="214" height="104" rx="12" fill="url(#card)" stroke="#26354A"/>
+      <text x="1334" y="386" fill="#F4F7FB" font-size="17" font-weight="700">Director</text>
+      <text x="1334" y="408" fill="#8F9DB2" font-size="11">Cut, cue, keep the story tight.</text>
+      <text x="1334" y="436" fill="#67E8F9" font-size="10" letter-spacing="1">CAMERA PACK</text>
+    </g>
+    <g>
+      <rect x="1100" y="476" width="198" height="104" rx="12" fill="url(#card)" stroke="#26354A"/>
+      <text x="1116" y="506" fill="#F4F7FB" font-size="17" font-weight="700">Recap</text>
+      <text x="1116" y="528" fill="#8F9DB2" font-size="11">Story, highlights, share card.</text>
+      <text x="1116" y="556" fill="#67E8F9" font-size="10" letter-spacing="1">MARKDOWN + PNG</text>
+    </g>
+    <g>
+      <rect x="1318" y="476" width="214" height="104" rx="12" fill="url(#card)" stroke="#26354A"/>
+      <text x="1334" y="506" fill="#F4F7FB" font-size="17" font-weight="700">OBS / embed</text>
+      <text x="1334" y="528" fill="#8F9DB2" font-size="11">Broadcast without a second app.</text>
+      <text x="1334" y="556" fill="#67E8F9" font-size="10" letter-spacing="1">OVERLAY + IFRAME</text>
+    </g>
+  </g>
+
+  <!-- bottom note -->
+  <line x1="72" y1="636" x2="1540" y2="636" stroke="#26354A" stroke-opacity=".8"/>
+  <text x="72" y="676" fill="#F1C46A" font-family="Inter, sans-serif" font-size="15" font-style="italic">“Live, replay and 3D are not copies. They are the same log, replayed at different speeds.”</text>
+  <text x="72" y="716" fill="#6E7F96" font-family="Inter, sans-serif" font-size="11" letter-spacing="1.4">SELF-HOSTED · EVENT-SOURCED · PYTHON / FASTAPI / SQLITE / WEBGL</text>
+</svg>

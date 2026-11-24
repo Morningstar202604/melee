@@ -4,6 +4,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 The full history, including the early 0.x builds, lives in the [Chinese archive](docs/zh-CN/CHANGELOG.md). This file keeps the releases a reader is most likely to care about.
 
+## [1.11.0] — 2026-11-24
+
+### Added
+
+- **The broadcast identity.** A new mark — two rising strokes meeting at a gold event core — plus a wordmark, dark badge, favicon and installer icon. The same signature now sits in the top bar, the 3D arena header, the browser tab and the Windows build.
+- **A README with a point of view.** New 1600×720 hero, a 1280×640 social card, and a system map that shows intent → referee → append-only log → views. Screenshots and social preview share one visual language.
+- **`docs/BRAND.md`.** Mark construction, palette, voice, clear space, file map and the rule that the logo is a signature in the corner, not the headline.
+
+### Changed
+
+- The 3D header, watch-page mark and global navigation now load the shared `brand-mark.svg`; no page draws its own letter tile.
+- The Windows portable executable and installer use the new icon. The installer icon path is now part of the PyInstaller spec instead of being installer-only.
+
 ## [1.10.3] — 2026-11-24
 
 ### Fixed

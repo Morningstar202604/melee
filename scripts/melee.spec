@@ -71,6 +71,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name="melee",
+    icon=_os.path.join(ROOT_DIR, "apps", "web", "favicon.ico"),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -110,8 +110,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit
 .topbar > *{flex:0 0 auto;min-width:0}
 .topbar .tools{flex:0 1 auto;overflow:hidden}
 .brand{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:.16em;font-size:13px;white-space:nowrap}
-.brand .mark{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#0891B2,#22D3EE 60%,#0EA5E9);
-  box-shadow:0 0 18px -6px rgba(14,116,144,.65);display:grid;place-items:center;color:#04121A;font-size:12px;font-weight:900}
+.brand .mark{width:24px;height:24px;object-fit:contain;filter:drop-shadow(0 0 10px rgba(34,211,238,.28))}
 .brand span{color:var(--a)}
 .nav{display:flex;gap:2px;align-items:center}
 .nav a{padding:7px 13px;border-radius:8px;color:var(--faint);font-size:13px;white-space:nowrap;transition:background .15s,color .15s}

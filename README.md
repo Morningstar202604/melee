@@ -1,30 +1,75 @@
 <div align="center">
-  <img src="docs/assets/social-card.png" alt="melee — Every move, worth rewatching" width="100%"/>
-  <h1>melee</h1>
-  <p><b>Run AI matches. Broadcast them like a sport.</b><br/>
-  One append-only event stream drives the live board, replay, camera cuts, recaps and highlights.</p>
-  <p><b>Latest · 1.10.3</b> — the 3D arena now streams full AI thoughts, expands long reasoning in place, keeps live commentary in the page language, and rejects coaching writes into imported live snapshots at the API.</p>
+  <img src="docs/assets/readme-hero.png" alt="melee — AI matches, broadcast like sport" width="100%"/>
+  <p><b>AI matches, broadcast like sport.</b><br/>
+  One append-only event log drives the live board, 3D arena, replay, camera cuts, recaps, highlights and the coach's chair.</p>
+  <p><b>Latest · 1.11.0 — The Broadcast Identity.</b> One mark now runs from the README to the installer: a new hero, a system map, an app icon, the 3D header and the coach deck.</p>
 
   [English](README.md) · [简体中文](README.zh-CN.md)
 
   <br/>
   <a href="https://github.com/badhope/melee/actions/workflows/ci.yml"><img src="https://github.com/badhope/melee/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-0f766e" alt="License"/></a>
-  <a href="https://github.com/badhope/melee/releases/latest"><img src="https://img.shields.io/github/v/release/badhope/melee" alt="Release"/></a>
+  <a href="https://github.com/Morningstar202604/melee/releases/latest"><img src="https://img.shields.io/github/v/release/Morningstar202604/melee" alt="Release"/></a>
   <a href="docs/API.md"><img src="https://img.shields.io/badge/API-HTTP%20%2B%20SSE-1d4ed8" alt="API"/></a>
 </div>
 
-![The studio, running a real match](docs/video/preview.gif)
+> “The board is a view. The log is the match.”
 
-## What it is
+melee is a self-hosted, AI-native spectator arena. You bring the players — scripted bots, your own models, or any HTTP agent — and melee referees the match, records every move, and turns that one log into something worth watching.
 
-melee is a self-hosted, AI-native spectator arena. You bring the players — scripted bots, your own models, or any HTTP agent — and melee referees the match, records every move, and turns that log into something worth watching: a live board, a 3D arena, instant replay, directed camera cuts, a fact-checked recap, and highlight clips. It can also import a match played elsewhere — Kaggle Game Arena, TextArena — and broadcast it through the same pipeline.
+It can also take a match played somewhere else — Kaggle Game Arena, TextArena, a live external snapshot — and broadcast it through the same pipeline. The platform never decides the game. The engine does; the event log is the only source of truth.
 
-The platform never decides the game. The engine does, and the event log is the only source of truth — so the picture on screen, the story in the recap and the exported match all agree.
+## What makes it feel different
+
+**One log, every view.** Live, replay, 3D, recap and the OBS overlay all read the same append-only stream. Scrub backwards and the story does not change. The picture on screen and the export on disk agree because there is no second copy to disagree with.
+
+**The coach has a chair.** During a live match, send one executable note to a player. It is validated, queued, delivered once before the model acts, and written down as a `coach.message` event. The 3D deck shows the note, the delivered state and the move it preceded on one timeline. Imported live snapshots stay read-only at the form *and* the API boundary.
+
+**A director, not a dashboard.** Camera cuts are events too. Automatic cuts and manual cuts share the same timeline, so a replay keeps the exact sequence the audience saw. Recaps count what the log counted. Highlights point at real moments, not generated adjectives.
+
+**Any arena can join.** Import a finished Kaggle or TextArena trajectory, or push live snapshots while an external arena is still playing. Chess or Go gets the same watch page, director cuts, recap and provenance even when melee has no native rules for it.
+
+## The system, in one picture
+
+![melee system map](docs/assets/architecture.svg)
+
+One append-only log is the spine. The referee validates intent; every view projects it. Nothing else holds a second copy of the match.
+
+## The 3D arena
+
+| AI thinking stream | Coach deck |
+|---|---|
+| ![AI thinking stream](docs/screenshots/en/19-arena3d.png) | ![Coach deck](docs/screenshots/en/20-coach-3d.png) |
+| Full per-turn thoughts sit beside the board, with a play-by-play rail; long reasoning expands in place. | A live instruction reaches the next turn; the delivered state and the action it preceded share one timeline. |
+
+Three.js gives the match a room: camera presets, free orbit, piece-level motion, player pods and a broadcast rail. WebGL unavailable? The 2D board is still the same match.
+
+## The broadcast desk
+
+| Live | Recap |
+|---|---|
+| ![Live](docs/screenshots/en/02-live.png) | ![Recap](docs/screenshots/en/08-recap.png) |
+| Board, players, timeline scrubbing | Result, key moments, highlight clips |
+
+| Director | OBS overlay |
+|---|---|
+| ![Director](docs/screenshots/en/10-director.png) | ![OBS overlay](docs/screenshots/en/17-obs-overlay.png) |
+| Automatic and manual cuts | Transparent scoreboard for a stream |
+
+The chrome-free `/embed/{id}` page and the transparent `/overlay.html` are for partner sites and streamers who do not want a second app. Light theme by default; dark is one click away.
+
+[Full gallery](docs/screenshots/README.md) · [Walkthrough video](docs/video/walkthrough.mp4)
+
+## What else is in the box
+
+- **Bilingual by contract** — narration, recaps and cue labels re-render from language-neutral events; no second recording.
+- **Portable matches** — one self-contained export replays on another machine; chess also exports as standard PGN.
+- **Bring your own intelligence** — built-in bots for a quick demo, OpenAI-compatible / Anthropic / Gemini endpoints by key, or any framework over HTTP.
+- **Agent surfaces** — HTTP + SSE, a Python harness, and an MCP server for Claude / Cursor.
 
 ## Try it
 
-**Windows** — [latest release](https://github.com/badhope/melee/releases/latest): an installer with Start-menu shortcuts, or a portable zip you can unzip anywhere.
+**Windows** — [installer or portable zip](https://github.com/Morningstar202604/melee/releases/latest), with SHA-256 sums in the release.
 
 **From source**
 
@@ -35,50 +80,6 @@ python scripts/serve.py
 ```
 
 No account, no cloud, no telemetry. The service talks only to the model endpoints you configure.
-
-## See the 3D arena
-
-| AI thinking stream | Coach deck |
-|---|---|
-| ![AI thinking stream](docs/screenshots/en/19-arena3d.png) | ![Coach deck](docs/screenshots/en/20-coach-3d.png) |
-| Full per-turn thoughts sit beside the board, with a play-by-play rail; long reasoning expands in place. | A live instruction reaches the next turn; the delivered state and the action it preceded share one timeline. |
-
-## What you get
-
-- **A match worth watching** — live and replay share one reducer, so scrubbing back never changes the story. A Three.js 3D arena adds camera presets, free orbit, piece-level motion, a full AI thinking stream and a play-by-play rail; long thoughts expand in place, with a graceful 2D fallback.
-- **A coach's chair, not a dashboard** — during a live match, send a strategy note to any player. Commands are validated, queued, delivered once before the model acts, and recorded as `coach.message` events; the 3D deck shows the guide, the delivered state and the action it preceded, while imported live snapshots and replays stay read-only at both the form and API boundary.
-- **Director as a participant** — automatic and manual cuts are events too; replay keeps the exact camera sequence.
-- **Recaps that don't invent numbers** — every figure is counted from the log, and the server reports its own mismatches.
-- **Bring your own intelligence** — built-in bots for quick demos, OpenAI-compatible / Anthropic / Gemini endpoints by key, or any framework over HTTP.
-- **Bilingual by contract** — narration, recaps and cue labels re-render from language-neutral events; no second recording required.
-- **Embeddable broadcast surfaces** — `/embed/{id}` gives a chrome-free iframe page, `/matches/{id}/scene` gives a compact OBS/lower-third snapshot, and `/overlay.html` renders a transparent scoreboard with board, last move and material balance.
-- **Portable matches** — a match exports as one self-contained file and replays on another machine.
-- **Bring your own episode** — import finished Kaggle Game Arena or TextArena trajectories, or push live snapshots while an external arena is still playing. Chess or Go gets the same watch page, director cuts, recap and provenance/board semantics even when melee has no native rules for it.
-
-## The interface
-
-| Live | Recap |
-|---|---|
-| ![Live](docs/screenshots/en/02-live.png) | ![Recap](docs/screenshots/en/08-recap.png) |
-| Board, player panels, timeline scrubbing | Result, key moments, highlight clips |
-
-| Director | Admin |
-|---|---|
-| ![Director](docs/screenshots/en/10-director.png) | ![Admin](docs/screenshots/en/13-admin.png) |
-| Automatic and manual cuts | Health, queue, quota, season scheduler |
-
-| Imported live | Imported chess |
-|---|---|
-| ![Imported live](docs/screenshots/en/14-imported-chess-live.png) | ![Imported chess](docs/screenshots/en/15-imported-chess.png) |
-| An external arena snapshot becomes a live broadcast | Provenance, board coordinates and the last move |
-
-| OBS overlay | Embed |
-|---|---|
-| ![OBS overlay](docs/screenshots/en/17-obs-overlay.png) | ![Embed](docs/screenshots/en/18-embed.png) |
-| Transparent scoreboard for OBS: board, last move, material | Chrome-free iframe page for a partner site |
-
-
-[Full gallery](docs/screenshots/README.md) · [Walkthrough video](docs/video/walkthrough.mp4) · Light theme by default, dark is one click away.
 
 ## Commands
 
@@ -101,6 +102,12 @@ API, agent integration and deployment: [API](docs/API.md) · [Agent harness](doc
 bash scripts/verify_all.sh    # tests, coverage, lint, security, browser audit, contrast, acceptance
 ```
 
-Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Quality gates: [docs/QUALITY.md](docs/QUALITY.md) · Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md) · Changelog: [CHANGELOG.md](CHANGELOG.md)
+Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Quality gates: [docs/QUALITY.md](docs/QUALITY.md) · Brand: [docs/BRAND.md](docs/BRAND.md) · Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md) · Changelog: [CHANGELOG.md](CHANGELOG.md)
+
+## The mark
+
+Two rising strokes, one gold core. The mark is an **M** for the two sides of a match, meeting at the event both of them share. It is the same on a 16 px favicon, a Windows installer and the 3D header. The full system is in [docs/BRAND.md](docs/BRAND.md).
 
 MIT licensed. Contributions and issues are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+If you want AI competition to look like a sport, star the repo. That is how the next person finds the arena.

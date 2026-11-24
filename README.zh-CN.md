@@ -1,30 +1,75 @@
 <div align="center">
-  <img src="docs/assets/social-card.png" alt="melee — 每一手，都值得回看" width="100%"/>
-  <h1>melee</h1>
-  <p><b>让 AI 对局，值得一场转播。</b><br/>
-  一条只追加的事件流，撑起直播棋盘、回放、切镜、战报和高光。</p>
-  <p><b>最新 · 1.10.3</b> — 3D 赛场现在展示完整 AI 思考流，长推理可就地展开，直播解说跟随界面语言；导入直播快照的教练写入已在 API 层关闭。</p>
+  <img src="docs/assets/readme-hero-zh.png" alt="melee — AI 对局，像比赛一样转播" width="100%"/>
+  <p><b>AI 对局，应该像比赛一样被转播。</b><br/>
+  一条只追加的事件流，撑起直播棋盘、3D 赛场、回放、切镜、战报、高光，以及教练席。</p>
+  <p><b>最新 · 1.11.0 — 转播身份。</b> 同一枚标记，从 README 落到安装包：新头图、系统图、应用图标、3D 顶栏和教练席都统一了。</p>
 
   [English](README.md) · 简体中文
 
   <br/>
   <a href="https://github.com/badhope/melee/actions/workflows/ci.yml"><img src="https://github.com/badhope/melee/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-0f766e" alt="License"/></a>
-  <a href="https://github.com/badhope/melee/releases/latest"><img src="https://img.shields.io/github/v/release/badhope/melee" alt="Release"/></a>
+  <a href="https://github.com/Morningstar202604/melee/releases/latest"><img src="https://img.shields.io/github/v/release/Morningstar202604/melee" alt="Release"/></a>
   <a href="docs/zh-CN/API.md"><img src="https://img.shields.io/badge/API-HTTP%20%2B%20SSE-1d4ed8" alt="API"/></a>
 </div>
 
-![转播台正在运行一场真实对局](docs/video/preview.zh.gif)
+> “棋盘是视图，日志才是比赛。”
 
-## 这是什么
+melee 是一个自托管、AI 原生的对抗观赛平台。选手由你带来——脚本机器人、你自己的模型，或者任何走 HTTP 的智能体；melee 负责判定、记录每一手，再把这一份日志变成可以看的东西。
 
-melee 是一个自托管、AI 原生的对抗观赛平台。选手由你带来——脚本机器人、你自己的模型，或者任何走 HTTP 的智能体；melee 负责判定、记录每一手，再把这份日志变成可以看的东西：直播棋盘、3D 赛场、即时回放、导播切镜、逐条核对过的战报，以及高光剪辑。它也能把别处打完的对局接进来——Kaggle Game Arena、TextArena——用同一条链路转播。
+它也能接住别处打完的对局——Kaggle Game Arena、TextArena、一帧还在进行的外部快照——用同一条链路转播。平台不决定胜负，赛制引擎决定；事件日志是唯一真相。
 
-平台不决定胜负，赛制引擎决定；事件日志是唯一真相。屏幕上的画面、战报里的故事、导出的对局文件，三者永远对得上。
+## 它为什么不一样
+
+**一条日志，所有视角。** 直播、回放、3D、战报、OBS 叠加层读的是同一条只追加事件流。往回拖，故事不会变；屏幕上的画面和导出的文件对得上，因为没有第二份副本可以吵。
+
+**教练席，不是面板。** 直播中给选手下一条可执行的指令。它会被校验、排队，在模型下一手前只投递一次，并写成 `coach.message` 事件。3D 教练席把指令、送达状态和它影响的那一手放在同一条时间线上。导入的直播快照在表单和 API 两层都保持只读。
+
+**导播，不是仪表盘。** 切镜也是事件。自动切镜和手动切镜共用一条时间线，回放保留观众当时看到的顺序。战报只数日志里数得到的东西，高光指向真实的瞬间，不靠形容词凑。
+
+**别处的赛场，也能接进来。** 已结束的 Kaggle / TextArena 对局可以导入；外部 arena 还在下时，也可以推进实时快照。国际象棋、围棋这种 melee 没有原生规则的棋，照样有观战、导播、战报和出处，不另做一套。
+
+## 一张图，看懂系统
+
+![melee 系统图](docs/assets/architecture-zh.svg)
+
+只追加的事件日志是脊梁。裁判校验意图，所有视图都从它投影出来。没有第二个地方偷偷存着另一份比赛。
+
+## 3D 赛场
+
+| AI 思考流 | 教练席 |
+|---|---|
+| ![AI 思考流](docs/screenshots/zh/19-arena3d.png) | ![教练席](docs/screenshots/zh/20-coach-3d.png) |
+| 每位选手的完整思考就在棋盘旁，下面是动作时序；长推理可就地展开。 | 直播指令在下一手前送达；已执行状态和它影响的那一手在同一条时间线上。 |
+
+Three.js 给对局一个房间：镜头预设、自由环绕、棋子级动效、选手 pod 和一条转播轨。WebGL 不可用时，退回 2D 棋盘，仍然是同一场比赛。
+
+## 转播台
+
+| 直播 | 战报 |
+|---|---|
+| ![直播](docs/screenshots/zh/02-live.png) | ![战报](docs/screenshots/zh/08-recap.png) |
+| 棋盘、选手、时间轴拖动 | 结果、关键手、高光剪辑 |
+
+| 导播 | OBS 叠加层 |
+|---|---|
+| ![导播](docs/screenshots/zh/10-director.png) | ![OBS 叠加层](docs/screenshots/zh/17-obs-overlay.png) |
+| 自动与手动切镜 | 给直播流的透明记分牌 |
+
+`/embed/{id}` 是无外壳 iframe 页，`/overlay.html` 是透明记分牌，给不想再开一个应用的合作方和主播。默认亮色，深色一键切换。
+
+[完整画廊](docs/screenshots/README.md) · [演示视频](docs/video/walkthrough.zh.mp4)
+
+## 盒子里还有什么
+
+- **双语是契约** — 解说、战报、切镜标签都由语言中立的事件重新渲染，不用录第二遍。
+- **对局可携带** — 一场比赛导出成单个自包含文件，换台机器照样重放；国际象棋还能导出标准 PGN。
+- **带自己的智能** — 内置机器人适合快速演示，也支持 OpenAI 兼容 / Anthropic / Gemini 端点，或任意框架走 HTTP 参赛。
+- **Agent 接口** — HTTP + SSE、Python harness，以及给 Claude / Cursor 的 MCP server。
 
 ## 上手
 
-**Windows** — [最新发布](https://github.com/badhope/melee/releases/latest)：带开始菜单快捷方式的安装包，或解压即用的便携包。
+**Windows** — [安装包或便携包](https://github.com/Morningstar202604/melee/releases/latest)，校验和在同一页。
 
 **从源码运行**
 
@@ -35,50 +80,6 @@ python scripts/serve.py
 ```
 
 不需要账号、不依赖云端、没有遥测。服务只连接你自己配置的模型端点。
-
-## 看 3D 赛场
-
-| AI 思考流 | 教练席 |
-|---|---|
-| ![AI 思考流](docs/screenshots/zh/19-arena3d.png) | ![教练席](docs/screenshots/zh/20-coach-3d.png) |
-| 每位选手的完整思考就在棋盘旁，下面是动作时序；长推理可就地展开。 | 直播指令在下一手前送达；已执行状态和它影响的那一手在同一条时间线上。 |
-
-## 你能得到什么
-
-- **值得看的一场对局** — 直播与回放共用同一个 reducer，拖回去看也不会把故事改掉。Three.js 3D 赛场提供镜头预设、自由环绕、棋子级动效、完整 AI 思考流与动作时序；长思考可就地展开，WebGL 不可用时退回 2D。
-- **教练席，不是仪表盘** — 直播中可给任意选手下发一条策略指令；指令会校验、排队、在模型下一手前只投递一次，并写成 `coach.message` 事件；3D 教练席展示操作指引、已执行状态和它影响的那一手，导入直播快照与回放都保持只读，表单与 API 两层都拒绝写入。
-- **导播也是参与者** — 自动切镜与手动切镜都写成事件，回放保留当时的镜头顺序。
-- **战报不编数字** — 每个数字都从日志里数出来，对不上时服务端会自己报出来。
-- **带自己的智能** — 内置机器人适合演示，也支持 OpenAI 兼容 / Anthropic / Gemini 端点，或任意框架走 HTTP 参赛。
-- **双语是契约** — 解说、战报、切镜标签都由语言中立的事件重新渲染，不用录第二遍。
-- **可嵌入的转播面** — `/embed/{id}` 提供无外壳 iframe 页，`/matches/{id}/scene` 给小屏/OBS 一份紧凑快照，`/overlay.html` 直接渲染透明记分牌，带棋盘、最后一手与子力差。
-- **对局可携带** — 一场比赛导出成单个自包含文件，换台机器照样重放。
-- **把别处的对局接进来** — Kaggle Game Arena、TextArena 的 trajectory 可以直接导入，也可以在外部 arena 还在下的时候推送实时快照；国际象棋、围棋这种 melee 没有原生规则的棋，也能用同一套观战、导播、战报，并显示出处与棋盘坐标。
-
-## 界面
-
-| 直播 | 战报 |
-|---|---|
-| ![直播](docs/screenshots/zh/02-live.png) | ![战报](docs/screenshots/zh/08-recap.png) |
-| 棋盘、选手面板、时间轴拖动 | 结果、关键手、高光剪辑 |
-
-| 导播 | 后台 |
-|---|---|
-| ![导播](docs/screenshots/zh/10-director.png) | ![后台](docs/screenshots/zh/13-admin.png) |
-| 自动与手动切镜 | 健康、队列、配额、赛季调度 |
-
-| 外部导入 · 实时 | 外部导入 · 棋局 |
-|---|---|
-| ![外部导入直播](docs/screenshots/zh/14-imported-chess-live.png) | ![外部导入棋局](docs/screenshots/zh/15-imported-chess.png) |
-| 外部 arena 的快照直接变成直播 | 出处、棋盘坐标与最后一手 |
-
-| OBS 叠加层 | 嵌入页 |
-|---|---|
-| ![OBS 叠加层](docs/screenshots/zh/17-obs-overlay.png) | ![嵌入页](docs/screenshots/zh/18-embed.png) |
-| 透明记分牌：棋盘、最后一手、子力差 | 无外壳 iframe 页，给合作方站点 |
-
-
-[完整画廊](docs/screenshots/README.md) · [演示视频](docs/video/walkthrough.zh.mp4) · 默认亮色主题，深色一键切换。
 
 ## 命令
 
@@ -101,6 +102,12 @@ API、Agent 接入与部署：[API](docs/zh-CN/API.md) · [Agent 接入](docs/zh
 bash scripts/verify_all.sh    # 测试、覆盖率、lint、安全、浏览器审计、对比度、外部验收
 ```
 
-架构：[docs/zh-CN/ARCHITECTURE.md](docs/zh-CN/ARCHITECTURE.md) · 质量门禁：[docs/zh-CN/QUALITY.md](docs/zh-CN/QUALITY.md) · 路线图：[docs/zh-CN/ROADMAP.md](docs/zh-CN/ROADMAP.md) · 变更记录：[docs/zh-CN/CHANGELOG.md](docs/zh-CN/CHANGELOG.md)
+架构：[docs/zh-CN/ARCHITECTURE.md](docs/zh-CN/ARCHITECTURE.md) · 质量门禁：[docs/zh-CN/QUALITY.md](docs/zh-CN/QUALITY.md) · 品牌：[docs/zh-CN/BRAND.md](docs/zh-CN/BRAND.md) · 路线图：[docs/zh-CN/ROADMAP.md](docs/zh-CN/ROADMAP.md) · 变更记录：[docs/zh-CN/CHANGELOG.md](docs/zh-CN/CHANGELOG.md)
+
+## 标记
+
+两道上升的笔画，一颗金色的事件核心。它是 **M**，也是比赛的两边在同一个事件上相遇。16 px 的 favicon、Windows 安装包和 3D 顶栏用的是同一枚。完整规范在 [docs/zh-CN/BRAND.md](docs/zh-CN/BRAND.md)。
 
 MIT 许可。欢迎 Issue 与 PR——先看 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+如果你也想看到 AI 对局被当成比赛转播，点一个 Star。那是最便宜的一张入场券。
