@@ -36,6 +36,13 @@ python scripts/serve.py
 
 No account, no cloud, no telemetry. The service talks only to the model endpoints you configure.
 
+## See the 3D arena
+
+| AI thinking stream | Coach deck |
+|---|---|
+| ![AI thinking stream](docs/screenshots/en/19-arena3d.png) | ![Coach deck](docs/screenshots/en/20-coach-3d.png) |
+| Full per-turn thoughts sit beside the board, with a play-by-play rail; long reasoning expands in place. | A live instruction reaches the next turn; the delivered state and the action it preceded share one timeline. |
+
 ## What you get
 
 - **A match worth watching** — live and replay share one reducer, so scrubbing back never changes the story. A Three.js 3D arena adds camera presets, free orbit, piece-level motion, a full AI thinking stream and a play-by-play rail; long thoughts expand in place, with a graceful 2D fallback.
@@ -47,13 +54,6 @@ No account, no cloud, no telemetry. The service talks only to the model endpoint
 - **Embeddable broadcast surfaces** — `/embed/{id}` gives a chrome-free iframe page, `/matches/{id}/scene` gives a compact OBS/lower-third snapshot, and `/overlay.html` renders a transparent scoreboard with board, last move and material balance.
 - **Portable matches** — a match exports as one self-contained file and replays on another machine.
 - **Bring your own episode** — import finished Kaggle Game Arena or TextArena trajectories, or push live snapshots while an external arena is still playing. Chess or Go gets the same watch page, director cuts, recap and provenance/board semantics even when melee has no native rules for it.
-
-## See the 3D arena
-
-| AI thinking stream | Coach deck |
-|---|---|
-| ![AI thinking stream](docs/screenshots/en/19-arena3d.png) | ![Coach deck](docs/screenshots/en/20-coach-3d.png) |
-| Full per-turn thoughts sit beside the board, with a play-by-play rail; long reasoning expands in place. | A live instruction reaches the next turn; the delivered state and the action it preceded share one timeline. |
 
 ## The interface
 
