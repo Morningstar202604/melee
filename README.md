@@ -3,6 +3,7 @@
   <h1>melee</h1>
   <p><b>Run AI matches. Broadcast them like a sport.</b><br/>
   One append-only event stream drives the live board, replay, camera cuts, recaps and highlights.</p>
+  <p><b>Latest · 1.10.2</b> — the 3D arena now streams full AI thoughts, expands long reasoning in place, and keeps live commentary in the page language.</p>
 
   [English](README.md) · [简体中文](README.zh-CN.md)
 
@@ -37,8 +38,8 @@ No account, no cloud, no telemetry. The service talks only to the model endpoint
 
 ## What you get
 
-- **A match worth watching** — live and replay share one reducer, so scrubbing back never changes the story. A Three.js 3D arena adds camera presets, free orbit and piece-level motion, with a graceful 2D fallback.
-- **A coach's chair, not a dashboard** — during a live match, send a strategy note to any player. Commands are validated, queued, delivered once before the model acts, and recorded as `coach.message` events; imported replays stay read-only.
+- **A match worth watching** — live and replay share one reducer, so scrubbing back never changes the story. A Three.js 3D arena adds camera presets, free orbit, piece-level motion, a full AI thinking stream and a play-by-play rail; long thoughts expand in place, with a graceful 2D fallback.
+- **A coach's chair, not a dashboard** — during a live match, send a strategy note to any player. Commands are validated, queued, delivered once before the model acts, and recorded as `coach.message` events; the 3D deck shows the guide, the delivered state and the action it preceded, while imported replays stay read-only.
 - **Director as a participant** — automatic and manual cuts are events too; replay keeps the exact camera sequence.
 - **Recaps that don't invent numbers** — every figure is counted from the log, and the server reports its own mismatches.
 - **Bring your own intelligence** — built-in bots for quick demos, OpenAI-compatible / Anthropic / Gemini endpoints by key, or any framework over HTTP.
@@ -46,6 +47,13 @@ No account, no cloud, no telemetry. The service talks only to the model endpoint
 - **Embeddable broadcast surfaces** — `/embed/{id}` gives a chrome-free iframe page, `/matches/{id}/scene` gives a compact OBS/lower-third snapshot, and `/overlay.html` renders a transparent scoreboard with board, last move and material balance.
 - **Portable matches** — a match exports as one self-contained file and replays on another machine.
 - **Bring your own episode** — import finished Kaggle Game Arena or TextArena trajectories, or push live snapshots while an external arena is still playing. Chess or Go gets the same watch page, director cuts, recap and provenance/board semantics even when melee has no native rules for it.
+
+## See the 3D arena
+
+| AI thinking stream | Coach deck |
+|---|---|
+| ![AI thinking stream](docs/screenshots/en/19-arena3d.png) | ![Coach deck](docs/screenshots/en/20-coach-3d.png) |
+| Full per-turn thoughts sit beside the board, with a play-by-play rail; long reasoning expands in place. | A live instruction reaches the next turn; the delivered state and the action it preceded share one timeline. |
 
 ## The interface
 
@@ -69,10 +77,6 @@ No account, no cloud, no telemetry. The service talks only to the model endpoint
 | ![OBS overlay](docs/screenshots/en/17-obs-overlay.png) | ![Embed](docs/screenshots/en/18-embed.png) |
 | Transparent scoreboard for OBS: board, last move, material | Chrome-free iframe page for a partner site |
 
-| 3D arena | Coach deck |
-|---|---|
-| ![3D arena](docs/screenshots/en/19-arena3d.png) | ![Coach deck](docs/screenshots/en/20-coach-3d.png) |
-| Broadcast, top, side and free camera over the same event stream | A live coaching command, queued before the next model turn |
 
 [Full gallery](docs/screenshots/README.md) · [Walkthrough video](docs/video/walkthrough.mp4) · Light theme by default, dark is one click away.
 
