@@ -313,9 +313,9 @@ function updatePlayers(players) {
   lastPlayersKey = key
   clearGroup(podGroup)
   const colors = TEAM_COLORS
-  const radius = Math.max(4.6, boardSize * 0.78)
-  // 小棋盘的 pod 跟着缩，否则 3×3 场里两个选手头像会挤满画面。
-  const scale = Math.min(1, Math.max(0.7, boardSize / 10))
+  // 小棋盘 pod 同时收半径和体积：3×3 不再让两个大圆盘挤满画面。
+  const radius = Math.min(11, Math.max(3.1, boardSize * (boardSize <= 4 ? 1.25 : 0.78)))
+  const scale = Math.min(1, Math.max(0.32, boardSize / 12))
   players.forEach((player, index) => {
     const angle = players.length === 1 ? 0 : (Math.PI * 2 * index) / players.length - Math.PI / 2
     const x = Math.cos(angle) * radius
