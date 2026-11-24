@@ -24,7 +24,7 @@ Each language ships its own set under `en/` and `zh/`, so the English README nev
 | [en/16-imported-recap.png](en/16-imported-recap.png) | Recap for an imported match; move numbers come from chess moves, not event seq |
 | [en/17-obs-overlay.png](en/17-obs-overlay.png) | Transparent OBS overlay: players, board, last move, material balance and commentary |
 | [en/18-embed.png](en/18-embed.png) | Chrome-free `/embed/{id}` page used in an iframe |
-| [en/19-arena3d.png](en/19-arena3d.png) | 3D arena on a live 8×8 chess match: AI thinking stream, play-by-play rail, camera presets |
+| [en/19-arena3d.png](en/19-arena3d.png) | 3D arena on a live 8×8 chess match: AI thinking stream with expandable full thoughts, play-by-play rail, camera presets |
 | [en/20-coach-3d.png](en/20-coach-3d.png) | Live 3×3 coaching deck: instruction guide, delivered command, AI thinking stream and localized commentary |
 
 The Chinese set mirrors this one under `zh/`.

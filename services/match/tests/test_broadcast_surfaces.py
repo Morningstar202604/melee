@@ -110,6 +110,10 @@ def test_arena3d_static_surface_is_wired(client):
     assert "a3CoachForm" in js
     assert 'id="a3Thoughts"' in html and 'id="a3Timeline"' in html
     assert "renderTrace" in js and "lastThoughts" in (root / "src" / "view.js").read_text(encoding="utf-8")
+    assert "traceEvents" in js and "renderThoughts" in js and "a3-more" in js
+    assert "from './trace.js'" in js
+    css = (root / "src" / "arena3d.css").read_text(encoding="utf-8")
+    assert ".a3-more" in css and ".a3-thought.expanded p" in css
     assert "lang: getLang()" in (root / "src" / "api.js").read_text(encoding="utf-8")
     assert "lang: getLang()" in (root / "src" / "sse.js").read_text(encoding="utf-8")
     assert "coach.message" in (root / "src" / "view.js").read_text(encoding="utf-8")

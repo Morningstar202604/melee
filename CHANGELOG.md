@@ -4,6 +4,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 The full history, including the early 0.x builds, lives in the [Chinese archive](docs/zh-CN/CHANGELOG.md). This file keeps the releases a reader is most likely to care about.
 
+## [1.10.2] — 2026-11-24
+
+### Changed
+
+- **The 3D trace window is incremental.** Live events are appended to a bounded 20-item trace cache instead of re-filtering the full event history on every tick; thought updates no longer rebuild the play-by-play list.
+- **Long reasoning can be read in full.** Thoughts longer than two lines get a `Show full thinking` control; expanding a card removes the clamp and lets the panel scroll through the complete model output.
+
+### Fixed
+
+- **Structured actions no longer print `[object Object]`.** Codenames/QA style action objects are flattened into key/value text for the timeline.
 ## [1.10.1] — 2026-11-24
 
 ### Added

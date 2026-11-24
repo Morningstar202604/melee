@@ -97,6 +97,10 @@ body.arena3d-body{
 .a3-thoughthead b{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .a3-thoughthead span{margin-left:auto;font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:var(--a3-cyan)}
 .a3-thought p{margin:3px 0 0;color:var(--a3-dim);font-size:9.5px;line-height:1.5;display:-webkit-box;line-clamp:2;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.a3-thought.expanded p{display:block;line-clamp:unset;-webkit-line-clamp:unset;overflow:visible;white-space:pre-wrap;overflow-wrap:anywhere}
+.a3-more{appearance:none;margin:3px 0 0;padding:0;border:0;background:none;color:var(--a3-cyan);font:inherit;font-size:8.5px;line-height:1.4;cursor:pointer;text-align:left}
+.a3-more:hover{text-decoration:underline}
+.a3-more:focus-visible{outline:1px solid var(--a3-cyan);outline-offset:2px}
 .a3-timeline{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:3px;max-height:76px;overflow:auto}
 .a3-timeline li{display:flex;align-items:baseline;gap:6px;min-width:0;font-size:9.5px;line-height:1.45}
 .a3-tseq{flex:none;font-variant-numeric:tabular-nums;color:var(--a3-faint);font-size:8px;letter-spacing:.08em}
